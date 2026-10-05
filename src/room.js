@@ -3,14 +3,14 @@
 //   hostId, hostName, pw?, createdAt, lastActive, status: 'lobby' | 'playing',
 //   teamCount: 2~4, players/{pid}: { name, color, team, nop, drinks, online },
 //   order: [pid...] (팀 안에서 던지는 순서), teamTurn, memberIdx/{team}, turnNo, throwNo,
-//   pieces/{team}: [{ n: 'home'|'goal'|노드, p?: 직전 노드 } x4],
+//   pieceCount: 2~4 (팀당 말 수, 방장이 대기실에서 고름), pieces/{team}: [{ n: 'home'|'goal'|노드, p?: 직전 노드 } x pieceCount],
 //   yut: { stage: 'throw'|'move'|'done', results: [값...], extra: 보너스 던지기 수 },
 //   lastThrow: { id, playerId, value, sticks }, lastMove: { id, team, from, path, count, dest, caught },
 //   pending: { kind, playerId, pos(노드) } | null, winner, event, log, options, mission, cells/{노드}: 텍스트
 // }
 import { dbGet, dbSet, dbUpdate, dbRemove, dbOn, dbOnConnected, dbPresence, now, DEMO, demoSeed, dbPurgeOldRooms, dbWatchServerOffset, serverNow, dbOnRooms, shouldPurge, ROOMS } from './db'
 import './firebase'
-import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, teamDone, freshPieces, normPieces, nodeName } from './game/yut'
+import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf } from './game/yut'
 import { BALANCE_TOPICS } from './game/balance'
 import { pickLiarWords } from './game/liar'
 import { pickBombTopic } from './game/bomb'
@@ -230,7 +230,7 @@ function smallestTeam(room, counts) {
   return best
 }
 export function roomPieces(room) {
-  return normPieces(room?.pieces, teamCount(room))
+  return normPieces(room?.pieces, teamCount(room), pieceCountOf(room))
 }
 export const arr = (v) => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : [])
 export function currentTeam(room) {
@@ -281,6 +281,11 @@ export async function setTeamCount(code, room, n) {
     upd[`players/${mover}/team`] = small
   }
   await roomUpdate(code, upd)
+}
+// 방장: 팀당 말 개수 (대기실, 2~4개)
+export async function setPieceCount(code, room, n) {
+  if (room.hostId !== myId() || room.status !== 'lobby') return
+  await roomUpdate(code, { pieceCount: Math.min(4, Math.max(2, n)) })
 }
 // 방장: 참가자 팀 바꾸기 (대기실, 다음 팀으로 순환)
 export async function setPlayerTeam(code, room, pid, t) {
@@ -346,8 +351,8 @@ export async function startGame(code, room) {
   if (room.hostId !== myId()) return
   const n = teamCount(room)
   for (let t = 0; t < n; t++) if (!teamMembers(room, t).length) return
-  const pieces = freshPieces(n)
-  // 데모: &place=0:o4,1:o5 처럼 팀별 말을 미리 판 위에 둠 (테스트용)
+  const pieces = freshPieces(n, pieceCountOf(room))
+  // 데모: &place=0:o4,1:o9 처럼 팀별 말을 미리 판 위에 둠 (테스트용)
   if (DEMO) {
     const place = new URLSearchParams(window.location.search).get('place')
     ;(place || '').split(',').filter(Boolean).forEach((s) => {
@@ -566,8 +571,9 @@ export async function throwYut(code, room) {
   await roomUpdate(code, upd)
 }
 
-// 말 옮기기: ri = 쓸 결과 번호, from = 옮길 말 묶음의 노드 (새 말은 'home')
-export async function moveYut(code, room, ri, from) {
+// 말 옮기기: ri = 쓸 결과 번호, from = 옮길 말 묶음의 노드 (새 말은 'home'),
+// route = 모서리·가운데에 멈춰 있던 말이 고른 길 ('short' 대각선 / 'long' 직진, 갈림길이 아니면 없음)
+export async function moveYut(code, room, ri, from, route) {
   const id = DEMO ? currentPlayerId(room) : myId()
   if (room.status !== 'playing' || room.pending || room.winner != null || currentPlayerId(room) !== id) return
   const y = room.yut || {}
@@ -578,7 +584,7 @@ export async function moveYut(code, room, ri, from) {
   const t = currentTeam(room)
   const n = teamCount(room)
   const pieces = roomPieces(room)
-  const opt = moveOptions(pieces, t, v).find((o) => o.from === from)
+  const opt = moveOptions(pieces, t, v).find((o) => o.from === from && (o.route || '') === (route || ''))
   if (!opt) return
   const me = room.players[id]
   const info = TEAM_INFO[t]
@@ -607,7 +613,7 @@ export async function moveYut(code, room, ri, from) {
   }
   upd[`log/${newId()}`] = {
     t: Date.now(),
-    text: `${info.emoji} ${me.name} ${yutName(v)}${moving.length > 1 ? ` (말 ${moving.length}개)` : ''} → ${destName}${stacked ? ' · 업기' : ''}${caught ? ` · ${TEAM_INFO[caught.team].name} ${caught.count}개 잡기!` : ''}`,
+    text: `${info.emoji} ${me.name} ${yutName(v)}${moving.length > 1 ? ` (말 ${moving.length}개)` : ''}${opt.route ? ` · ${routeLabel(opt)}` : ''} → ${destName}${stacked ? ' · 업기' : ''}${caught ? ` · ${TEAM_INFO[caught.team].name} ${caught.count}개 잡기!` : ''}`,
   }
   const after = { ...room, pieces: next, yut: { ...y, results: rest } }
   if (teamDone(next, t)) {

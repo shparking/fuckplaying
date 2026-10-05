@@ -436,6 +436,7 @@ textarea {
   flex: 1;
   height: 34px;
   min-width: 46px;
+  white-space: nowrap;
   border-radius: 9px;
   font-weight: 800;
   font-size: 13px;
@@ -823,7 +824,8 @@ textarea {
   box-shadow:
     inset 0 0 50px rgba(0, 0, 0, 0.42),
     0 16px 36px rgba(0, 0, 0, 0.38);
-  overflow: hidden;
+  /* 가장자리 칸의 말이 잘리지 않게 (배경은 border-radius 로 둥글게 잘림) */
+  overflow: visible;
 }
 :root[data-theme='light'] .yut-board {
   box-shadow:
@@ -848,10 +850,10 @@ textarea {
 }
 .ycell {
   position: absolute;
-  width: 14.5%;
-  height: 14.5%;
+  width: 8.2%;
+  height: 8.2%;
   transform: translate(-50%, -50%);
-  border-radius: 28%;
+  border-radius: 26%;
   background: var(--sheen), var(--cell-bg);
   border: 1px solid var(--cell-line);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
@@ -868,13 +870,13 @@ textarea {
   box-shadow: 0 2px 6px rgba(120, 60, 0, 0.08);
 }
 .ycell.diag {
-  width: 13%;
-  height: 13%;
+  width: 7.2%;
+  height: 7.2%;
   border-color: color-mix(in srgb, var(--pink) 32%, var(--cell-line));
 }
 .ycell.big {
-  width: 17%;
-  height: 17%;
+  width: 10.8%;
+  height: 10.8%;
   border-radius: 50%;
   background:
     radial-gradient(circle at 50% 30%, var(--accent-soft), transparent 72%),
@@ -896,21 +898,21 @@ textarea {
 }
 .ycell-no {
   position: absolute;
-  top: 3px;
+  top: 7%;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 7px;
+  font-size: clamp(5.5px, 1.6vw, 8px);
   font-weight: 800;
   color: var(--text-3);
   line-height: 1;
   white-space: nowrap;
 }
 .ycell.big .ycell-no {
-  top: 5px;
+  top: 9%;
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: 9px;
-  letter-spacing: 0.04em;
+  font-size: clamp(5.5px, 1.55vw, 8px);
+  letter-spacing: 0.02em;
   color: var(--accent);
   text-shadow: 0 0 6px var(--accent-glow);
 }
@@ -919,12 +921,17 @@ textarea {
   text-shadow: 0 0 6px var(--soju-soft);
 }
 .ycell-emo {
-  font-size: clamp(12px, 4.2vw, 18px);
+  font-size: clamp(11px, 3.3vw, 16px);
   line-height: 1;
-  margin-top: 6px;
+  margin-top: 22%;
 }
+.ycell.big .ycell-emo {
+  font-size: clamp(12px, 3.8vw, 18px);
+  margin-top: 16%;
+}
+/* 10×10 판은 칸이 작아서 글자는 '판 크게 보기'에서만 (평소엔 이모지·번호) */
 .ycell-text {
-  display: flex;
+  display: none;
   flex-direction: column;
   align-items: center;
   font-size: clamp(6.5px, 2vw, 9px);
@@ -937,6 +944,31 @@ textarea {
 }
 .ycell-text.long {
   font-size: clamp(6px, 1.75vw, 8px);
+}
+.yut-board.zoom .ycell-text {
+  display: flex;
+  font-size: clamp(6.5px, 2vw, 9px);
+}
+.yut-board.zoom .ycell-text.long {
+  font-size: clamp(6px, 1.8vw, 8px);
+}
+.yut-board.zoom .ycell-emo {
+  margin-top: 14%;
+}
+.yut-board.zoom .ycell-no {
+  font-size: clamp(7px, 2vw, 10px);
+}
+/* 진행 방향 화살표 */
+.ydir {
+  position: absolute;
+  z-index: 0;
+  transform: translate(-50%, -50%) rotate(var(--rot));
+  font-size: clamp(11px, 3.4vw, 18px);
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.75;
+  text-shadow: 0 0 8px var(--accent-glow);
+  pointer-events: none;
 }
 .ycell-text span {
   white-space: nowrap;
@@ -971,9 +1003,9 @@ textarea {
 /* 말 */
 .ytoken {
   position: absolute;
-  width: 8.6%;
-  height: 8.6%;
-  transform: translate(-50%, -72%);
+  width: 5.2%;
+  height: 5.2%;
+  transform: translate(10%, -110%);
   z-index: 3;
   padding: 0;
   transition:
@@ -988,22 +1020,22 @@ textarea {
   background:
     radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 42%),
     var(--tc);
-  border: 2px solid rgba(255, 255, 255, 0.92);
+  border: 1.5px solid rgba(255, 255, 255, 0.92);
   box-shadow:
-    0 0 0 1.5px rgba(0, 0, 0, 0.45),
-    0 0 14px var(--tc),
-    0 4px 8px rgba(0, 0, 0, 0.4);
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 10px var(--tc),
+    0 3px 6px rgba(0, 0, 0, 0.4);
 }
 .ytoken-n {
   position: absolute;
-  right: -55%;
-  top: -35%;
+  right: -70%;
+  top: -45%;
   background: #0b0c18;
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   border-radius: 999px;
-  padding: 1px 5px;
+  padding: 0 4px;
   border: 1.5px solid var(--tc);
   line-height: 1.3;
   box-shadow: 0 0 6px var(--tc);
@@ -1013,25 +1045,74 @@ textarea {
 }
 .ytoken.can .ytoken-dot {
   box-shadow:
-    0 0 0 3px rgba(255, 255, 255, 0.9),
-    0 0 0 5px var(--tc),
-    0 0 24px var(--tc);
+    0 0 0 2px rgba(255, 255, 255, 0.9),
+    0 0 0 3.5px var(--tc),
+    0 0 18px var(--tc);
 }
 @keyframes tokenBob {
   0%,
   100% {
-    transform: translate(-50%, -72%);
+    transform: translate(10%, -110%);
   }
   50% {
-    transform: translate(-50%, -100%);
+    transform: translate(10%, -160%);
   }
 }
 .ytoken.moving {
   z-index: 4;
-  transform: translate(-50%, -90%) scale(1.15);
+  transform: translate(10%, -130%) scale(1.2);
 }
 .ytoken.ghost {
   opacity: 0.85;
+}
+/* 모서리·가운데·출발 같은 큰 원 칸: 원 안쪽 오른쪽 위 */
+.ytoken.on-big {
+  transform: translate(-5%, -95%);
+}
+.ytoken.on-big.can {
+  animation-name: tokenBobBig;
+}
+.ytoken.on-big.moving {
+  transform: translate(-5%, -115%) scale(1.2);
+}
+@keyframes tokenBobBig {
+  0%,
+  100% {
+    transform: translate(-5%, -95%);
+  }
+  50% {
+    transform: translate(-5%, -145%);
+  }
+}
+
+/* 판 크게 보기 */
+.board-scroll {
+  position: relative;
+  border-radius: 26px;
+}
+.board-scroll.zoom {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.board-scroll.zoom .yut-board {
+  width: 175%;
+}
+.board-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -2px;
+}
+.board-tools .muted {
+  flex: 1;
+  font-size: 12px;
+}
+.board-tools .btn.on {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ---------- 윷가락 ---------- */
@@ -1119,9 +1200,10 @@ textarea {
 
 /* 던지기 오버레이 (판 위) */
 .throw-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: 40;
+  pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1145,7 +1227,7 @@ textarea {
   background: var(--sheen), var(--surface);
   border-radius: 22px;
   padding: 14px 22px 16px;
-  min-width: 62%;
+  min-width: min(300px, 80vw);
   text-align: center;
   border: 1.5px solid var(--tc, var(--accent));
   box-shadow:
@@ -1377,6 +1459,22 @@ textarea {
   font-style: normal;
   font-weight: 800;
   color: var(--pink);
+}
+.mo-route {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.move-opt.route-short .mo-route {
+  color: var(--pink);
+  background: var(--pink-soft);
+  border-color: color-mix(in srgb, var(--pink) 40%, transparent);
 }
 
 /* ---------- 팀원 · 놉카드 ---------- */

@@ -21,6 +21,7 @@ import {
   arr,
   optionKey,
   setTeamCount,
+  setPieceCount,
   setPlayerTeam,
   shuffleTeams,
   moveInTeam,
@@ -66,7 +67,7 @@ import { BALANCE_TOPICS } from './game/balance'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
 import { LIAR_CATEGORIES, liarCategory } from './game/liar'
-import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus } from './game/yut'
+import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID } from './game/yut'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -87,11 +88,20 @@ const KIND_LABEL = {
   reaction: '반응속도 게임',
   gamble: '놉카드 도박',
   again: '한 번 더!',
-  home: '참먹이',
+  home: '출발·골인',
   caught: '잡기',
   win: '승리',
 }
 const oneLine = (t) => String(t || '').replace(/\n/g, ' ')
+// 갈림길 선택지 화살표: 첫 걸음 방향 (y 는 아래로)
+const ARROW8 = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗']
+function routeArrow(o) {
+  const a = NODE_BY_ID[o.from]
+  const b = NODE_BY_ID[o.path?.[0]]
+  if (!a || !b) return ''
+  const idx = ((Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 4)) % 8) + 8) % 8
+  return ARROW8[idx]
+}
 
 // 테마: 기본은 '밤'(포장마차 네온), 해 버튼으로 '낮'(주황 천막)
 function useTheme() {
@@ -1380,7 +1390,7 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
             </div>
           ))}
         </div>
-        <div className="ai-note">{mem.map((t) => room.players[t]?.name).join(', ')} — 말 4개 모두 골인!</div>
+        <div className="ai-note">{mem.map((t) => room.players[t]?.name).join(', ')} — 말 {pieceCountOf(room)}개 모두 골인!</div>
         <div className="ai-name">
           <b>나머지 팀</b> 다 마셔! 🍻
         </div>
@@ -1394,6 +1404,18 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// 판 아래 줄: 안내 + 판 크게/작게 보기
+function BoardTools({ zoom, onToggle, hint }) {
+  return (
+    <div className="board-tools">
+      <span className="muted">{zoom ? '좌우로 밀어서 판을 보세요' : hint}</span>
+      <button className={`btn btn-ghost btn-sm ${zoom ? 'on' : ''}`} onClick={onToggle}>
+        {zoom ? '판 작게 보기' : '🔍 판 크게 보기'}
+      </button>
     </div>
   )
 }
@@ -1442,6 +1464,8 @@ export default function App() {
   const [moveAnim, setMoveAnim] = useState(null) // { team, node, count }
   const [animating, setAnimating] = useState(false)
   const [sel, setSel] = useState(0) // 고른 윷 결과 번호
+  const [zoom, setZoom] = useState(false) // 판 크게 보기 (칸 글자까지 보임, 좌우로 밀어서 봄)
+  const boardRef = useRef(null)
   const [shake, setShake] = useState(() => {
     try {
       return localStorage.getItem('shake') === '1'
@@ -1731,6 +1755,18 @@ export default function App() {
     return () => clearInterval(t)
   }, [room, me, code])
 
+  // 판 크게 보기: 켤 때·고를 칸이 생길 때 그 칸이 보이게 좌우로 이동
+  const destKey = [...dests].join(',')
+  useEffect(() => {
+    const box = boardRef.current
+    if (!zoom || !box) return
+    const el = box.querySelector('.ycell.dest, .ytoken.can') || box.querySelector('.ycell.home')
+    if (!el) return
+    const b = box.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    box.scrollTo({ left: box.scrollLeft + (r.left + r.width / 2) - (b.left + b.width / 2), behavior: 'smooth' })
+  }, [zoom, destKey, room?.status])
+
   // 대기실 ↔ 게임 화면이 바뀌면 맨 위(점수판·윷판)부터 보이게
   useEffect(() => {
     if (room?.status) window.scrollTo(0, 0)
@@ -1825,7 +1861,7 @@ export default function App() {
     const cell = cells[node] || {}
     if (canMove && dests.has(node)) {
       const o = options.find((x) => !x.finished && x.dest === node)
-      if (o) return moveYut(code, room, selIdx, o.from)
+      if (o) return moveYut(code, room, selIdx, o.from, o.route)
     }
     if (isHost && !cell.locked && room.status === 'lobby') {
       setEditing({ node, cell, text: cell.text })
@@ -1834,7 +1870,10 @@ export default function App() {
     setPeek({ node, cell })
   }
   const onStackTap = (node) => {
-    if (canMove && movable.has(node)) moveYut(code, room, selIdx, node)
+    if (!canMove || !movable.has(node)) return
+    const mine = options.filter((o) => o.from === node)
+    if (mine.length === 1) return moveYut(code, room, selIdx, node, mine[0].route)
+    if (mine.length > 1) flash('대각선으로 갈지 직진할지 아래에서 골라 주세요 (빛나는 칸을 눌러도 돼요)')
   }
 
   // 도착 칸에 다른 팀/우리 팀 말이 있는지 (선택지 설명용)
@@ -2014,7 +2053,9 @@ export default function App() {
                 초대 링크
               </button>
             </div>
-            <div className="muted">팀마다 말 4개. 윷을 던져 말을 옮기고, 4개가 먼저 다 들어오는 팀이 이겨요. 상대 말을 잡으면 그 팀이 마시고 한 번 더 던져요.</div>
+            <div className="muted">
+              팀마다 말 {pieceCountOf(room)}개. 오른쪽 아래 출발 칸에서 위로 돌아 말을 옮기고, {pieceCountOf(room)}개가 먼저 다 들어오는 팀이 이겨요. 모서리·가운데에 멈춘 말은 다음에 대각선(지름길)과 직진 중에서 골라요. 상대 말을 잡으면 그 팀이 마시고 한 번 더 던져요.
+            </div>
           </div>
 
           <div className="card card-pad stack">
@@ -2028,6 +2069,21 @@ export default function App() {
                   {[2, 3, 4].map((n) => (
                     <button key={n} className={tc === n ? 'on' : ''} onClick={() => setTeamCount(code, room, n)}>
                       {n}팀
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="row">
+              <div className="label" style={{ marginBottom: 0 }}>
+                팀당 말 {pieceCountOf(room)}개
+              </div>
+              <div className="spacer" />
+              {isHost && (
+                <div className="seg" role="group" aria-label="팀당 말 개수">
+                  {[2, 3, 4].map((n) => (
+                    <button key={n} className={pieceCountOf(room) === n ? 'on' : ''} onClick={() => setPieceCount(code, room, n)}>
+                      {n}개
                     </button>
                   ))}
                 </div>
@@ -2102,7 +2158,7 @@ export default function App() {
 
           {isHost ? (
             <div className="card card-pad stack">
-              <div className="muted">아래 윷판에서 칸을 탭하면 내용을 고칠 수 있어요. 게임이 시작되면 고칠 수 없어요. (참먹이는 고정)</div>
+              <div className="muted">아래 윷판에서 칸을 탭하면 내용을 고칠 수 있어요. 게임이 시작되면 고칠 수 없어요. (출발·골인 칸은 고정)</div>
               {(() => {
                 const empty = Array.from({ length: tc }, (_, t) => teamMembers(room, t).length).some((n) => n === 0)
                 return (
@@ -2116,7 +2172,10 @@ export default function App() {
             <div className="card card-pad muted">방장이 시작하면 자동으로 게임 화면으로 넘어가요.</div>
           )}
 
-          <YutBoard cells={cells} pieces={{}} teamCount={tc} onCellTap={onCellTap} />
+          <div ref={boardRef} className={`board-scroll ${zoom ? 'zoom' : ''}`}>
+            <YutBoard cells={cells} pieces={{}} teamCount={tc} onCellTap={onCellTap} zoom={zoom} />
+          </div>
+          <BoardTools zoom={zoom} onToggle={() => setZoom((z) => !z)} hint={isHost ? '칸을 누르면 내용을 고칠 수 있어요' : '칸을 누르면 벌칙이 크게 보여요'} />
         </>
       )}
 
@@ -2134,9 +2193,9 @@ export default function App() {
                   <div className="score-top">
                     <span className="team-dot" />
                     <b>{info.short}</b>
-                    <span className="score-goal" title={`골인 ${goal}/4`}>
+                    <span className="score-goal" title={`골인 ${goal}/${pcs.length}`}>
                       {goal}
-                      <small>/4</small>
+                      <small>/{pcs.length}</small>
                     </span>
                   </div>
                   <span className="team-pcs">
@@ -2189,10 +2248,15 @@ export default function App() {
                     const occ = o.finished ? null : occupant(o.dest)
                     const hint = occ == null ? '' : occ === curTeam ? ' · 🤝 업기' : ` · 🎯 ${TEAM_INFO[occ].short} 잡기!`
                     return (
-                      <button key={o.from} className="move-opt" onClick={() => moveYut(code, room, selIdx, o.from)}>
+                      <button key={moveKey(o)} className={`move-opt ${o.route ? `route-${o.route}` : ''}`} onClick={() => moveYut(code, room, selIdx, o.from, o.route)}>
                         <span className="mo-from">{o.from === 'home' ? `🆕 새 말 (${o.homeLeft}개 대기)` : `${o.count > 1 ? `말 ${o.count}개` : '말'} · ${nodeName(o.from)}`}</span>
                         <span className="mo-arrow">→</span>
                         <span className="mo-dest">
+                          {o.route && (
+                            <b className="mo-route">
+                              {routeArrow(o)} {routeLabel(o)}
+                            </b>
+                          )}
                           {o.finished ? '🏁 골인!' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
                           {hint && <em>{hint}</em>}
                         </span>
@@ -2214,21 +2278,24 @@ export default function App() {
           <OptionTimers options={room.options} />
           <MissionBanner room={room} me={me} />
 
-          <YutBoard
-            cells={cells}
-            pieces={pieces}
-            teamCount={tc}
-            onCellTap={onCellTap}
-            onStackTap={onStackTap}
-            movable={canMove ? movable : null}
-            dests={canMove ? dests : null}
-            activeNode={moveAnim?.node || null}
-            mover={mover}
-            hide={hide}
-            ghost={ghost}
-          >
-            <ThrowOverlay anim={throwAnim} who={room.players[throwAnim?.playerId]?.name || ''} teamColor={TEAM_INFO[teamOf(room, throwAnim?.playerId)]?.color} />
-          </YutBoard>
+          <div ref={boardRef} className={`board-scroll ${zoom ? 'zoom' : ''}`}>
+            <YutBoard
+              cells={cells}
+              pieces={pieces}
+              teamCount={tc}
+              onCellTap={onCellTap}
+              onStackTap={onStackTap}
+              movable={canMove ? movable : null}
+              dests={canMove ? dests : null}
+              activeNode={moveAnim?.node || null}
+              mover={mover}
+              hide={hide}
+              ghost={ghost}
+              zoom={zoom}
+            />
+          </div>
+          <BoardTools zoom={zoom} onToggle={() => setZoom((z) => !z)} hint="칸을 누르면 벌칙이 크게 보여요" />
+          <ThrowOverlay anim={throwAnim} who={room.players[throwAnim?.playerId]?.name || ''} teamColor={TEAM_INFO[teamOf(room, throwAnim?.playerId)]?.color} />
 
           {/* 팀원 · 놉카드 (내 배지를 눌러 사용/양도) */}
           <div className="card card-pad teams">
@@ -2396,7 +2463,7 @@ export default function App() {
                 {pending.kind === 'normal' && (iAct ? ' — 수행하고 완료를 눌러주세요.' : ' — 수행 중이에요.')}
                 {pending.kind === 'normal' && pendingCell.drink && (pendingCell.drink === 'all' ? ' (전원 잔 수 +1)' : pendingCell.drink === 'team' ? ' (우리 팀 잔 수 +1)' : ' (잔 수 +1)')}
                 {pending.kind === 'again' && ' — 보너스! 이번 차례에 윷을 한 번 더 던져요 🎲'}
-                {pending.kind === 'home' && ' — 빽도로 참먹이에 들어왔어요. 다음에 이 말을 움직이면 바로 골인!'}
+                {pending.kind === 'home' && ' — 빽도로 출발 칸에 들어왔어요. 다음에 이 말을 움직이면 바로 골인!'}
                 {pending.kind === 'option' &&
                   !pendingCell.pair &&
                   (room.options?.[optionKey(pending.pos)]?.endsAt > Date.now()
@@ -2588,8 +2655,9 @@ export default function App() {
               {peek.cell.emoji} {oneLine(peek.cell.text)}
             </h2>
             {peek.cell.locked && <div className="muted">고정 칸 (편집 불가) — 여기에 도착하거나 지나가면 골인!</div>}
-            {['o5', 'o10'].includes(peek.node) && <div className="muted">여기에 멈춘 말은 다음 이동 때 지름길(대각선)로 가요.</div>}
-            {peek.node === 'C' && <div className="muted">방에 멈춘 말은 다음 이동 때 참먹이(골인) 쪽 지름길로 가요.</div>}
+            {CORNERS.has(peek.node) && peek.node !== CORNER_BL && <div className="muted">이 모서리에 멈춘 말은 다음 이동 때 대각선(지름길)과 직진 중에서 골라요.</div>}
+            {peek.node === CORNER_BL && <div className="muted">대각선이 끝나는 모서리예요. 여기서는 아래 변을 따라 출발 칸(골인) 쪽으로 가요.</div>}
+            {peek.node === 'C' && <div className="muted">가운데에 멈춘 말은 다음 이동 때 골인 쪽 대각선과 직진 중에서 골라요.</div>}
             <div className="actions">
               <button className="btn btn-ghost" onClick={() => setPeek(null)}>
                 닫기
