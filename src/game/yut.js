@@ -10,11 +10,12 @@
 //        방을 지나가기만 하면 들어온 방향 그대로 직진.
 //   골인: 참먹이에 도착하거나 지나가면 골인. (빽도로 참먹이에 들어가면 다음 이동 때 바로 골인)
 
+// 팀 색: 밤 배경에서 네온처럼 빛나는 색
 export const TEAM_INFO = [
-  { name: '빨강팀', short: '빨강', color: '#ea002c', emoji: '🔴' },
-  { name: '파랑팀', short: '파랑', color: '#2f6df6', emoji: '🔵' },
-  { name: '초록팀', short: '초록', color: '#1fa97a', emoji: '🟢' },
-  { name: '노랑팀', short: '노랑', color: '#f5a300', emoji: '🟡' },
+  { name: '빨강팀', short: '빨강', color: '#ff4d5e', emoji: '🔴' },
+  { name: '파랑팀', short: '파랑', color: '#3d8bff', emoji: '🔵' },
+  { name: '초록팀', short: '초록', color: '#2fd27a', emoji: '🟢' },
+  { name: '노랑팀', short: '노랑', color: '#ffc23a', emoji: '🟡' },
 ]
 export const PIECES_PER_TEAM = 4
 

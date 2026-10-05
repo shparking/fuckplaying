@@ -17,7 +17,7 @@ import { pickBombTopic } from './game/bomb'
 import { drawMission, MISSION_CHANCE, MISSION_MIN_GAP } from './game/missions'
 import { autoEmoji } from './game/emoji'
 
-export const COLORS = ['#ea002c', '#2f6df6', '#1fa97a', '#f59e0b', '#8b5cf6', '#ec4899', '#0ea5e9', '#84cc16', '#14b8a6', '#f97316']
+export const COLORS = ['#ff5a36', '#3d7bfa', '#14b06a', '#e89a00', '#8b5cf6', '#ec4899', '#0ea5e9', '#65a30d', '#14b8a6', '#d946ef']
 
 // ---------- 내 아이디 (기기별 고정) ----------
 export function myId() {
@@ -646,6 +646,7 @@ function maybeMission(room, updates) {
   const ids = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
   if (ids.length < 2) return
   const forced = DEMO ? parseInt(new URLSearchParams(window.location.search).get('mission'), 10) : NaN
+  if (forced === 0) return // 데모 테스트: &mission=0 이면 돌발 미션 끔
   if (since < MISSION_MIN_GAP) return
   if (!(forced > 0) && Math.random() >= MISSION_CHANCE) return
   updates.rollsSinceMission = 0

@@ -93,18 +93,18 @@ const KIND_LABEL = {
 }
 const oneLine = (t) => String(t || '').replace(/\n/g, ' ')
 
+// 테마: 기본은 '밤'(포장마차 네온), 해 버튼으로 '낮'(주황 천막)
 function useTheme() {
   const [theme, setTheme] = useState(() => {
     try {
-      const saved = localStorage.getItem('theme')
-      if (saved === 'light' || saved === 'dark') return saved
+      if (localStorage.getItem('yt-theme') === 'light') return 'light'
     } catch {}
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    return 'dark'
   })
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     try {
-      localStorage.setItem('theme', theme)
+      localStorage.setItem('yt-theme', theme)
     } catch {}
   }, [theme])
   return [theme, () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))]
@@ -1613,6 +1613,8 @@ export default function App() {
   const unplayedMove = !!room?.lastMove && room.lastMove.id !== lastMoveId.current
   const unplayedThrow = !!room?.lastThrow && room.lastThrow.id !== lastThrowId.current
   const busy = animating || !!throwAnim || unplayedMove || unplayedThrow
+  // 윷가락이 돌아가는 동안에는 결과(칩·윷가락 모양)를 숨김 — 스포 방지
+  const throwHidden = throwAnim ? throwAnim.phase === 'spin' : unplayedThrow
   const showPending = !!pending && !busy
   const iAct = DEMO || pending?.playerId === me
   const playing = room?.status === 'playing'
@@ -1673,6 +1675,7 @@ export default function App() {
       try {
         localStorage.setItem('shake', '0')
       } catch {}
+      flash('📳 흔들어서 던지기를 껐어요')
       return
     }
     try {
@@ -1727,6 +1730,25 @@ export default function App() {
     const t = setInterval(() => clearExpiredOptions(code, room), 1000)
     return () => clearInterval(t)
   }, [room, me, code])
+
+  // 대기실 ↔ 게임 화면이 바뀌면 맨 위(점수판·윷판)부터 보이게
+  useEffect(() => {
+    if (room?.status) window.scrollTo(0, 0)
+  }, [room?.status])
+
+  // 아래 고정 조작 바 높이 → 화면 아래 여백 (판·팀 정보가 바에 가려지지 않게)
+  const dockRef = useRef(null)
+  const [dockH, setDockH] = useState(0)
+  useEffect(() => {
+    const el = dockRef.current
+    if (!el) return
+    const measure = () => setDockH(Math.ceil(el.getBoundingClientRect().height))
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [playing])
 
   // ---- 홈 동작 ----
   const saveName = (n) => {
@@ -1850,7 +1872,7 @@ export default function App() {
 
   // ---------- 렌더 ----------
   return (
-    <div className="app">
+    <div className={`app ${playing ? 'with-dock' : ''}`} style={dockH ? { '--dock-h': `${dockH}px` } : undefined}>
       <header className="topbar">
         <div className="brand">
           <span className={`brand-dot ${connected ? '' : 'off'}`} title={connected ? '연결됨' : '연결 중…'} /> 주루윷놀이
@@ -1881,16 +1903,12 @@ export default function App() {
       {!room && (
         <>
           <div className="hero">
-            <h1>
-              <span className="hero-emo" aria-hidden>
-                🍶
-              </span>
-              주루윷놀이
-              <span className="hero-emo" aria-hidden>
-                🥢
-              </span>
-            </h1>
-            <p>팀을 나눠 폰으로 윷을 던지는 술자리 윷놀이. 이름을 정하고 방을 만들거나, 아래 목록에서 친구 방에 들어가세요.</p>
+            <div className="sign">
+              <span className="sign-kicker">팀 대항 · 술자리 윷놀이</span>
+              <h1 className="neon">주루윷놀이</h1>
+              <Sticks sticks={[true, false, true, true]} small />
+            </div>
+            <p>폰으로 윷을 던지고, 말이 멈춘 칸의 벌칙을 수행해요. 이름을 정하고 방을 만들거나, 아래 목록에서 친구 방에 들어가세요.</p>
           </div>
 
           <div className="card card-pad stack">
@@ -1930,7 +1948,7 @@ export default function App() {
                         {r.count}명{r.online < r.count ? ` (접속 ${r.online})` : ''} · {new Date(r.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 생성
                       </span>
                     </span>
-                    <span className={`tag ${r.status === 'playing' ? 'tag-gray' : ''}`}>{r.status === 'playing' ? '게임 중 · 합류 가능' : '대기 중'}</span>
+                    <span className={`tag ${r.status === 'playing' ? 'tag-live' : 'tag-open'}`}>{r.status === 'playing' ? '게임 중 · 합류 가능' : '대기 중'}</span>
                   </button>
                 ))}
               </div>
@@ -2105,55 +2123,93 @@ export default function App() {
       {/* ---------- 게임 ---------- */}
       {room && playing && (
         <>
-          <div className={`card turn-panel yut-turn ${myTurn ? 'mine' : ''}`} style={{ '--tc': curInfo.color }}>
-            <Sticks sticks={room.lastThrow?.sticks} small spinning={false} />
-            <div className="turn-info">
-              <div className="who">
-                <span className="team-dot" />
-                {curInfo.name} · {cur ? (curId === me ? '내 차례!' : `${cur.name}`) : '—'}
-              </div>
-              <div className="sub">{statusText}</div>
-            </div>
-            <button className="btn btn-primary" onClick={() => throwYut(code, room)} disabled={!canThrow}>
-              🥢 던지기
-            </button>
+          {/* 팀 점수판: 팀별 말 상태(○집 ●판 ◎골인)와 골인 수 */}
+          <div className="scoreboard" style={{ '--n': tc }}>
+            {Array.from({ length: tc }, (_, t) => {
+              const info = TEAM_INFO[t]
+              const pcs = pieces[t] || []
+              const goal = pcs.filter((pc) => pc.n === 'goal').length
+              return (
+                <div className={`score ${t === curTeam ? 'turn' : ''}`} style={{ '--tc': info.color }} key={t}>
+                  <div className="score-top">
+                    <span className="team-dot" />
+                    <b>{info.short}</b>
+                    <span className="score-goal" title={`골인 ${goal}/4`}>
+                      {goal}
+                      <small>/4</small>
+                    </span>
+                  </div>
+                  <span className="team-pcs">
+                    {pcs.map((pc, i) => (
+                      <i key={i} className={`pc ${pc.n === 'goal' ? 'goal' : pc.n === 'home' ? 'home' : 'board'}`} />
+                    ))}
+                  </span>
+                </div>
+              )
+            })}
           </div>
 
-          {(results.length > 0 || extra > 0) && room.winner == null && (
-            <div className="yut-chips">
-              {results.map((v, i) => (
-                <button
-                  key={i}
-                  className={`ychip ${i === selIdx && canMove ? 'on' : ''} ${usable[i] ? '' : 'off'}`}
-                  disabled={!canMove || !usable[i]}
-                  onClick={() => setSel(i)}
-                >
-                  <b>{yutName(v)}</b>
-                  <span>{v === -1 ? '뒤로 1' : `${v}칸`}</span>
-                </button>
-              ))}
-              {extra > 0 && <span className="ychip bonus">🎯 보너스 +{extra}</span>}
+          {/* 아래 고정 조작 바: 지금 차례 · 윷 결과 · 말 고르기 · 던지기 */}
+          <div ref={dockRef} className={`dock yut-turn ${myTurn ? 'mine' : ''}`} style={{ '--tc': curInfo.color }}>
+            <div className="dock-head">
+              <Sticks sticks={throwHidden ? null : room.lastThrow?.sticks} small spinning={throwHidden} />
+              <div className="turn-info">
+                <div className="who">
+                  <span className="team-dot" />
+                  {curInfo.name} · {cur ? (curId === me ? '내 차례!' : `${cur.name}`) : '—'}
+                </div>
+                <div className="sub">{statusText}</div>
+              </div>
+              <button className={`icon-btn shake-btn ${shake ? 'on' : ''}`} onClick={toggleShake} aria-label={`흔들어서 던지기 ${shake ? '켜짐' : '꺼짐'}`} title={`흔들어서 던지기 ${shake ? '켜짐' : '꺼짐'}`}>
+                📳
+              </button>
             </div>
-          )}
 
-          {canMove && options.length > 0 && (
-            <div className="move-opts">
-              {options.map((o) => {
-                const occ = o.finished ? null : occupant(o.dest)
-                const hint = occ == null ? '' : occ === curTeam ? ' · 🤝 업기' : ` · 🎯 ${TEAM_INFO[occ].short} 잡기!`
-                return (
-                  <button key={o.from} className="move-opt" onClick={() => moveYut(code, room, selIdx, o.from)}>
-                    <span className="mo-from">{o.from === 'home' ? `🆕 새 말 (${o.homeLeft}개 대기)` : `${o.count > 1 ? `말 ${o.count}개` : '말'} · ${nodeName(o.from)}`}</span>
-                    <span className="mo-arrow">→</span>
-                    <span className="mo-dest">
-                      {o.finished ? '🏁 골인!' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
-                      {hint && <em>{hint}</em>}
-                    </span>
+            {(results.length > 0 || extra > 0) && room.winner == null && !throwHidden && (
+              <div className="yut-chips">
+                {results.map((v, i) => (
+                  <button
+                    key={i}
+                    className={`ychip ${i === selIdx && canMove ? 'on' : ''} ${usable[i] ? '' : 'off'}`}
+                    disabled={!canMove || !usable[i]}
+                    onClick={() => setSel(i)}
+                  >
+                    <b>{yutName(v)}</b>
+                    <span>{v === -1 ? '뒤로 1' : `${v}칸`}</span>
                   </button>
-                )
-              })}
-            </div>
-          )}
+                ))}
+                {extra > 0 && <span className="ychip bonus">🎯 보너스 +{extra}</span>}
+              </div>
+            )}
+
+            {canMove && options.length > 0 && (
+              <>
+                <div className="move-opts">
+                  {options.map((o) => {
+                    const occ = o.finished ? null : occupant(o.dest)
+                    const hint = occ == null ? '' : occ === curTeam ? ' · 🤝 업기' : ` · 🎯 ${TEAM_INFO[occ].short} 잡기!`
+                    return (
+                      <button key={o.from} className="move-opt" onClick={() => moveYut(code, room, selIdx, o.from)}>
+                        <span className="mo-from">{o.from === 'home' ? `🆕 새 말 (${o.homeLeft}개 대기)` : `${o.count > 1 ? `말 ${o.count}개` : '말'} · ${nodeName(o.from)}`}</span>
+                        <span className="mo-arrow">→</span>
+                        <span className="mo-dest">
+                          {o.finished ? '🏁 골인!' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
+                          {hint && <em>{hint}</em>}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="dock-hint">판에서 통통 튀는 말이나 빛나는 칸을 눌러도 옮겨져요</div>
+              </>
+            )}
+
+            {stage !== 'move' && room.winner == null && (
+              <button className="btn btn-primary btn-throw" onClick={() => throwYut(code, room)} disabled={!canThrow}>
+                🥢 던지기
+              </button>
+            )}
+          </div>
 
           <OptionTimers options={room.options} />
           <MissionBanner room={room} me={me} />
@@ -2174,31 +2230,23 @@ export default function App() {
             <ThrowOverlay anim={throwAnim} who={room.players[throwAnim?.playerId]?.name || ''} teamColor={TEAM_INFO[teamOf(room, throwAnim?.playerId)]?.color} />
           </YutBoard>
 
-          <div className="row shake-row">
-            <button className={`btn btn-ghost btn-sm ${shake ? 'on' : ''}`} onClick={toggleShake}>
-              📳 흔들어서 던지기 {shake ? '켜짐' : '꺼짐'}
-            </button>
-            <div className="spacer" />
-            <span className="muted">말을 누르거나 빛나는 칸을 눌러도 옮겨져요</span>
-          </div>
-
-          <div className="teams">
+          {/* 팀원 · 놉카드 (내 배지를 눌러 사용/양도) */}
+          <div className="card card-pad teams">
+            <div className="teams-title">
+              팀원 · 놉카드
+              <span className="spacer" />
+              <span className="muted" style={{ fontSize: 12, fontWeight: 600, letterSpacing: 0 }}>
+                내 🎫 배지를 누르면 사용·양도
+              </span>
+            </div>
             {Array.from({ length: tc }, (_, t) => {
               const info = TEAM_INFO[t]
               const mem = teamMembers(room, t)
-              const pcs = pieces[t] || []
-              const goal = pcs.filter((pc) => pc.n === 'goal').length
               return (
                 <div className={`team-card ${t === curTeam ? 'turn' : ''}`} style={{ '--tc': info.color }} key={t}>
                   <div className="team-head">
-                    <span className="team-dot" />
                     <b>{info.name}</b>
-                    <span className="team-pcs" title={`골인 ${goal}/4`}>
-                      {pcs.map((pc, i) => (
-                        <i key={i} className={`pc ${pc.n === 'goal' ? 'goal' : pc.n === 'home' ? 'home' : 'board'}`} />
-                      ))}
-                    </span>
-                    <span className="muted">🏁 {goal}/4</span>
+                    <span className="muted">{mem.length}명</span>
                   </div>
                   <div className="team-members">
                     {mem.map((pid) => {
@@ -2233,11 +2281,11 @@ export default function App() {
           </div>
 
           {isHost && (
-            <div className="row">
-              <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => confirm(`${curInfo.name} ${cur?.name || ''} 차례를 넘길까요? (남은 윷과 진행 중인 칸도 정리됩니다)`) && hostSkipTurn(code, room)}>
+            <div className="row host-row">
+              <button className="btn btn-ghost btn-sm" onClick={() => confirm(`${curInfo.name} ${cur?.name || ''} 차례를 넘길까요? (남은 윷과 진행 중인 칸도 정리됩니다)`) && hostSkipTurn(code, room)}>
                 ⏭ 차례 넘기기
               </button>
-              <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => confirm('게임을 끝내고 대기실로 돌아갈까요?') && restartGame(code, room)}>
+              <button className="btn btn-ghost btn-sm" onClick={() => confirm('게임을 끝내고 대기실로 돌아갈까요?') && restartGame(code, room)}>
                 대기실로
               </button>
             </div>

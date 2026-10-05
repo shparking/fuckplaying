@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
-    <meta name="theme-color" content="#EA002C" />
+    <meta name="theme-color" content="#0b0c18" />
     <title>주루윷놀이</title>
     <meta name="description" content="팀을 나눠 폰으로 즐기는 술자리 윷놀이" />
     <link rel="manifest" href="/manifest.json" />
@@ -13,6 +13,14 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="주루윷놀이" />
+    <script>
+      // 첫 화면부터 저장된 테마(밤/낮) 적용 — 기본은 밤
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem('yt-theme') === 'light' ? 'light' : 'dark'
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark'
+      }
+    </script>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   </head>

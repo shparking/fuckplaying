@@ -47,7 +47,8 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
         {LINES.map(([a, b]) => {
           const [x1, y1] = svgPt(a)
           const [x2, y2] = svgPt(b)
-          return <line key={a + b} x1={x1} y1={y1} x2={x2} y2={y2} />
+          const diag = (a === 'o5' && b === 'o15') || (a === 'o10' && b === 'o0')
+          return <line key={a + b} className={diag ? 'diag' : ''} x1={x1} y1={y1} x2={x2} y2={y2} />
         })}
       </svg>
       {NODES.map((n) => {

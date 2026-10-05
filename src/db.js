@@ -58,6 +58,38 @@ function memSet(path, val) {
 function notify() {
   mem.subs.forEach((cb) => cb())
 }
+// 데모에서도 Firebase 와 똑같이 쓰기 값을 검사 (undefined·NaN·함수·잘못된 키, update 경로 겹침이면 에러)
+// → 실서버에서만 터지는 버그를 데모 자동 테스트에서 미리 잡기 위함
+const BAD_KEY = /[\[\].#$\/\u0000-\u001F\u007F]/
+function fbFail(msg) {
+  console.error('[fbcheck] ' + msg)
+  throw new Error('Firebase 쓰기 오류: ' + msg)
+}
+function fbCheck(v, where) {
+  if (v === undefined) fbFail(`undefined 값 (${where})`)
+  if (typeof v === 'function') fbFail(`함수 값 (${where})`)
+  if (typeof v === 'number' && !Number.isFinite(v)) fbFail(`${v} 값 (${where})`)
+  if (v && typeof v === 'object') {
+    for (const k in v) {
+      if (!Object.prototype.hasOwnProperty.call(v, k)) continue
+      if (k === '' || BAD_KEY.test(k)) fbFail(`잘못된 키 "${k}" (${where})`)
+      fbCheck(v[k], `${where}/${k}`)
+    }
+  }
+}
+function fbCheckUpdate(path, updates) {
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) fbFail(`update 값이 객체가 아님 (${path})`)
+  const keys = Object.keys(updates)
+  const norm = keys.map((k) => parts(k))
+  keys.forEach((k, i) => {
+    if (!norm[i].length) fbFail(`빈 경로 (${path})`)
+    norm[i].forEach((seg) => BAD_KEY.test(seg) && fbFail(`잘못된 경로 "${k}" (${path})`))
+    fbCheck(updates[k], `${path}/${k}`)
+  })
+  for (let i = 0; i < norm.length; i++)
+    for (let j = 0; j < norm.length; j++)
+      if (i !== j && norm[i].length <= norm[j].length && norm[i].every((s, x) => s === norm[j][x])) fbFail(`경로 겹침 "${keys[i]}" ⊂ "${keys[j]}" (${path})`)
+}
 
 // ---------- 공개 API ----------
 let fbDb = null
@@ -73,11 +105,15 @@ export async function dbGet(path) {
   return snap.exists() ? snap.val() : null
 }
 export async function dbSet(path, val) {
-  if (DEMO) return memSet(path, val)
+  if (DEMO) {
+    fbCheck(val, path)
+    return memSet(path, val)
+  }
   return set(ref(fbDb, path), val)
 }
 export async function dbUpdate(path, updates) {
   if (DEMO) {
+    fbCheckUpdate(path, updates)
     Object.entries(updates).forEach(([k, v]) => memSet(`${path}/${k}`, v))
     return
   }
