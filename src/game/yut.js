@@ -103,12 +103,12 @@ const GAMBLE = { emoji: '🎰', text: '놉카드\n도박', type: 'gamble' }
 const BALANCE = { emoji: '⚖️', text: '밸런스\n게임', type: 'balance' }
 const TWOTOUCH = { emoji: '✌️', text: '투터치', type: 'option', minutes: 5 }
 const REACT = { emoji: '⚡', text: '반응속도\n게임', type: 'reaction' }
-const RIVAL = { emoji: '🤝', text: '상대 팀 한 명\n골라 같이 마셔', drink: 'self' }
+const RIVAL = { emoji: '🤝', text: '상대 1명\n골라 짠!', drink: 'self' }
 const BOMB = { emoji: '💣', text: '폭탄\n돌리기', type: 'bomb' }
 const LIAR = { emoji: '🤥', text: '라이어\n게임', type: 'liar' }
-const NOWORD = { emoji: '🙊', text: '아니·근데·진짜\n금지', type: 'option', minutes: 3 }
+const NOWORD = { emoji: '🙊', text: '아니·근데\n진짜 금지', type: 'option', minutes: 3 }
 const RELEASE = { emoji: '🔓', text: '옵션 해제', type: 'release' }
-const CHEERS = { emoji: '🥃', text: '건배사 하고\n다 같이 원샷', drink: 'all' }
+const CHEERS = { emoji: '🥃', text: '건배사 후\n전원 원샷', drink: 'all' }
 const VOTE = { emoji: '🗳️', text: '다수결 지목\n너 마셔!', type: 'vote' }
 
 export const DEFAULT_YUT_CELLS = {
@@ -134,22 +134,16 @@ export const DEFAULT_YUT_CELLS = {
 }
 
 // ---------- 윷 던지기 ----------
-// 값: -1 빽도, 1 도, 2 개, 3 걸, 4 윷, 5 모, 0 낙
+// 값: -1 빽도, 1 도, 2 개, 3 걸, 4 윷, 5 모 (낙 없음)
 export const YUT_NAME = { '-1': '빽도', 0: '낙', 1: '도', 2: '개', 3: '걸', 4: '윷', 5: '모' }
 export const yutName = (v) => YUT_NAME[v] ?? '?'
 export const isBonus = (v) => v === 4 || v === 5
-export const NAK_CHANCE = 0.04
+export const YUT_VALUES = [1, 2, 3, 4, 5, -1] // 도 개 걸 윷 모 빽도
 
-// 윷가락 4개 (평평한 면 = 배) 를 각각 50% 로 던짐. 0번 윷가락에 빽도 표시
+// 도·개·걸·윷·모·빽도가 모두 같은 확률(1/6). 윷가락 모양은 결과에 맞춰 그림 (0번 윷가락에 빽도 표시)
 export function throwSticks(rand = Math.random) {
-  if (rand() < NAK_CHANCE) return { value: 0, sticks: null }
-  const sticks = [0, 1, 2, 3].map(() => rand() < 0.5)
-  const flat = sticks.filter(Boolean).length
-  let value
-  if (flat === 0) value = 5
-  else if (flat === 1) value = sticks[0] ? -1 : 1
-  else value = flat
-  return { value, sticks }
+  const value = YUT_VALUES[Math.min(YUT_VALUES.length - 1, Math.floor(rand() * YUT_VALUES.length))]
+  return { value, sticks: sticksFor(value, rand) }
 }
 // 결과값에 맞는 윷가락 모양 (애니메이션용, true = 배)
 export function sticksFor(value, rand = Math.random) {

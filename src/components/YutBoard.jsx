@@ -1,7 +1,8 @@
-import { NODES, NODE_BY_ID, BIG_NODES, CORNERS, TEAM_INFO, START, CORNER_TR, CORNER_TL, CORNER_BL, nodeLabel } from '../game/yut'
+import { NODES, NODE_BY_ID, BIG_NODES, CORNERS, TEAM_INFO, START, CORNER_TR, CORNER_TL, CORNER_BL, nodeLabel, cellNo } from '../game/yut'
 
-// 윷판: 좌표(0~100)를 판 안쪽 여백(INSET%)을 두고 배치
-const INSET = 6.5
+// 윷판: 좌표(0~100)를 판 안쪽 여백(INSET%)을 두고 배치.
+// 칸을 거의 맞닿게 키워서 전체 보기에서도 칸마다 벌칙 글자가 보이게 함 (크기 단위 cqw = 판 너비의 1%)
+const INSET = 5.45
 const SPAN = 100 - INSET * 2
 const at = (x, y) => ({ left: `${INSET + (x * SPAN) / 100}%`, top: `${INSET + (y * SPAN) / 100}%` })
 const pos = (n) => at(n.x, n.y)
@@ -25,6 +26,71 @@ const ARROWS = [
   { x: 50, y: 89, rot: 0 },
 ]
 
+// ---------- 칸 글자 맞추기 ----------
+// 글자 폭(em)을 어림해서, 칸 안에 들어가는 가장 큰 글자 크기와 줄 나눔을 정함 (Pretendard 기준으로 잰 값)
+function emWidth(s) {
+  let w = 0
+  for (const ch of s) {
+    const c = ch.codePointAt(0)
+    if ((c >= 0xac00 && c <= 0xd7a3) || (c >= 0x3131 && c <= 0x318e)) w += 0.86
+    else if (c === 0x20) w += 0.22
+    else if (c >= 0x30 && c <= 0x39) w += 0.47
+    else if (c >= 0x41 && c <= 0x5a) w += 0.72
+    else if (c >= 0x61 && c <= 0x7a) w += 0.56
+    else if ('!.,·:;\'"|'.includes(ch)) w += 0.3
+    else if ('()[]{}'.includes(ch)) w += 0.39
+    else if (c < 0x2000) w += 0.62
+    else w += 1.1 // 이모지 등
+  }
+  return w
+}
+// 띄어쓰기 기준으로 가장 고르게 두 줄로 나눔 (띄어쓰기가 없으면 그대로)
+function splitLine(line) {
+  const sp = [...line.matchAll(/ /g)].map((m) => m.index)
+  if (!sp.length) return [line]
+  const total = emWidth(line)
+  let best = null
+  sp.forEach((i) => {
+    const a = line.slice(0, i).trim()
+    const b = line.slice(i + 1).trim()
+    if (!a || !b) return
+    const score = Math.max(emWidth(a), emWidth(b))
+    if (!best || score < best.score) best = { a, b, score }
+  })
+  return best && best.score < total ? [best.a, best.b] : [line]
+}
+// 칸 종류별 글자 상자 (cqw): w = 글자 폭, h2 = 이모지 줄이 있을 때 글자 높이, h3 = 이모지를 위로 올렸을 때
+const BOX = {
+  cell: { w: 8.0, h2: 5.6, h3: 6.6, max: 2.45 },
+  diag: { w: 7.1, h2: 4.85, h3: 5.75, max: 2.25 },
+}
+const LH = 1.08
+const MIN_FS = 1.9 // 이보다 작아지면 줄을 더 나눠 봄
+export function fitCellText(text, kind = 'cell') {
+  const box = BOX[kind] || BOX.cell
+  let lines = String(text || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  if (!lines.length) return { lines: [], fs: box.max, l3: false }
+  // 너무 긴 줄은 띄어쓰기에서 나눔 (최대 4줄)
+  for (let guard = 0; guard < 4; guard++) {
+    const widest = lines.reduce((m, l, i) => (emWidth(l) > emWidth(lines[m]) ? i : m), 0)
+    if ((box.w / emWidth(lines[widest])) >= MIN_FS || lines.length >= 4) break
+    const parts = splitLine(lines[widest])
+    if (parts.length < 2) break
+    lines = [...lines.slice(0, widest), ...parts, ...lines.slice(widest + 1)]
+  }
+  const maxEm = Math.max(...lines.map(emWidth))
+  const l3 = lines.length >= 3
+  const h = l3 ? box.h3 : box.h2
+  const fs = Math.min(box.max, box.w / maxEm, h / (lines.length * LH))
+  return { lines, fs: Math.round(fs * 100) / 100, l3 }
+}
+
+// 칸 번호 (짧게): 출발 칸은 글자에 '출발·골인'이 있으니 비움, 나머지는 번호만 — 모서리·가운데는 칸 모양(네온 테두리)으로 구분
+const shortLabel = (id) => (id === START ? '' : String(cellNo(id) ?? ''))
+
 // pieces: { [team]: [{ n }] }  → 노드별 말 묶음
 function stacksOf(pieces, teamCount) {
   const out = {}
@@ -39,7 +105,7 @@ function stacksOf(pieces, teamCount) {
   return Object.values(out)
 }
 
-export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackTap, movable, dests, activeNode, mover, hide, ghost, zoom, children }) {
+export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackTap, movable, dests, activeNode, mover, hide, ghost, children }) {
   let stacks = stacksOf(pieces, teamCount)
   // 이동 애니메이션 중: 도착 칸의 말 묶음에서 움직이는 말 수만큼 빼고, 움직이는 말은 따로 그림
   if (hide) {
@@ -48,9 +114,12 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
       .filter((s) => s.count > 0)
   }
   if (ghost) stacks = [...stacks.filter((s) => s.node !== ghost.node), { ...ghost, ghost: true }]
+  // 말이 서 있는 칸은 그 팀 색 테두리로 표시 (말 표시는 칸 오른쪽 위 작은 점이라 글자를 안 가림)
+  const occ = {}
+  stacks.forEach((s) => (occ[s.node] = s))
   if (mover) stacks = [...stacks, { ...mover, moving: true }]
   return (
-    <div className={`yut-board ${zoom ? 'zoom' : ''}`}>
+    <div className="yut-board">
       <svg className="yut-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
         {LINES.map(([a, b, kind]) => {
           const [x1, y1] = svgPt(a)
@@ -66,21 +135,22 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
       {NODES.map((n) => {
         const c = cells[n.id] || {}
         const big = BIG_NODES.has(n.id)
-        const diag = !/^o/.test(n.id)
-        const lines = String(c.text || '').split('\n')
-        const long = lines.some((l) => l.length > 6)
+        const diag = !/^o/.test(n.id) && n.id !== 'C'
+        const fit = fitCellText(c.text, diag ? 'diag' : 'cell')
+        const o = occ[n.id]
+        const canHere = o && !o.ghost && movable?.has(n.id) && movable.team === o.team
         return (
           <button
             key={n.id}
-            className={`ycell ${big ? 'big' : ''} ${diag ? 'diag' : ''} ${n.id === START ? 'home' : ''} ${CORNERS.has(n.id) ? 'corner' : ''} ${n.id === 'C' ? 'center' : ''} ${activeNode === n.id ? 'active' : ''} ${dests?.has(n.id) ? 'dest' : ''} ${c.edited ? 'edited' : ''}`}
-            style={pos(n)}
+            className={`ycell ${big ? 'big' : ''} ${diag ? 'diag' : ''} ${n.id === START ? 'home' : ''} ${CORNERS.has(n.id) ? 'corner' : ''} ${n.id === 'C' ? 'center' : ''} ${fit.l3 ? 'l3' : ''} ${activeNode === n.id ? 'active' : ''} ${dests?.has(n.id) ? 'dest' : ''} ${c.edited ? 'edited' : ''} ${o ? 'occ' : ''} ${o?.count > 1 ? 'occ-stack' : ''} ${canHere ? 'occ-can' : ''}`}
+            style={{ ...pos(n), ...(o ? { '--oc': TEAM_INFO[o.team]?.color } : {}) }}
             onClick={() => onCellTap?.(n.id)}
-            aria-label={`${nodeLabel(n.id)} ${lines.join(' ')}`}
+            aria-label={`${nodeLabel(n.id)} ${fit.lines.join(' ')}`}
           >
-            <span className="ycell-no">{nodeLabel(n.id)}</span>
+            <span className="ycell-no">{shortLabel(n.id)}</span>
             <span className="ycell-emo">{c.emoji}</span>
-            <span className={`ycell-text ${long ? 'long' : ''}`}>
-              {lines.map((l, i) => (
+            <span className="ycell-text" style={{ '--fs': fit.fs }}>
+              {fit.lines.map((l, i) => (
                 <span key={i}>{l}</span>
               ))}
             </span>
@@ -92,10 +162,11 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
         if (!n) return null
         const info = TEAM_INFO[s.team]
         const canMove = !s.moving && !s.ghost && movable?.has(s.node) && movable.team === s.team
+        const diag = !/^o/.test(s.node) && s.node !== 'C'
         return (
           <button
             key={`${s.team}-${s.node}-${s.moving ? 'm' : s.ghost ? 'g' : ''}`}
-            className={`ytoken ${BIG_NODES.has(s.node) ? 'on-big' : ''} ${s.moving ? 'moving' : ''} ${s.ghost ? 'ghost' : ''} ${canMove ? 'can' : ''}`}
+            className={`ytoken ${diag ? 'on-diag' : ''} ${s.count > 1 ? 'stack' : ''} ${s.moving ? 'moving' : ''} ${s.ghost ? 'ghost' : ''} ${canMove ? 'can' : ''}`}
             style={{ ...pos(n), '--tc': info.color }}
             data-team={s.team}
             onClick={(e) => {
@@ -105,8 +176,8 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
             }}
             aria-label={`${info.name} 말 ${s.count}개`}
           >
-            <span className="ytoken-dot" />
-            {s.count > 1 && <span className="ytoken-n">{s.count}</span>}
+            {/* 업은 말: 팀 색 알약에 ×2·×3 크게 (한 개는 점) */}
+            <span className="ytoken-dot">{s.count > 1 ? `×${s.count}` : ''}</span>
           </button>
         )
       })}

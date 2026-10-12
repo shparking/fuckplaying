@@ -811,11 +811,18 @@ textarea {
 }
 
 /* ---------- 윷판 ---------- */
+/* 칸·글자 크기는 판 너비 기준(cqw = 판 너비의 1%) → 폰 크기와 상관없이 같은 모양 */
+.board-scroll {
+  position: relative;
+  border-radius: 22px;
+  /* 판을 화면 가장자리까지 넓혀서 칸을 최대한 크게 */
+  margin-inline: -6px;
+}
 .yut-board {
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
-  border-radius: 26px;
+  border-radius: 22px;
   background:
     radial-gradient(circle at 50% 50%, var(--accent-soft), transparent 62%),
     radial-gradient(var(--board-dot) 1px, transparent 1.3px) 0 0 / 16px 16px,
@@ -824,9 +831,7 @@ textarea {
   box-shadow:
     inset 0 0 50px rgba(0, 0, 0, 0.42),
     0 16px 36px rgba(0, 0, 0, 0.38);
-  /* 가장자리 칸의 말이 잘리지 않게 (배경은 border-radius 로 둥글게 잘림) */
   overflow: visible;
-  /* 칸 글자 크기를 판 너비에 비례시키는 기준 (cqw) */
   container-type: inline-size;
 }
 :root[data-theme='light'] .yut-board {
@@ -850,145 +855,159 @@ textarea {
   stroke: var(--board-diag);
   stroke-dasharray: 1.4 1.3;
 }
+
+/* 칸: 바깥·모서리·가운데 9.15%, 대각선 8.3% (서로 거의 맞닿는 최대 크기) */
 .ycell {
   position: absolute;
-  width: 8.2%;
-  height: 8.2%;
+  width: 9.15%;
+  height: 9.15%;
   transform: translate(-50%, -50%);
-  border-radius: 26%;
+  border-radius: 20%;
   background: var(--sheen), var(--cell-bg);
   border: 1px solid var(--cell-line);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 2px;
+  justify-content: flex-start;
+  padding: 0.35cqw 0.3cqw 0.3cqw;
   color: var(--cell-text);
   overflow: hidden;
   z-index: 1;
 }
 :root[data-theme='light'] .ycell {
-  box-shadow: 0 2px 6px rgba(120, 60, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(120, 60, 0, 0.08);
 }
 .ycell.diag {
-  width: 7.2%;
-  height: 7.2%;
-  border-color: color-mix(in srgb, var(--pink) 32%, var(--cell-line));
+  width: 8.3%;
+  height: 8.3%;
+  border-color: color-mix(in srgb, var(--pink) 34%, var(--cell-line));
 }
+/* 모서리·가운데: 네온 주황 테두리 / 출발·골인: 소주병 초록 */
 .ycell.big {
-  width: 10.8%;
-  height: 10.8%;
-  border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 30%, var(--accent-soft), transparent 72%),
+    radial-gradient(circle at 50% 25%, var(--accent-soft), transparent 75%),
     var(--node-bg);
   border: 1.5px solid var(--accent);
   box-shadow:
-    0 0 12px var(--accent-glow),
-    inset 0 0 12px var(--accent-soft);
+    0 0 10px var(--accent-glow),
+    inset 0 0 10px var(--accent-soft);
   color: var(--text);
 }
 .ycell.home {
   border-color: var(--soju);
   background:
-    radial-gradient(circle at 50% 30%, var(--soju-soft), transparent 72%),
+    radial-gradient(circle at 50% 25%, var(--soju-soft), transparent 75%),
     var(--node-bg);
   box-shadow:
-    0 0 14px color-mix(in srgb, var(--soju) 55%, transparent),
-    inset 0 0 12px var(--soju-soft);
+    0 0 12px color-mix(in srgb, var(--soju) 55%, transparent),
+    inset 0 0 10px var(--soju-soft);
 }
+/* 칸 번호: 왼쪽 위 */
 .ycell-no {
   position: absolute;
-  top: 7%;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 6px;
-  font-size: max(5.5px, 1.55cqw);
+  top: 0.4cqw;
+  left: 0.65cqw;
+  font-size: 1.55cqw;
   font-weight: 800;
   color: var(--text-3);
   line-height: 1;
   white-space: nowrap;
+  letter-spacing: -0.02em;
 }
 .ycell.big .ycell-no {
-  top: 9%;
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 6px;
-  font-size: max(5.5px, 1.5cqw);
-  letter-spacing: 0.02em;
   color: var(--accent);
-  text-shadow: 0 0 6px var(--accent-glow);
+  text-shadow: 0 0 5px var(--accent-glow);
 }
 .ycell.home .ycell-no {
   color: var(--soju);
-  text-shadow: 0 0 6px var(--soju-soft);
+  text-shadow: 0 0 5px var(--soju-soft);
 }
 .ycell-emo {
-  font-size: 12px;
-  font-size: max(10px, 3cqw);
-  line-height: 1;
-  margin-top: 22%;
+  flex: none;
+  height: 2.75cqw;
+  font-size: 2.45cqw;
+  line-height: 2.75cqw;
 }
-.ycell.big .ycell-emo {
-  font-size: 13px;
-  font-size: max(11px, 3.4cqw);
-  margin-top: 16%;
-}
-/* 10×10 판은 칸이 작아서 글자는 '판 크게 보기'에서만 (평소엔 이모지·번호) */
+/* 글자: 칸마다 fitCellText 가 정한 크기 (--fs, 단위 cqw) */
 .ycell-text {
-  display: none;
+  flex: 1;
+  min-height: 0;
+  display: flex;
   flex-direction: column;
   align-items: center;
-  font-size: 1.3cqw;
-  line-height: 1.14;
-  font-weight: 700;
+  justify-content: center;
+  width: 100%;
+  font-size: calc(var(--fs, 2.2) * 1cqw);
+  line-height: 1.08;
+  font-weight: 750;
   text-align: center;
-  margin-top: 1px;
+  letter-spacing: -0.05em;
   word-break: keep-all;
-  letter-spacing: -0.04em;
 }
-.ycell-text.long {
-  font-size: 1.12cqw;
+.ycell-text span {
+  white-space: nowrap;
 }
-/* 크게 보기: 판이 화면보다 커서 칸마다 벌칙 글자까지 보임 */
-.yut-board.zoom .ycell-text {
-  display: flex;
+/* 3줄 이상: 이모지를 번호 줄로 올려서(작게) 글자 자리를 넓힘 */
+.ycell.l3 .ycell-emo {
+  position: absolute;
+  top: 0.15cqw;
+  left: 50%;
+  transform: translateX(-50%);
+  height: auto;
+  font-size: 1.75cqw;
+  line-height: 1;
 }
-.yut-board.zoom .ycell-emo {
-  font-size: 2.3cqw;
-  margin-top: 14%;
+.ycell.l3 .ycell-text {
+  margin-top: 1.75cqw;
 }
-.yut-board.zoom .ycell.big .ycell-emo {
-  font-size: 2.6cqw;
-  margin-top: 13%;
-}
-.yut-board.zoom .ycell-no {
-  font-size: 1.2cqw;
+@supports not (width: 1cqw) {
+  .ycell-no { font-size: 6px; }
+  .ycell-emo { font-size: 9px; height: 11px; line-height: 11px; }
+  .ycell-text { font-size: calc(var(--fs, 2.2) * 3.7px); }
 }
 /* 진행 방향 화살표 */
 .ydir {
   position: absolute;
   z-index: 0;
   transform: translate(-50%, -50%) rotate(var(--rot));
-  font-size: 14px;
-  font-size: max(11px, 3cqw);
+  font-size: 3cqw;
   line-height: 1;
   color: var(--accent);
   opacity: 0.75;
   text-shadow: 0 0 8px var(--accent-glow);
   pointer-events: none;
 }
-.ycell-text span {
-  white-space: nowrap;
-}
 .ycell.edited {
   border-style: dashed;
+}
+/* 말이 서 있는 칸: 그 팀 색 테두리 */
+.ycell.occ {
+  border-color: var(--oc);
+  box-shadow:
+    0 0 0 1.5px var(--oc),
+    0 0 12px color-mix(in srgb, var(--oc) 60%, transparent);
+}
+.ycell.occ-can {
+  animation: occPulse 1s ease-in-out infinite;
+}
+@keyframes occPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1.5px var(--oc),
+      0 0 8px color-mix(in srgb, var(--oc) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2.5px var(--oc),
+      0 0 20px var(--oc);
+  }
 }
 .ycell.active {
   box-shadow:
     0 0 0 2px var(--cyan),
-    0 0 18px var(--cyan);
+    0 0 16px var(--cyan);
 }
 .ycell.dest {
   z-index: 2;
@@ -1009,132 +1028,101 @@ textarea {
   }
 }
 
-/* 말 */
+/* 말: 칸 오른쪽 위 안쪽의 작은 점 (번호·이모지·글자를 가리지 않음). 여러 개 업으면 점 안에 숫자 */
 .ytoken {
+  --half: 4.575cqw;
   position: absolute;
-  width: 5.2%;
-  height: 5.2%;
-  transform: translate(10%, -110%);
+  width: 3.1cqw;
+  height: 3.1cqw;
+  /* 점 중심을 칸 오른쪽 위 모서리 바로 안쪽에 → 칸 밖으로는 칸 사이 틈만큼만 나감 */
+  transform: translate(-50%, -50%) translate(calc(var(--half) - 0.9cqw), calc(0.9cqw - var(--half)));
   z-index: 3;
   padding: 0;
   transition:
     left 0.24s cubic-bezier(0.3, 0.7, 0.3, 1),
     top 0.24s cubic-bezier(0.3, 0.7, 0.3, 1);
 }
+.ytoken.on-diag {
+  --half: 4.15cqw;
+}
+.ytoken::before {
+  /* 손가락으로 누르기 쉽게 터치 영역만 넓힘 */
+  content: '';
+  position: absolute;
+  inset: -1.2cqw;
+}
 .ytoken-dot {
-  display: block;
+  display: grid;
+  place-items: center;
   width: 100%;
   height: 100%;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 42%),
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0) 45%),
     var(--tc);
-  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  border: 1.5px solid rgba(255, 255, 255, 0.95);
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 0 10px var(--tc),
-    0 3px 6px rgba(0, 0, 0, 0.4);
-}
-.ytoken-n {
-  position: absolute;
-  right: -70%;
-  top: -45%;
-  background: #0b0c18;
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 8px var(--tc),
+    0 2px 4px rgba(0, 0, 0, 0.4);
   color: #fff;
-  font-size: 9px;
-  font-size: max(9px, 1.1cqw);
+  font-size: 2cqw;
   font-weight: 900;
-  border-radius: 999px;
-  padding: 0 4px;
-  border: 1.5px solid var(--tc);
-  line-height: 1.3;
-  box-shadow: 0 0 6px var(--tc);
-}
-.ytoken.can {
-  animation: tokenBob 0.9s ease-in-out infinite;
+  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 .ytoken.can .ytoken-dot {
+  animation: tokenBob 0.9s ease-in-out infinite;
   box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.9),
-    0 0 0 3.5px var(--tc),
-    0 0 18px var(--tc);
+    0 0 0 1.5px rgba(255, 255, 255, 0.9),
+    0 0 0 3px var(--tc),
+    0 0 14px var(--tc);
 }
 @keyframes tokenBob {
   0%,
   100% {
-    transform: translate(10%, -110%);
+    transform: translateY(0);
   }
   50% {
-    transform: translate(10%, -160%);
+    transform: translateY(-38%);
   }
 }
 .ytoken.moving {
   z-index: 4;
-  transform: translate(10%, -130%) scale(1.2);
+}
+.ytoken.moving .ytoken-dot {
+  transform: scale(1.35);
+}
+/* 업은 말: 오른쪽 위에 팀 색 알약 '×2' (점보다 넓고 글자가 큼) */
+.ytoken.stack {
+  width: 5.6cqw;
+  height: 3.5cqw;
+  transform: translate(-50%, -50%) translate(calc(var(--half) - 2.1cqw), calc(1.05cqw - var(--half)));
+}
+.ytoken.stack .ytoken-dot {
+  border-radius: 999px;
+  font-size: 2.45cqw;
+  letter-spacing: -0.04em;
+  border-width: 2px;
+}
+.ycell.occ-stack {
+  box-shadow:
+    0 0 0 2.5px var(--oc),
+    0 0 14px color-mix(in srgb, var(--oc) 70%, transparent);
 }
 .ytoken.ghost {
   opacity: 0.85;
 }
-/* 크게 보기에서는 칸이 커지니 말은 상대적으로 작게 (칸 글자 안 가리게) */
-.yut-board.zoom .ytoken {
-  width: 3.8%;
-  height: 3.8%;
-}
-/* 모서리·가운데·출발 같은 큰 원 칸: 원 안쪽 오른쪽 위 */
-.ytoken.on-big {
-  transform: translate(-5%, -95%);
-}
-.ytoken.on-big.can {
-  animation-name: tokenBobBig;
-}
-.ytoken.on-big.moving {
-  transform: translate(-5%, -115%) scale(1.2);
-}
-@keyframes tokenBobBig {
-  0%,
-  100% {
-    transform: translate(-5%, -95%);
-  }
-  50% {
-    transform: translate(-5%, -145%);
-  }
+@supports not (width: 1cqw) {
+  .ytoken { width: 12px; height: 12px; transform: translate(-50%, -50%) translate(9px, -9px); }
+  .ytoken-dot { font-size: 8px; }
 }
 
-/* 판 크게 보기 */
-.board-scroll {
-  position: relative;
-  border-radius: 26px;
-}
-/* 크게 보기: 화면 안의 창으로 큰 판을 손가락으로 밀어서 봄 (위아래·좌우) */
-.board-scroll.zoom {
-  height: clamp(300px, calc(100dvh - var(--dock-h, 170px) - 210px), 135vw);
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  border: 1px solid var(--line-strong);
-  background: var(--board-bg);
-}
-.board-scroll.zoom::-webkit-scrollbar {
-  display: none;
-}
-.board-scroll.zoom .yut-board {
-  width: 250%;
-  border-radius: 0;
-  border: 0;
-}
-.board-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.board-hint {
   margin-top: -2px;
-}
-.board-tools .muted {
-  flex: 1;
   font-size: 12px;
-}
-.board-tools .btn.on {
-  border-color: var(--accent);
-  color: var(--accent);
+  color: var(--text-3);
+  text-align: center;
 }
 
 /* ---------- 윷가락 ---------- */

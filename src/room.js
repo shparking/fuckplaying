@@ -536,7 +536,7 @@ function demoYut(room) {
   if (!DEMO) return null
   const q = new URLSearchParams(window.location.search).get('yut')
   if (!q) return null
-  const list = q.split(',').map((x) => parseInt(x, 10)).filter((x) => !isNaN(x))
+  const list = q.split(',').map((x) => parseInt(x, 10)).filter((x) => [1, 2, 3, 4, 5, -1].includes(x))
   return list.length ? list[(room.throwNo || 0) % list.length] : null
 }
 
@@ -553,21 +553,16 @@ export async function throwYut(code, room) {
   const results = arr(y.results)
   const upd = {
     throwNo: (room.throwNo || 0) + 1,
-    lastThrow: { id: newId(), playerId: id, value, sticks: value === 0 ? null : sticksFor(value) },
+    lastThrow: { id: newId(), playerId: id, value, sticks: sticksFor(value) },
   }
-  upd[`log/${newId()}`] = { t: Date.now(), text: `${me.name} 🥢 ${yutName(value)}${value === 0 ? ' — 마셔! 🍶' : ''}` }
+  upd[`log/${newId()}`] = { t: Date.now(), text: `${me.name} 🥢 ${yutName(value)}` }
   maybeMission(room, upd)
-  if (value === 0) {
-    // 낙: 이번 던지기는 무효 + 던진 사람 마시기
-    addDrinks(room, upd, [id])
-    Object.assign(upd, nextTurnUpdates({ ...room, yut: { ...y, results } }))
-  } else {
-    results.push(value)
-    if (isBonus(value)) {
-      upd['yut/stage'] = 'throw'
-      upd['yut/results'] = results
-    } else Object.assign(upd, nextTurnUpdates({ ...room, yut: { ...y, results } }))
-  }
+  // 낙 없음: 도·개·걸·윷·모·빽도 중 하나 (윷·모는 한 번 더)
+  results.push(value)
+  if (isBonus(value)) {
+    upd['yut/stage'] = 'throw'
+    upd['yut/results'] = results
+  } else Object.assign(upd, nextTurnUpdates({ ...room, yut: { ...y, results } }))
   await roomUpdate(code, upd)
 }
 

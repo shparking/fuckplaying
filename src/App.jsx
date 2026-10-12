@@ -70,6 +70,10 @@ import { LIAR_CATEGORIES, liarCategory } from './game/liar'
 import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID } from './game/yut'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// 흔들어서 던지기 감도 (m/s², 횟수, ms): 세게 흔드는 동안 0.8초 안에 4번 이상 강한 움직임
+const SHAKE_FORCE = 15
+const SHAKE_HITS = 4
+const SHAKE_WINDOW_MS = 800
 
 const KIND_LABEL = {
   nop: '놉카드 획득',
@@ -1408,16 +1412,9 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
   )
 }
 
-// 판 아래 줄: 안내 + 판 크게/작게 보기
-function BoardTools({ zoom, onToggle, hint }) {
-  return (
-    <div className="board-tools">
-      <span className="muted">{zoom ? '판을 손가락으로 밀어서 보세요' : hint}</span>
-      <button className={`btn btn-ghost btn-sm ${zoom ? '' : 'on'}`} onClick={onToggle}>
-        {zoom ? '🗺️ 전체 보기' : '🔍 크게 보기'}
-      </button>
-    </div>
-  )
+// 판 아래 안내 한 줄 (판은 항상 전체가 보이고 칸마다 글자가 보임)
+function BoardHint({ hint }) {
+  return <div className="board-hint">{hint}</div>
 }
 
 export default function App() {
@@ -1464,19 +1461,6 @@ export default function App() {
   const [moveAnim, setMoveAnim] = useState(null) // { team, node, count }
   const [animating, setAnimating] = useState(false)
   const [sel, setSel] = useState(0) // 고른 윷 결과 번호
-  // 판 크게 보기 (기본): 칸마다 벌칙 글자까지 보이고 손가락으로 밀어서 봄. 전체 보기는 이모지·번호만
-  const [zoom, setZoom] = useState(() => {
-    try {
-      return localStorage.getItem('yt-board-zoom') !== '0'
-    } catch {
-      return true
-    }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem('yt-board-zoom', zoom ? '1' : '0')
-    } catch {}
-  }, [zoom])
   const boardRef = useRef(null)
   const [shake, setShake] = useState(() => {
     try {
@@ -1689,22 +1673,40 @@ export default function App() {
     }
   }, [room?.turnNo, room?.status, curId])
 
-  // 흔들어서 던지기
+  // 흔들어서 던지기: 가만히 두거나 탁자에 내려놓는 충격·살짝 부딪힘은 무시하고, '세게 여러 번' 흔들 때만 던짐
+  //  - 중력을 뺀 가속도(없는 기기는 직전 값과의 차이)가 SHAKE_FORCE 를 넘는 순간이 SHAKE_WINDOW_MS 안에 SHAKE_HITS 번 이상
+  //  - 내 차례가 되고 1초 동안은 무시 (폰을 집어 드는 움직임)
+  const shakeRef = useRef({ room: null, code: '' })
+  shakeRef.current = { room, code }
   useEffect(() => {
     if (!shake || !canThrow) return
-    let last = 0
+    const armedAt = Date.now() + 1000
+    let prev = null
+    let hits = []
+    let fired = false
     const onMotion = (e) => {
-      const a = e.accelerationIncludingGravity || e.acceleration
-      if (!a) return
-      const mag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2)
-      if (mag > 22 && Date.now() - last > 1500) {
-        last = Date.now()
-        throwYut(code, room)
+      const now = Date.now()
+      const lin = e.acceleration
+      let force = 0
+      if (lin && lin.x != null) force = Math.hypot(lin.x || 0, lin.y || 0, lin.z || 0)
+      else {
+        const g = e.accelerationIncludingGravity
+        if (!g || g.x == null) return
+        const cur = { x: g.x || 0, y: g.y || 0, z: g.z || 0 }
+        if (prev) force = Math.hypot(cur.x - prev.x, cur.y - prev.y, cur.z - prev.z)
+        prev = cur
+      }
+      if (fired || now < armedAt) return
+      if (force > SHAKE_FORCE) hits.push(now)
+      hits = hits.filter((t) => now - t < SHAKE_WINDOW_MS)
+      if (hits.length >= SHAKE_HITS) {
+        fired = true
+        throwYut(shakeRef.current.code, shakeRef.current.room)
       }
     }
     window.addEventListener('devicemotion', onMotion)
     return () => window.removeEventListener('devicemotion', onMotion)
-  }, [shake, canThrow, room, code])
+  }, [shake, canThrow])
   const toggleShake = async () => {
     if (shake) {
       setShake(false)
@@ -1767,55 +1769,6 @@ export default function App() {
     return () => clearInterval(t)
   }, [room, me, code])
 
-  // 크게 보기: 봐야 할 곳(고를 칸·움직이는 말·지금 팀 말)이 창 가운데 오게 위아래·좌우로 이동
-  const boardFocus = (els, onlyIfHidden = false) => {
-    const box = boardRef.current
-    if (!zoom || !box || !els.length) return
-    const b = box.getBoundingClientRect()
-    let x1 = Infinity
-    let y1 = Infinity
-    let x2 = -Infinity
-    let y2 = -Infinity
-    els.forEach((el) => {
-      const r = el.getBoundingClientRect()
-      x1 = Math.min(x1, r.left)
-      y1 = Math.min(y1, r.top)
-      x2 = Math.max(x2, r.right)
-      y2 = Math.max(y2, r.bottom)
-    })
-    if (onlyIfHidden) {
-      const m = Math.min(b.width, b.height) * 0.15
-      if (x1 >= b.left + m && x2 <= b.right - m && y1 >= b.top + m && y2 <= b.bottom - m) return
-    }
-    const cx = (x1 + x2) / 2 - b.left + box.scrollLeft
-    const cy = (y1 + y2) / 2 - b.top + box.scrollTop
-    box.scrollTo({ left: cx - box.clientWidth / 2, top: cy - box.clientHeight / 2, behavior: 'smooth' })
-  }
-  const destKey = [...dests].join(',')
-  useEffect(() => {
-    const box = boardRef.current
-    if (!zoom || !box) return
-    const els = [...box.querySelectorAll('.ycell.dest, .ytoken.can')]
-    if (els.length) return boardFocus(els)
-    if (room?.status !== 'playing') return boardFocus([...box.querySelectorAll('.ycell.home')])
-  }, [zoom, destKey, room?.status])
-  // 차례가 바뀌면 그 팀 말들(없으면 출발 칸) 쪽으로
-  useEffect(() => {
-    const box = boardRef.current
-    if (!zoom || !box || room?.status !== 'playing') return
-    const t = setTimeout(() => {
-      const mine = [...box.querySelectorAll(`.ytoken[data-team="${curTeam}"]`)]
-      boardFocus(mine.length ? mine : [...box.querySelectorAll('.ycell.home')])
-    }, 350)
-    return () => clearTimeout(t)
-  }, [zoom, room?.turnNo, room?.status])
-  // 말이 움직이는 동안: 창 밖으로 나가면 따라감
-  useEffect(() => {
-    const box = boardRef.current
-    if (!zoom || !box || !moveAnim) return
-    const el = box.querySelector('.ytoken.moving')
-    if (el) boardFocus([el], true)
-  }, [zoom, moveAnim?.node])
 
   // 대기실 ↔ 게임 화면이 바뀌면 맨 위(점수판·윷판)부터 보이게
   useEffect(() => {
@@ -2222,10 +2175,10 @@ export default function App() {
             <div className="card card-pad muted">방장이 시작하면 자동으로 게임 화면으로 넘어가요.</div>
           )}
 
-          <div ref={boardRef} className={`board-scroll ${zoom ? 'zoom' : ''}`}>
-            <YutBoard cells={cells} pieces={{}} teamCount={tc} onCellTap={onCellTap} zoom={zoom} />
+          <div ref={boardRef} className="board-scroll">
+            <YutBoard cells={cells} pieces={{}} teamCount={tc} onCellTap={onCellTap} />
           </div>
-          <BoardTools zoom={zoom} onToggle={() => setZoom((z) => !z)} hint={isHost ? '칸을 누르면 내용을 고칠 수 있어요' : '칸을 누르면 벌칙이 크게 보여요'} />
+          <BoardHint hint={isHost ? '칸을 누르면 내용을 고칠 수 있어요' : '칸을 누르면 벌칙이 크게 보여요'} />
         </>
       )}
 
@@ -2328,7 +2281,7 @@ export default function App() {
           <OptionTimers options={room.options} />
           <MissionBanner room={room} me={me} />
 
-          <div ref={boardRef} className={`board-scroll ${zoom ? 'zoom' : ''}`}>
+          <div ref={boardRef} className="board-scroll">
             <YutBoard
               cells={cells}
               pieces={pieces}
@@ -2341,10 +2294,9 @@ export default function App() {
               mover={mover}
               hide={hide}
               ghost={ghost}
-              zoom={zoom}
             />
           </div>
-          <BoardTools zoom={zoom} onToggle={() => setZoom((z) => !z)} hint="칸을 누르면 벌칙이 크게 보여요" />
+          <BoardHint hint="칸을 누르면 벌칙이 크게 보여요" />
           <ThrowOverlay anim={throwAnim} who={room.players[throwAnim?.playerId]?.name || ''} teamColor={TEAM_INFO[teamOf(room, throwAnim?.playerId)]?.color} />
 
           {/* 팀원 · 놉카드 (내 배지를 눌러 사용/양도) */}
