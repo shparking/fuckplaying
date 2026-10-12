@@ -959,7 +959,8 @@ textarea {
   line-height: 1;
 }
 .ycell.l3 .ycell-text {
-  margin-top: 1.75cqw;
+  margin-top: 1.6cqw;
+  line-height: 1.02;
 }
 @supports not (width: 1cqw) {
   .ycell-no { font-size: 6px; }

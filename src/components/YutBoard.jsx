@@ -59,13 +59,17 @@ function splitLine(line) {
   })
   return best && best.score < total ? [best.a, best.b] : [line]
 }
+// 모든 칸 글자 크기를 똑같이 (판 너비의 1.9% = '의리주 마셔!(글라스에)' 칸 크기). 이 크기로 안 들어가는 줄만 띄어쓰기에서 나누고,
+// 나눠도 안 들어가는 긴 단어만 그 칸에서 조금 작아짐
+export const CELL_FS = 1.9
 // 칸 종류별 글자 상자 (cqw): w = 글자 폭, h2 = 이모지 줄이 있을 때 글자 높이, h3 = 이모지를 위로 올렸을 때
 const BOX = {
-  cell: { w: 8.0, h2: 5.6, h3: 6.6, max: 2.45 },
-  diag: { w: 7.1, h2: 4.85, h3: 5.75, max: 2.25 },
+  cell: { w: 8.0, h2: 5.6, h3: 6.7, max: CELL_FS },
+  diag: { w: 7.1, h2: 4.85, h3: 5.85, max: CELL_FS },
 }
-const LH = 1.08
-const MIN_FS = 1.9 // 이보다 작아지면 줄을 더 나눠 봄
+const LH = 1.08 // 줄 간격 (세 줄 이상은 LH3 로 조금 좁게 → 작은 대각선 칸도 같은 글자 크기)
+const LH3 = 1.02
+const MIN_FS = CELL_FS // 이 크기로 안 들어가면 줄을 더 나눠 봄
 export function fitCellText(text, kind = 'cell') {
   const box = BOX[kind] || BOX.cell
   let lines = String(text || '')
@@ -84,7 +88,7 @@ export function fitCellText(text, kind = 'cell') {
   const maxEm = Math.max(...lines.map(emWidth))
   const l3 = lines.length >= 3
   const h = l3 ? box.h3 : box.h2
-  const fs = Math.min(box.max, box.w / maxEm, h / (lines.length * LH))
+  const fs = Math.min(box.max, box.w / maxEm, h / (lines.length * (l3 ? LH3 : LH)))
   return { lines, fs: Math.round(fs * 100) / 100, l3 }
 }
 
