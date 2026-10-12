@@ -30,21 +30,23 @@ export function preloadThrow3D() {
 }
 
 // 윷가락 4개. sticks[i] === true 면 배(평평한 면, X 무늬), false 면 등(둥근 면)
-// 0번 윷가락의 배에는 빽도 표시
+// 0번 윷가락은 빽도 윷: 배에 XXX 대신 '-' 하나
 export function Sticks({ sticks, spinning, small }) {
   const s = sticks || [false, true, false, true]
   return (
     <div className={`sticks ${spinning ? 'spin' : ''} ${small ? 'small' : ''}`} aria-hidden>
       {s.map((flat, i) => (
         <span key={i} className={`stick ${flat ? 'flat' : 'round'} ${i === 0 ? 'back' : ''}`} style={{ '--i': i }}>
-          {flat && (
-            <>
-              <i />
-              <i />
-              <i />
-            </>
-          )}
-          {flat && i === 0 && <b className="back-mark" title="빽도 표시" />}
+          {flat &&
+            (i === 0 ? (
+              <b className="back-mark" title="빽도 윷 (-)" />
+            ) : (
+              <>
+                <i />
+                <i />
+                <i />
+              </>
+            ))}
         </span>
       ))}
     </div>

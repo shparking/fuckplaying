@@ -113,9 +113,10 @@ const CHEERS = { emoji: '🥃', text: '건배사 후\n전원 원샷', drink: 'al
 const VOTE = { emoji: '🗳️', text: '다수결 지목\n너 마셔!', type: 'vote' }
 // 팀 대결 미니게임: 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심 (개인전 게임 자리를 대신함)
 const SYNC = { emoji: '👯', text: '팀\n이구동성', type: 'teamSync' }
-const TAPWAR = { emoji: '🪢', text: '연타\n줄다리기', type: 'tapWar' }
+const TAPWAR = { emoji: '🦦', text: '연타\n줄다리기', type: 'tapWar' }
 const TREACT = { emoji: '⚡', text: '팀\n반응속도', type: 'teamReact' }
 const TBOMB = { emoji: '💣', text: '폭탄 돌리기\n팀전', type: 'teamBomb' }
+const TRAP = { emoji: '🎨', text: '색깔\n함정', type: 'colorTrap' }
 // 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
 const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
 const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
@@ -132,13 +133,13 @@ export const DEFAULT_YUT_CELLS = {
   o19: SOJU_ADD, o20: TWOTOUCH, o21: AI, o22: TREACT, o23: RIVAL, o24: YOUNG, o25: TBOMB, o26: NOP,
   o27: TAPWAR, // 왼쪽 아래 모서리
   // 아래 변 (→ 골인)
-  o28: AGAIN, o29: TEAM, o30: NOWORD, o31: PICK, o32: RELEASE, o33: SON, o34: SOJU_ADD, o35: CHEERS,
+  o28: AGAIN, o29: TEAM, o30: NOWORD, o31: PICK, o32: RELEASE, o33: TRAP, o34: SOJU_ADD, o35: CHEERS,
   // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래)
   a1: SYNC, a2: NOP, a3: TRUTH, a4: SOJU_ADD,
   C: SOJU_BANK, // 가운데: 소주 보관소 (고정)
   a5: RELEASE, a6: TBOMB, a7: TAPWAR, a8: STEAL,
   // 대각선 B (왼쪽 위 → 가운데 → 골인)
-  b1: TREACT, b2: YOUNG, b3: AGAIN, b4: AI,
+  b1: TREACT, b2: TRAP, b3: AGAIN, b4: AI,
   b5: SOJU_ADD, b6: GAMBLE, b7: TEAM, b8: CHEERS,
 }
 
@@ -149,7 +150,7 @@ export const yutName = (v) => YUT_NAME[v] ?? '?'
 export const isBonus = (v) => v === 4 || v === 5
 export const YUT_VALUES = [1, 2, 3, 4, 5, -1] // 도 개 걸 윷 모 빽도
 
-// 도·개·걸·윷·모·빽도가 모두 같은 확률(1/6). 윷가락 모양은 결과에 맞춰 그림 (0번 윷가락에 빽도 표시)
+// 도·개·걸·윷·모·빽도가 모두 같은 확률(1/6). 윷가락 모양은 결과에 맞춰 그림 (0번 윷가락 = 빽도 윷, 배에 '-' 표시)
 export function throwSticks(rand = Math.random) {
   const value = YUT_VALUES[Math.min(YUT_VALUES.length - 1, Math.floor(rand() * YUT_VALUES.length))]
   return { value, sticks: sticksFor(value, rand) }

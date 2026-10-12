@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import YutBoard from './components/YutBoard'
+import GameBoard, { preloadBoard3D, board3dOk } from './components/GameBoard'
 import { ThrowOverlay, Sticks, preloadThrow3D } from './components/YutSticks'
 import { SOLO, LOBBY_TTL_MS } from './db'
 import {
@@ -68,12 +69,12 @@ import {
   TEAM_GAMES,
   liveTeams,
 } from './room'
-import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel } from './components/TeamGames'
+import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel } from './components/TeamGames'
 import { BALANCE_TOPICS } from './game/balance'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
 import { LIAR_CATEGORIES, liarCategory } from './game/liar'
-import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID } from './game/yut'
+import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID, START } from './game/yut'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // 흔들어서 던지기 감도 (m/s², 횟수, ms): 세게 흔드는 동안 0.8초 안에 4번 이상 강한 움직임
@@ -105,6 +106,7 @@ const KIND_LABEL = {
   tapWar: '연타 줄다리기',
   teamReact: '팀 반응속도',
   teamBomb: '폭탄 돌리기 팀전',
+  colorTrap: '색깔 함정',
   sojuAdd: '소주 +1 적립',
   sojuBank: '소주 보관소',
 }
@@ -1334,6 +1336,8 @@ function OptionTimers({ options }) {
 
 // 진단 패널: 주소 뒤에 ?debug=1 을 붙이면 표시. 오류와 방 상태를 모아 복사할 수 있음
 const DEBUG = new URLSearchParams(window.location.search).has('debug')
+// 테스트 도구(?debug)에서만 보이는 예전 말 선택 목록 (&nolist 를 붙이면 판에서 고르는 화면 그대로)
+const DEBUG_MOVES = DEBUG && !new URLSearchParams(window.location.search).has('nolist')
 const errLog = []
 if (DEBUG) {
   window.addEventListener('error', (e) => errLog.push(`[error] ${e.message} @${e.filename?.split('/').pop()}:${e.lineno}`))
@@ -1499,9 +1503,14 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
   )
 }
 
-// 판 아래 안내 한 줄 (판은 항상 전체가 보이고 칸마다 글자가 보임)
-function BoardHint({ hint }) {
-  return <div className="board-hint">{hint}</div>
+// 판 아래 안내 한 줄 (판은 항상 전체가 보이고 칸마다 글자가 보임) + 오른쪽에 3D/평면 판 바꾸기
+function BoardHint({ hint, extra }) {
+  return (
+    <div className={`board-hint ${extra ? 'with-extra' : ''}`}>
+      <span>{hint}</span>
+      {extra}
+    </div>
+  )
 }
 
 export default function App() {
@@ -1547,6 +1556,22 @@ export default function App() {
   const [moveAnim, setMoveAnim] = useState(null) // { team, node, count }
   const [animating, setAnimating] = useState(false)
   const [sel, setSel] = useState(0) // 고른 윷 결과 번호
+  const [pick, setPick] = useState(null) // 판에서 고른 말 (칸 id 또는 'home' = 새 말)
+  // 게임 판 3D(수달 말) / 평면 — 기기마다 기억. 3D 를 못 띄우면 이번만 평면으로
+  const [board3d, setBoard3dState] = useState(() => {
+    try {
+      return localStorage.getItem('board3d') !== '0'
+    } catch {
+      return true
+    }
+  })
+  const setBoard3d = (on, auto) => {
+    setBoard3dState(on)
+    if (auto) return
+    try {
+      localStorage.setItem('board3d', on ? '1' : '0')
+    } catch {}
+  }
   const boardRef = useRef(null)
   const [shake, setShake] = useState(() => {
     try {
@@ -1734,11 +1759,22 @@ export default function App() {
   const options = canMove && selIdx >= 0 ? moveOptions(pieces, curTeam, results[selIdx]) : []
   const movable = new Set(options.filter((o) => o.from !== 'home').map((o) => o.from))
   movable.team = curTeam
-  const dests = new Set(options.filter((o) => !o.finished).map((o) => o.dest))
+  // 판에서 말 고르기: 튀는 말(또는 출발 칸의 '새 말')을 누르면 고른 말 → 그 말이 갈 칸만 빛남. 고를 말이 하나뿐이면 저절로 골라 둠
+  const canNew = options.some((o) => o.from === 'home')
+  const homeLeft = options.find((o) => o.from === 'home')?.homeLeft || 0
+  const froms = [...new Set(options.map((o) => o.from))]
+  const selFrom = pick != null && froms.includes(pick) ? pick : froms.length === 1 ? froms[0] : null
+  const selOpts = selFrom != null ? options.filter((o) => o.from === selFrom) : []
+  const dests = new Set(selOpts.filter((o) => !o.finished).map((o) => o.dest))
+  const selGoal = selOpts.some((o) => o.finished)
+  const routes = selOpts.length > 1 ? Object.fromEntries(selOpts.filter((o) => !o.finished).map((o) => [o.dest, `${routeArrow(o)} ${routeLabel(o) || '이동'}`])) : null
   const playerCount = Object.keys(room?.players || {}).filter((pid) => room.players[pid]?.name).length
 
-  // 결과가 바뀌면 첫 번째 쓸 수 있는 윷을 기본 선택
-  useEffect(() => setSel(0), [results.length, room?.turnNo])
+  // 결과가 바뀌면 첫 번째 쓸 수 있는 윷을 기본 선택 + 고른 말 풀기
+  useEffect(() => {
+    setSel(0)
+    setPick(null)
+  }, [results.length, room?.turnNo])
 
   // 이동 애니메이션 표시값: 움직이는 말 / 도착 칸에서 잠시 숨길 말 / 잡힌 말(애니메이션 끝까지 보여줌)
   const lm = room?.lastMove
@@ -1860,9 +1896,11 @@ export default function App() {
 
 
   // 게임 화면에 들어오면 3D 윷 던지기를 미리 불러 둠 (첫 던지기부터 바로 나오게)
+  // 3D 판은 대기실에서부터 미리 불러 둠 (게임 시작하자마자 3D 로 보이게)
   useEffect(() => {
     if (room?.status === 'playing') preloadThrow3D()
-  }, [room?.status])
+    if ((room?.status === 'playing' || room?.status === 'lobby') && board3d) preloadBoard3D()
+  }, [room?.status, board3d])
 
   // 대기실 ↔ 게임 화면이 바뀌면 맨 위(점수판·윷판)부터 보이게
   useEffect(() => {
@@ -1952,13 +1990,32 @@ export default function App() {
     } catch {}
   }
 
-  // ---- 판 탭 ----
-  const onCellTap = (node) => {
+  // ---- 판 탭 (말 고르기·이동도 판에서) ----
+  const moveSel = (o) => {
+    setPick(null)
+    moveYut(code, room, selIdx, o.from, o.route)
+  }
+  // 말 고르기: 누르면 고름 → 고른 말을 다시 누르면 취소 (고를 말이 그것뿐이면 바로 이동)
+  const pickOrGo = (from) => {
+    const mine = options.filter((o) => o.from === from)
+    if (!mine.length) return
+    if (selFrom === from) {
+      if (froms.length > 1) return setPick(null)
+      if (mine.length === 1) return moveSel(mine[0])
+      return flash('갈림길! 빛나는 칸 중 가고 싶은 쪽을 눌러 주세요')
+    }
+    setPick(from)
+  }
+  const onCellTap = (node, via) => {
     if (!room) return
     const cell = cells[node] || {}
-    if (canMove && dests.has(node)) {
-      const o = options.find((x) => !x.finished && x.dest === node)
-      if (o) return moveYut(code, room, selIdx, o.from, o.route)
+    if (canMove) {
+      // 고른 말이 갈 칸 (골인은 출발 칸)
+      const o = via === 'new' ? null : selOpts.find((x) => (x.finished ? node === START : x.dest === node))
+      if (o) return moveSel(o)
+      // 출발 칸 = 새 말 꺼내기 (출발 칸에 서 있는 말은 말을 직접 누름)
+      if (node === START && canNew) return pickOrGo('home')
+      if (movable.has(node)) return pickOrGo(node)
     }
     if (isHost && !cell.locked && room.status === 'lobby') {
       setEditing({ node, cell, text: cell.text })
@@ -1967,10 +2024,8 @@ export default function App() {
     setPeek({ node, cell })
   }
   const onStackTap = (node) => {
-    if (!canMove || !movable.has(node)) return
-    const mine = options.filter((o) => o.from === node)
-    if (mine.length === 1) return moveYut(code, room, selIdx, node, mine[0].route)
-    if (mine.length > 1) flash('대각선으로 갈지 직진할지 아래에서 골라 주세요 (빛나는 칸을 눌러도 돼요)')
+    if (!canMove || !movable.has(node)) return onCellTap(node)
+    pickOrGo(node)
   }
 
   // 도착 칸에 다른 팀/우리 팀 말이 있는지 (선택지 설명용)
@@ -2003,7 +2058,9 @@ export default function App() {
                       : '윷을 던지세요'
                 : `${cur?.name || ''}이(가) 던질 차례`
               : myTurn
-                ? '쓸 윷을 고르고, 움직일 말을 고르세요'
+                ? results.length > 1
+                  ? '쓸 윷을 고르고, 판에서 말을 고르세요'
+                  : '판에서 움직일 말을 고르세요'
                 : `${cur?.name || ''}이(가) 말을 고르는 중…`
 
   // ---------- 렌더 ----------
@@ -2352,31 +2409,57 @@ export default function App() {
               </div>
             )}
 
+            {/* 말 고르기는 판에서: 여기엔 고른 말이 어디로 가는지만 한 줄로 */}
             {canMove && options.length > 0 && (
-              <>
-                <div className="move-opts">
-                  {options.map((o) => {
-                    const occ = o.finished ? null : occupant(o.dest)
-                    const hint = occ == null ? '' : occ === curTeam ? ' · 🤝 업기' : ` · 🎯 ${TEAM_INFO[occ].short} 잡기!`
-                    return (
-                      <button key={moveKey(o)} className={`move-opt ${o.route ? `route-${o.route}` : ''}`} onClick={() => moveYut(code, room, selIdx, o.from, o.route)}>
-                        <span className="mo-from">{o.from === 'home' ? `🆕 새 말 (${o.homeLeft}개 대기)` : `${o.count > 1 ? `말 ${o.count}개` : '말'} · ${nodeName(o.from)}`}</span>
-                        <span className="mo-arrow">→</span>
-                        <span className="mo-dest">
-                          {o.route && (
-                            <b className="mo-route">
-                              {routeArrow(o)} {routeLabel(o)}
-                            </b>
-                          )}
+              <div className={`move-hint ${selFrom != null ? 'picked' : ''}`}>
+                {selFrom == null ? (
+                  <>
+                    <b>👆 판에서 움직일 말을 누르세요</b>
+                    <span>통통 튀는 말{canNew ? ` · 새 말은 빛나는 출발 칸 (${homeLeft}개 대기)` : ''}</span>
+                  </>
+                ) : (
+                  <>
+                    <b>
+                      {selFrom === 'home' ? '🆕 새 말' : `${selOpts[0]?.count > 1 ? `말 ${selOpts[0].count}개` : '말'} · ${nodeName(selFrom)}`}
+                      {selOpts.length > 1 ? ' — 갈림길!' : ''}
+                    </b>
+                    {selOpts.map((o) => {
+                      const occ = o.finished ? null : occupant(o.dest)
+                      const hint = occ == null ? '' : occ === curTeam ? ' · 🤝 업기' : ` · 🎯 ${TEAM_INFO[occ].short} 잡기!`
+                      return (
+                        <span key={moveKey(o)} className="mh-dest">
+                          → {o.route ? `${routeArrow(o)} ${routeLabel(o)}: ` : ''}
                           {o.finished ? '🏁 골인!' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
                           {hint && <em>{hint}</em>}
                         </span>
-                      </button>
-                    )
-                  })}
-                </div>
-                <div className="dock-hint">판에서 통통 튀는 말이나 빛나는 칸을 눌러도 옮겨져요</div>
-              </>
+                      )
+                    })}
+                    <span className="mh-sub">
+                      {selOpts.length > 1 ? '빛나는 칸 중 가고 싶은 쪽을 누르세요' : '빛나는 칸을 누르면 이동'}
+                      {froms.length > 1 ? ' · 고른 말을 다시 누르면 취소' : ''}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+            {/* 테스트(?debug)에서만: 예전 선택지 목록 */}
+            {canMove && options.length > 0 && DEBUG_MOVES && (
+              <div className="move-opts">
+                {options.map((o) => (
+                  <button key={moveKey(o)} className={`move-opt ${o.route ? `route-${o.route}` : ''}`} onClick={() => moveSel(o)}>
+                    <span className="mo-from">{o.from === 'home' ? `🆕 새 말 (${o.homeLeft}개 대기)` : `${o.count > 1 ? `말 ${o.count}개` : '말'} · ${nodeName(o.from)}`}</span>
+                    <span className="mo-arrow">→</span>
+                    <span className="mo-dest">
+                      {o.route && (
+                        <b className="mo-route">
+                          {routeArrow(o)} {routeLabel(o)}
+                        </b>
+                      )}
+                      {o.finished ? '🏁 골인!' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
             )}
 
             {stage !== 'move' && room.winner == null && (
@@ -2390,22 +2473,41 @@ export default function App() {
           <MissionBanner room={room} me={me} />
 
           <div ref={boardRef} className="board-scroll">
-            <YutBoard
-              cells={cells}
+            <GameBoard
+              use3d={board3d}
+              cells={canMove && canNew ? { ...cells, [START]: { ...cells[START], emoji: '🆕', text: '새 말\n꺼내기' } } : cells}
+              onFail3d={() => {
+                setBoard3d(false, true)
+                flash('이 폰에서는 3D 판을 띄울 수 없어서 평면 판으로 보여요')
+              }}
               pieces={pieces}
               teamCount={tc}
               onCellTap={onCellTap}
               onStackTap={onStackTap}
               movable={canMove ? movable : null}
+              selected={canMove ? selFrom : null}
               dests={canMove ? dests : null}
+              routes={canMove ? routes : null}
+              goal={canMove && selGoal}
+              newPiece={canMove && canNew ? { team: curTeam, count: homeLeft, can: true } : null}
               activeNode={moveAnim?.node || null}
               mover={mover}
+              moverFrom={lm?.from}
               hide={hide}
               ghost={ghost}
               bank={room.sojuBank || 0}
             />
           </div>
-          <BoardHint hint="칸을 누르면 벌칙이 크게 보여요" />
+          <BoardHint
+            hint="칸을 누르면 벌칙이 크게 보여요"
+            extra={
+              board3dOk() ? (
+                <button className="board-mode" onClick={() => setBoard3d(!board3d)} title="판 보기 바꾸기">
+                  {board3d ? '▦ 평면 판으로' : '🦦 3D 판으로'}
+                </button>
+              ) : null
+            }
+          />
           <ThrowOverlay anim={throwAnim} who={room.players[throwAnim?.playerId]?.name || ''} teamColor={TEAM_INFO[teamOf(room, throwAnim?.playerId)]?.color} />
 
           {/* 팀원 · 팀 놉카드 (우리 팀 배지를 눌러 사용) */}
@@ -2525,6 +2627,7 @@ export default function App() {
       {room && showPending && pending.kind === 'tapWar' && <TapWarPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
       {room && showPending && pending.kind === 'teamReact' && <TeamReactPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
       {room && showPending && pending.kind === 'teamBomb' && <TeamBombPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'colorTrap' && <ColorTrapPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
 
       {/* ---------- 소주 보관소 (가운데 40번) ---------- */}
       {room && showPending && pending.kind === 'sojuBank' && <SojuBankPanel room={room} pending={pending} iAct={iAct} code={code} />}
@@ -2565,9 +2668,10 @@ export default function App() {
                 <div className="cat-grid">
                   {[
                     ['teamSync', '👯', '팀 이구동성'],
-                    ['tapWar', '🪢', '연타 줄다리기'],
+                    ['tapWar', '🦦', '연타 줄다리기'],
                     ['teamReact', '⚡', '팀 반응속도'],
                     ['teamBomb', '💣', '폭탄 돌리기 팀전'],
+                    ['colorTrap', '🎨', '색깔 함정'],
                   ].map(([k, e, n]) => (
                     <button key={k} className="cat-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', k)}>
                       <span className="cat-emo">{e}</span>

@@ -15,7 +15,7 @@ import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus,
 import { BALANCE_TOPICS } from './game/balance'
 import { pickLiarWords } from './game/liar'
 import { pickBombTopic } from './game/bomb'
-import { SYNC_QUESTIONS } from './game/teamgames'
+import { SYNC_QUESTIONS, makeColorRounds } from './game/teamgames'
 import { drawMission, MISSION_CHANCE, MISSION_MIN_GAP } from './game/missions'
 import { autoEmoji } from './game/emoji'
 
@@ -460,11 +460,11 @@ function makePending(room, playerId, pos, kind, title) {
     p.stage = 'ready'
     p.qs = pickSyncQuestions(room)
   }
-  if (kind === 'tapWar' || kind === 'teamReact') p.stage = 'ready'
+  if (kind === 'tapWar' || kind === 'teamReact' || kind === 'colorTrap') p.stage = 'ready'
   if (kind === 'teamBomb') {
     p.stage = 'ready'
     p.topic = pickBombTopic()
-    p.holder0 = teamOf(room, playerId) // 도착한 사람의 팀부터 폭탄을 듦
+    p.holder0 = teamOf(room, playerId) // 도착한 사람의 팀부터 말함 (폭탄은 오프라인으로 돌림)
   }
   if (kind === 'gamble') {
     // ask → spin(roulette, revealedAt). 우리 팀 놉카드가 0장이면 선택 없이 바로 룰렛
@@ -878,7 +878,7 @@ export async function resolvePending(code, room, action, target) {
 
   if (TEAM_GAMES.has(p.kind)) {
     if (!SOLO && myId() !== p.playerId && myId() !== room.hostId) return
-    return resolveTeamGame(code, room, p, action)
+    return resolveTeamGame(code, room, p, action, target)
   }
 
   const id = SOLO ? p.playerId : myId()
@@ -945,7 +945,7 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'choose': {
       // 게임 선택권: 'choose' + target(balance|liar|hunmin) → 그 게임으로 전환
-      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
+      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
       if (action === 'choose' && titles[target]) {
         const np = makePending(room, id, p.pos, target, titles[target])
         await roomUpdate(code, withTopicUpdates(room, np, { pending: np, event: { id: newId(), text: `${me.name} 🎁 ${titles[target]} 선택!` } }))
@@ -1331,7 +1331,7 @@ export function reactionRanking(room, p) {
 // ---------- 팀 대결 미니게임 ----------
 // 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심. 동점이면 룰렛으로 마실 팀을 정함.
 // 진행(시작·룰렛·확인)은 도착한 사람 또는 방장. 시간은 모두 서버 시각(serverNow) 기준이라 폰끼리 화면이 맞음
-export const TEAM_GAMES = new Set(['teamSync', 'tapWar', 'teamReact', 'teamBomb'])
+export const TEAM_GAMES = new Set(['teamSync', 'tapWar', 'teamReact', 'teamBomb', 'colorTrap'])
 export const TEAM_LEAD_MS = 3500 // 시작 버튼 → 3·2·1 → 시작
 export const SYNC_QN = 4 // 이구동성 질문 수
 export const SYNC_ANSWER_MS = 5000 // 질문당 고르는 시간
@@ -1340,13 +1340,19 @@ export const TAP_MS = 30000 // 연타 시간
 export const TAP_SETTLE_MS = 1500 // 연타가 끝나고 마지막 기록이 다 모일 때까지 기다리는 시간
 export const REACT_TIMEOUT_MS = 4000 // 초록불 뒤 이 시간 안에 안 누르면 미참여
 export const REACT_PENALTY_MS = 1500 // 부정출발·미참여는 1.5초로 계산
-export const BOMB_MIN_MS = 20000
+export const BOMB_MIN_MS = 20000 // 폭탄: 켜고 20~40초 사이 아무 때나 터짐 (화면에 시간 안 보임)
 export const BOMB_MAX_MS = 40000
-export const BOMB_PASS_LOCK_MS = 800 // 넘겨받자마자 바로 다시 넘기는 실수 방지
-export const BOMB_SETTLE_MS = 600
+export const BOMB_SETTLE_MS = 1300 // 펑! 화면을 보여 준 뒤 마실 팀 고르기
+// 색깔 함정: 5라운드 × 5초, 빨리 맞힐수록 높은 점수 (1000 → 100), 틀리면 -300, 시간 초과 0
+export const CT_ROUNDS = 5
+export const CT_ANSWER_MS = 5000
+export const CT_GAP_MS = 1600 // 라운드 사이: 정답과 내 점수
+export const CT_MAX = 1000
+export const CT_MIN = 100
+export const CT_WRONG = -300
 
-const TEAM_TITLE = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전' }
-const TEAM_EMOJI = { teamSync: '👯', tapWar: '🪢', teamReact: '⚡', teamBomb: '💣' }
+const TEAM_TITLE = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정' }
+const TEAM_EMOJI = { teamSync: '👯', tapWar: '🦦', teamReact: '⚡', teamBomb: '💣', colorTrap: '🎨' }
 
 // 이구동성 질문 4개 (최근에 나온 질문은 피함)
 export function pickSyncQuestions(room) {
@@ -1362,14 +1368,6 @@ export function liveTeams(room) {
 // 팀 게임 참여자: 팀원 중 접속 중이거나 이미 참여한 사람 (연결이 끊긴 사람 때문에 지지 않게)
 function activeMembers(room, t, did) {
   return teamMembers(room, t).filter((pid) => room.players[pid]?.online !== false || did(pid))
-}
-function nextLiveTeam(room, t) {
-  const n = teamCount(room)
-  for (let k = 1; k <= n; k++) {
-    const c = (t + k) % n
-    if (teamMembers(room, c).length) return c
-  }
-  return t
 }
 // 가장 낮은(또는 높은) 값의 팀들 → 하나면 그 팀이 마시고, 여럿이면 동점 → 룰렛
 function losersBy(rows, key, worst = 'min') {
@@ -1486,34 +1484,75 @@ export async function teamReactTap(code, room) {
   await roomUpdate(code, { [`pending/results/${id}`]: SOLO && val >= 0 ? val + Math.floor(Math.random() * 300) : val })
 }
 
-// --- 폭탄 돌리기 팀전: 단어를 말하고 '넘기기' → 다음 팀으로. 터질 때 들고 있던 팀 전원이 마심 ---
-// passes: { id: { from, to, at, pid } } 를 시간순으로 따라가서 지금 폭탄을 든 팀을 계산 (모든 폰이 같은 결과)
-export function bombState(p, atMs) {
-  let holder = p?.holder0 ?? 0
-  let count = 0
-  let last = null
-  const until = Math.min(atMs, p?.explodeAt || Infinity)
-  Object.values(p?.passes || {})
-    .filter((x) => x && typeof x.at === 'number' && x.at < until)
-    .sort((a, b) => a.at - b.at)
-    .forEach((x) => {
-      if (x.from !== holder) return // 이미 넘어간 폭탄을 동시에 또 누른 경우는 무시
-      holder = x.to
-      count++
-      last = x
-    })
-  return { holder, count, last }
+// --- 폭탄 돌리기 팀전: 오프라인으로 돌리고 화면엔 째깍째깍 폭탄만. 터지면 진행자가 그때 차례였던 팀을 고름 → 그 팀 전원이 마심 ---
+export const bombExploded = (p, nowMs) => !!p && p.kind === 'teamBomb' && p.stage === 'ticking' && !!p.explodeAt && nowMs >= p.explodeAt
+
+// --- 색깔 함정: 5라운드 × 5초, 글자 뜻 말고 '글자 색'을 고름. 팀원 점수 합계가 낮은 팀이 마심 (인원이 다르면 1인 평균) ---
+const CT_STEP = CT_ANSWER_MS + CT_GAP_MS
+export const colorEndAt = (p) => (p?.startAt || 0) + CT_ROUNDS * CT_STEP
+// 지금 단계: count(3·2·1) → q(문제, 남은 시간) → gap(정답·내 점수) → ... → final
+export function colorPhase(p, nowMs) {
+  if (!p || p.stage !== 'play' || !p.startAt) return { phase: p?.stage || 'ready' }
+  if (nowMs < p.startAt) return { phase: 'count', left: p.startAt - nowMs }
+  const k = Math.floor((nowMs - p.startAt) / CT_STEP)
+  if (k >= CT_ROUNDS) return { phase: 'final' }
+  const at = p.startAt + k * CT_STEP
+  const t = nowMs - at
+  if (t < CT_ANSWER_MS) return { phase: 'q', q: k, at, left: CT_ANSWER_MS - t }
+  return { phase: 'gap', q: k, at }
 }
-export async function bombPass(code, room) {
+// 한 라운드 점수: 정답이면 빨리 누를수록 높게 (0초 1000 → 5초 100, 10점 단위), 틀리면 -300, 안 누르면 0
+export function colorPoints(ok, ms) {
+  if (ok == null) return 0
+  if (!ok) return CT_WRONG
+  const f = Math.max(0, Math.min(1, 1 - (Number(ms) || 0) / CT_ANSWER_MS))
+  return Math.round((CT_MIN + (CT_MAX - CT_MIN) * f) / 10) * 10
+}
+export function colorAnswerOf(p, q, pid) {
+  const a = p?.answers?.[`r${q}`]?.[pid]
+  if (!a || typeof a.c !== 'number') return null
+  const r = arr(p.rounds)[q]
+  return { ...a, ok: !!r && a.c === r.i, pts: colorPoints(!!r && a.c === r.i, a.ms) }
+}
+export function colorResult(room, p) {
+  const ans = p.answers || {}
+  const answered = (pid) => Object.values(ans).some((a) => a && a[pid])
+  const rows = liveTeams(room).map((t) => {
+    const members = activeMembers(room, t, answered)
+    const per = members.map((pid) => {
+      const rs = Array.from({ length: CT_ROUNDS }, (_, q) => colorAnswerOf(p, q, pid))
+      return { pid, rounds: rs, total: rs.reduce((x, a) => x + (a ? a.pts : 0), 0), ok: rs.filter((a) => a?.ok).length }
+    })
+    const sum = per.reduce((x, m) => x + m.total, 0)
+    return { team: t, members, per, sum, avg: members.length ? sum / members.length : 0 }
+  })
+  // 팀 인원이 다르면 합계는 인원 많은 팀이 유리 → 1인 평균으로 비교 (인원이 같으면 합계와 똑같은 순서)
+  const byAvg = new Set(rows.map((r) => r.members.length)).size > 1
+  const mvp = rows.flatMap((r) => r.per).sort((a, b) => b.total - a.total)[0] || null
+  return { rows, byAvg, mvp, ...losersBy(rows, byAvg ? 'avg' : 'sum', 'min') }
+}
+// 내 답 (라운드마다 한 번만, 5초 안에서). 걸린 시간은 서버 시각 기준
+export async function colorAnswer(code, room, q, c) {
   const p = room.pending
-  if (!p || p.kind !== 'teamBomb' || p.stage !== 'ticking') return
+  if (!p || p.kind !== 'colorTrap' || typeof c !== 'number') return
   const nowMs = serverNow()
-  if (nowMs >= p.explodeAt) return
-  const { holder, last } = bombState(p, nowMs)
-  const id = SOLO ? teamMembers(room, holder)[0] : myId()
-  if (!id || !room.players?.[id]?.name || teamOf(room, id) !== holder) return
-  if (last && nowMs - last.at < BOMB_PASS_LOCK_MS) return
-  await roomUpdate(code, { [`pending/passes/${newId()}`]: { from: holder, to: nextLiveTeam(room, holder), at: nowMs, pid: id } })
+  const ph = colorPhase(p, nowMs)
+  if (ph.phase !== 'q' || ph.q !== q) return
+  const id = myId()
+  if (!SOLO && !room.players?.[id]?.name) return
+  if (p.answers?.[`r${q}`]?.[id]) return
+  const ms = Math.max(0, Math.round(nowMs - ph.at))
+  const upd = { [`pending/answers/r${q}/${id}`]: { c, ms } }
+  // 혼자 보는 데모: 다른 사람(가짜 참가자) 답을 그럴듯하게 채움 (70% 정답, 0.8~4초)
+  if (SOLO) {
+    const r = arr(p.rounds)[q]
+    Object.keys(room.players || {}).forEach((pid) => {
+      if (pid === id || !room.players[pid]?.name || p.answers?.[`r${q}`]?.[pid] || !r) return
+      const good = Math.random() < 0.7
+      upd[`pending/answers/r${q}/${pid}`] = { c: good ? r.i : r.w, ms: 800 + Math.floor(Math.random() * 3200) }
+    })
+  }
+  await roomUpdate(code, upd)
 }
 
 // 게임별 결과 → { rows, losers, tie } (아직 안 끝났으면 null)
@@ -1522,10 +1561,10 @@ export function teamGameResult(room, p, nowMs = serverNow()) {
   if (p.kind === 'teamSync') return p.stage === 'play' && nowMs >= syncEndAt(p) - 300 ? syncResult(room, p) : null
   if (p.kind === 'tapWar') return p.stage === 'play' && nowMs >= p.endAt + TAP_SETTLE_MS - 300 ? tapResult(room, p) : null
   if (p.kind === 'teamReact') return teamReactDone(room, p, nowMs) ? teamReactResult(room, p) : null
+  if (p.kind === 'colorTrap') return p.stage === 'play' && nowMs >= colorEndAt(p) - 300 ? colorResult(room, p) : null
   if (p.kind === 'teamBomb') {
-    if (p.stage !== 'ticking' || nowMs < p.explodeAt + BOMB_SETTLE_MS - 300) return null
-    const b = bombState(p, p.explodeAt)
-    return { rows: [], losers: [b.holder], tie: false, bomb: b }
+    if (!bombExploded(p, nowMs) || p.loser == null || !TEAM_INFO[p.loser]) return null
+    return { rows: [], losers: [Number(p.loser)], tie: false }
   }
   return null
 }
@@ -1535,11 +1574,12 @@ function teamScoreText(room, p, r) {
   if (p.kind === 'teamSync') return r.rows.map((x) => `${e(x.team)}${x.score}`).join(' : ')
   if (p.kind === 'tapWar') return r.rows.map((x) => `${e(x.team)}평균 ${Math.round(x.avg)}회`).join(' : ')
   if (p.kind === 'teamReact') return r.rows.map((x) => `${e(x.team)}${(x.avg / 1000).toFixed(3)}초`).join(' : ')
-  if (p.kind === 'teamBomb') return `${p.topic} · ${r.bomb?.count || 0}번 넘김`
+  if (p.kind === 'colorTrap') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
+  if (p.kind === 'teamBomb') return `주제: ${p.topic}`
   return ''
 }
 
-async function resolveTeamGame(code, room, p, action) {
+async function resolveTeamGame(code, room, p, action, target) {
   const nowMs = serverNow()
   const title = p.title || TEAM_TITLE[p.kind]
   const emo = TEAM_EMOJI[p.kind]
@@ -1548,9 +1588,18 @@ async function resolveTeamGame(code, room, p, action) {
     if (p.kind === 'teamSync') Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/answers': null })
     if (p.kind === 'tapWar') Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/endAt': nowMs + TEAM_LEAD_MS + TAP_MS, 'pending/taps': null })
     if (p.kind === 'teamReact') Object.assign(upd, { 'pending/stage': 'armed', 'pending/goAt': nowMs + 2500 + Math.floor(Math.random() * 3500), 'pending/results': null })
-    if (p.kind === 'teamBomb') Object.assign(upd, { 'pending/stage': 'ticking', 'pending/startAt': nowMs, 'pending/explodeAt': nowMs + BOMB_MIN_MS + Math.floor(Math.random() * (BOMB_MAX_MS - BOMB_MIN_MS)), 'pending/passes': null })
+    if (p.kind === 'teamBomb') Object.assign(upd, { 'pending/stage': 'ticking', 'pending/startAt': nowMs, 'pending/explodeAt': nowMs + BOMB_MIN_MS + Math.floor(Math.random() * (BOMB_MAX_MS - BOMB_MIN_MS)), 'pending/loser': null })
+    if (p.kind === 'colorTrap') Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': makeColorRounds(CT_ROUNDS), 'pending/answers': null })
     upd.event = { id: newId(), text: `${emo} ${title} 시작!` }
     await roomUpdate(code, upd)
+    return
+  }
+  // 폭탄이 터진 뒤: 진행자가 그때 말할 차례였던 팀을 고름 (다시 고르기 = null)
+  if (action === 'bombLoser' && p.kind === 'teamBomb') {
+    if (!bombExploded(p, nowMs)) return
+    const t = target == null ? null : Number(target)
+    if (t != null && !liveTeams(room).includes(t)) return
+    await roomUpdate(code, { 'pending/loser': t })
     return
   }
   // 동점 → 룰렛 (동점인 팀들 중 한 팀이 마심, 확률은 똑같이)
@@ -1579,7 +1628,7 @@ async function resolveTeamGame(code, room, p, action) {
     loser = r.losers[0]
     text =
       p.kind === 'teamBomb'
-        ? `${emo} ${title} (${teamScoreText(room, p, r)}) 💥 ${TEAM_INFO[loser]?.name} 손에서 터짐! 마셔! 🍶`
+        ? `${emo} ${title} (${teamScoreText(room, p, r)}) 💥 ${TEAM_INFO[loser]?.name} 차례에 펑! 마셔! 🍶`
         : `${emo} ${title} ${teamScoreText(room, p, r)} → ${teamNames([loser])} 마셔! 🍶`
   }
   if (loser == null || !TEAM_INFO[loser]) return

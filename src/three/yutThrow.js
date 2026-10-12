@@ -1,7 +1,7 @@
 // 3D 윷 던지기: 윷가락 4개를 손에서 던진 것처럼 날아가 멍석 위에 떨어져 튀고 구르다가, 정해진 결과 면으로 멈춤
 //  · 결과(배/등)는 서버에서 정한 sticks 그대로 → 모든 폰이 같은 결과
 //  · 움직임은 던지기 id 로 정한 난수라 모든 폰에서 똑같이 보임
-//  · 배(평평한 면, X 무늬) = true, 등(둥근 면) = false. 0번 윷가락 배에는 빽도 표시(분홍 점)
+//  · 배(평평한 면, X 무늬) = true, 등(둥근 면) = false. 0번 윷가락은 빽도 윷: 배에 XXX 대신 '-'
 import * as THREE from 'three'
 
 export const THROW_FLIGHT_MS = 1250 // 날아가서 멈출 때까지
@@ -54,24 +54,27 @@ function woodTexture(light, marks, backdo) {
   }
   g.globalAlpha = 1
   if (marks) {
-    // X 무늬 3개
     g.strokeStyle = '#3b2410'
-    g.lineWidth = 7
     g.lineCap = 'round'
-    ;[0.26, 0.5, 0.74].forEach((f) => {
-      const cx = w * f
-      g.beginPath()
-      g.moveTo(cx - 16, 16)
-      g.lineTo(cx + 16, h - 16)
-      g.moveTo(cx + 16, 16)
-      g.lineTo(cx - 16, h - 16)
-      g.stroke()
-    })
     if (backdo) {
-      g.fillStyle = '#ff4d8d'
+      // 빽도 윷: XXX 대신 가운데 '-' 하나
+      g.lineWidth = 10
       g.beginPath()
-      g.arc(w * 0.9, h / 2, 11, 0, Math.PI * 2)
-      g.fill()
+      g.moveTo(w * 0.5 - 34, h / 2)
+      g.lineTo(w * 0.5 + 34, h / 2)
+      g.stroke()
+    } else {
+      // X 무늬 3개
+      g.lineWidth = 7
+      ;[0.26, 0.5, 0.74].forEach((f) => {
+        const cx = w * f
+        g.beginPath()
+        g.moveTo(cx - 16, 16)
+        g.lineTo(cx + 16, h - 16)
+        g.moveTo(cx + 16, 16)
+        g.lineTo(cx - 16, h - 16)
+        g.stroke()
+      })
     }
   }
   const t = new THREE.CanvasTexture(c)

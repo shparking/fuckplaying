@@ -34,15 +34,21 @@ const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
   return t * t * (3 - 2 * t)
 }
+// 모양을 몇 조각으로 나눌지 (FULL = 예시 페이지·가까이 보기, SMALL = 게임 판 위 작은 말: 삼각형 약 1/8)
+const DETAIL = {
+  full: { lathe: 64, latheS: 40, ell: [40, 28], head: [64, 48], arm: [28, 18], tail: [56, 22], cap: 10, claw: 8, eye: [28, 20], shine: [12, 8], shine2: [8, 6], mouth: [40, 28], collar: 72, base: 72, whiskers: true, claws: true },
+  small: { lathe: 22, latheS: 16, ell: [14, 10], head: [26, 18], arm: [10, 8], tail: [16, 8], cap: 6, claw: 5, eye: [12, 9], shine: [6, 4], shine2: [5, 3], mouth: [16, 10], collar: 28, base: 30, whiskers: false, claws: false },
+}
+let Q = DETAIL.full
 // 회전체: [반지름, 높이] 점들을 부드러운 곡선으로 이어서 돌림
-function lathe(points, segments = 56, samples = 40) {
+function lathe(points, segments = 56, samples = Q.latheS) {
   const curve = new THREE.SplineCurve(points.map(([r, y]) => new THREE.Vector2(r, y)))
   const pts = curve.getPoints(samples).map((p) => new THREE.Vector2(Math.max(0.0001, p.x), p.y))
   const g = new THREE.LatheGeometry(pts, segments)
   g.computeVertexNormals()
   return g
 }
-function ellipsoid(r, sx, sy, sz, w = 40, h = 28) {
+function ellipsoid(r, sx, sy, sz, w = Q.ell[0], h = Q.ell[1]) {
   const g = new THREE.SphereGeometry(r, w, h)
   g.scale(sx, sy, sz)
   return g
@@ -79,7 +85,7 @@ function taperTube(points, radius, tubular = 48, radial = 20, capEnd = true) {
   if (capEnd) {
     // 끝을 둥글게 막음
     const end = curve.getPointAt(1)
-    const cap = new THREE.SphereGeometry(radius(1), radial, 10)
+    const cap = new THREE.SphereGeometry(radius(1), radial, Q.cap)
     cap.translate(end.x, end.y, end.z)
     cap.deleteAttribute('uv')
     g = mergeGeometries([g, cap])
@@ -143,9 +149,11 @@ const onHead = (nx, ny, nz, out = 0) => {
   return v3(HEAD.x + (nx / l) * r * HEAD.sx, HEAD.y + (ny / l) * r * HEAD.sy, HEAD.z + (nz / l) * r * HEAD.sz)
 }
 
-let SHARED = null
-// 모든 말이 같이 쓰는 모양 (한 번만 만듦)
-function buildShared() {
+const SHARED = {}
+// 모든 말이 같이 쓰는 모양 (자세함 단계마다 한 번만 만듦)
+function buildShared(lod = 'full') {
+  if (SHARED[lod]) return SHARED[lod]
+  Q = DETAIL[lod] || DETAIL.full
   // --- 털이 나는 부분 (하나로 합쳐 털 껍질을 한 번에 그림) ---
   // 몸통: 엉덩이가 넓고 어깨로 갈수록 좁아지는 배 모양, 앞뒤로 살짝 납작
   const body = lathe(
@@ -160,7 +168,7 @@ function buildShared() {
       [0.235, BASE_TOP + 0.7],
       [0.2, BASE_TOP + 0.8],
     ],
-    64,
+    Q.lathe,
   )
   body.scale(1, 1, 0.9)
   body.computeVertexNormals()
@@ -186,7 +194,7 @@ function buildShared() {
   })
 
   // 머리: 넓고 위가 평평한 수달 머리
-  const head = ellipsoid(HEAD.r, HEAD.sx, HEAD.sy, HEAD.sz, 64, 48)
+  const head = ellipsoid(HEAD.r, HEAD.sx, HEAD.sy, HEAD.sz, Q.head[0], Q.head[1])
   head.translate(HEAD.x, HEAD.y, HEAD.z)
   paint(head, (p) => {
     const nx = (p.x - HEAD.x) / (HEAD.r * HEAD.sx)
@@ -236,8 +244,8 @@ function buildShared() {
     taperTube(
       [v3(s * 0.22, BASE_TOP + 0.62, 0.06), v3(s * 0.27, BASE_TOP + 0.5, 0.2), v3(s * 0.19, BASE_TOP + 0.43, 0.33), v3(s * 0.12, BASE_TOP + 0.43, 0.38)],
       (t) => 0.095 - 0.022 * t,
-      28,
-      18,
+      Q.arm[0],
+      Q.arm[1],
       false,
     ),
   )
@@ -250,8 +258,8 @@ function buildShared() {
   const tail = taperTube(
     [v3(0.04, BASE_TOP + 0.16, -0.24), v3(0.26, BASE_TOP + 0.1, -0.34), v3(0.46, BASE_TOP + 0.09, -0.27), v3(0.58, BASE_TOP + 0.12, -0.1), v3(0.62, BASE_TOP + 0.22, 0.04)],
     (t) => 0.14 * (1 - t) ** 0.8 + 0.04 * t,
-    56,
-    22,
+    Q.tail[0],
+    Q.tail[1],
     true,
   )
   paint(tail, (p, n) => mix(C.fur, C.furDark, 0.35 + 0.3 * smooth(0, 1, n.y)))
@@ -294,14 +302,14 @@ function buildShared() {
 
   // 발톱 (뒷발 발가락 끝, 작은 원뿔)
   const claws = []
-  for (const s of [-1, 1])
+  for (const s of Q.claws ? [-1, 1] : [])
     for (let k = 0; k < 4; k++) {
       const a = (k - 1.5) * 0.36
-      const c = new THREE.ConeGeometry(0.009, 0.03, 8)
+      const c = new THREE.ConeGeometry(0.009, 0.03, Q.claw)
       placed(c, { x: s * 0.19 + Math.sin(a + s * -0.18) * 0.097, y: BASE_TOP + 0.022, z: 0.27 + Math.cos(a) * 0.18 + 0.012, rx: Math.PI / 2 + 0.25 })
       claws.push(c)
     }
-  const clawGeo = mergeGeometries(claws.map(clean))
+  const clawGeo = claws.length ? mergeGeometries(claws.map(clean)) : new THREE.BufferGeometry()
 
   // 코: 둥근 역삼각 느낌
   const nose = ellipsoid(0.058, 1.35, 0.78, 0.82)
@@ -311,7 +319,7 @@ function buildShared() {
   }
   // 입: 웃으며 벌린 입(안쪽 진한 색) + 분홍 혀
   // 입: 'D' 모양으로 벌린 입 (위는 평평, 아래는 둥글게) 안에 혀
-  const mouth = ellipsoid(0.088, 1.3, 0.85, 0.55, 40, 28)
+  const mouth = ellipsoid(0.088, 1.3, 0.85, 0.55, Q.mouth[0], Q.mouth[1])
   {
     const p = mouth.attributes.position
     for (let i = 0; i < p.count; i++) if (p.getY(i) > 0.025) p.setY(i, 0.025 + (p.getY(i) - 0.025) * 0.25)
@@ -328,14 +336,14 @@ function buildShared() {
   const shines = []
   for (const s of [-1, 1]) {
     const c = onHead(s * 0.37, 0.15, 0.92, -0.02)
-    const e = new THREE.SphereGeometry(0.06, 28, 20)
+    const e = new THREE.SphereGeometry(0.06, Q.eye[0], Q.eye[1])
     e.scale(1, 1.06, 0.78)
     placed(e, { x: c.x, y: c.y, z: c.z })
     eyes.push(e)
-    const h = new THREE.SphereGeometry(0.015, 12, 8)
+    const h = new THREE.SphereGeometry(0.015, Q.shine[0], Q.shine[1])
     placed(h, { x: c.x - 0.016, y: c.y + 0.022, z: c.z + 0.043 })
     shines.push(h)
-    const h2 = new THREE.SphereGeometry(0.0065, 8, 6)
+    const h2 = new THREE.SphereGeometry(0.0065, Q.shine2[0], Q.shine2[1])
     placed(h2, { x: c.x + 0.015, y: c.y - 0.015, z: c.z + 0.045 })
     shines.push(h2)
   }
@@ -349,14 +357,14 @@ function buildShared() {
   }
   // 수염: 볼에서 양옆으로 휘어 나오는 가는 흰 털 (한쪽 5가닥)
   const whiskers = []
-  for (const s of [-1, 1])
+  for (const s of Q.whiskers ? [-1, 1] : [])
     for (let k = 0; k < 5; k++) {
       const start = onHead(s * (0.4 + k * 0.012), -0.26 - k * 0.045, 0.86, 0.025)
       const dy = (k - 2) * 0.05
       const pts = [start, v3(start.x + s * 0.14, start.y + dy * 0.4 + 0.01, start.z - 0.02), v3(start.x + s * 0.3, start.y + dy - 0.02, start.z - 0.08)]
       whiskers.push(clean(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.0032, 5, false)))
     }
-  const whiskerGeo = mergeGeometries(whiskers)
+  const whiskerGeo = whiskers.length ? mergeGeometries(whiskers) : new THREE.BufferGeometry()
 
   // 목띠: 턱 아래 천 띠 (팀 색)
   // 천 띠 모양 (도넛이 아니라 납작한 띠): 단면이 둥근 직사각형
@@ -372,7 +380,7 @@ function buildShared() {
       new THREE.Vector2(CR + 0.012, CH / 2 - 0.004),
       new THREE.Vector2(CR - 0.012, CH / 2),
     ],
-    72,
+    Q.collar,
   )
   collar.computeVertexNormals()
   collar.scale(1.0, 1.0, 0.93)
@@ -391,12 +399,13 @@ function buildShared() {
       new THREE.Vector2(0.55, BASE_TOP),
       new THREE.Vector2(0.0001, BASE_TOP),
     ],
-    72,
+    Q.base,
   )
   base.computeVertexNormals()
 
-  SHARED = { fur, pawGeo, clawGeo, nose, mouth, tongue, eyes: mergeGeometries(eyes), shines: mergeGeometries(shines), ears: mergeGeometries(ears.map(clean)), whiskerGeo, collar, base }
-  return SHARED
+  SHARED[lod] = { fur, pawGeo, clawGeo, nose, mouth, tongue, eyes: mergeGeometries(eyes), shines: mergeGeometries(shines), ears: mergeGeometries(ears.map(clean)), whiskerGeo, collar, base }
+  Q = DETAIL.full
+  return SHARED[lod]
 }
 
 // ---------- 털 껍질 재질 ----------
@@ -493,10 +502,11 @@ function teamMaterials(team) {
  * @param {number} opt.team  팀 번호 0~3 (0 = 1팀 빨강, 1 = 2팀 파랑, 2 = 3팀 초록, 3 = 4팀 노랑) — 게임의 TEAM_INFO 순서와 같음
  * @param {number} opt.size  크기 배율 (1 = 키 약 1.3)
  * @param {'high'|'low'|'off'} opt.fur  털 껍질 품질 (high 12겹, low 6겹, off 털 없이 매끈하게)
+ * @param {'full'|'small'} opt.lod  모양 자세함 (small = 게임 판 위 작은 말용, 삼각형이 훨씬 적음)
  * @returns {THREE.Group} group.userData = { team, size, setTeam(t), setSize(s) }
  */
-export function createOtterPiece({ team = 0, size = 1, fur = 'high' } = {}) {
-  const S = SHARED || buildShared()
+export function createOtterPiece({ team = 0, size = 1, fur = 'high', lod = 'full' } = {}) {
+  const S = buildShared(lod)
   const M = sharedMaterials()
   const layers = fur === 'off' ? 0 : fur === 'low' ? 6 : 12
   const g = new THREE.Group()
@@ -516,6 +526,7 @@ export function createOtterPiece({ team = 0, size = 1, fur = 'high' } = {}) {
     model.add(shell)
   }
   const add = (geo, mat, shadow = true) => {
+    if (!geo.attributes.position) return null // 작은 말에서 뺀 부분 (수염·발톱)
     const m = new THREE.Mesh(geo, mat)
     m.castShadow = shadow
     model.add(m)

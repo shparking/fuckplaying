@@ -1,10 +1,10 @@
-// 팀 대결 미니게임 화면: 팀 이구동성 · 연타 줄다리기 · 팀 반응속도 · 폭탄 돌리기 팀전
+// 팀 대결 미니게임 화면: 팀 이구동성 · 연타 줄다리기 · 팀 반응속도 · 폭탄 돌리기 팀전 · 색깔 함정
 // 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심. 동점이면 룰렛.
 // 시간은 서버 시각(serverNow) 기준이라 모든 폰이 같은 순간에 같은 화면을 봄
 import { useEffect, useRef, useState } from 'react'
 import { SOLO } from '../db'
 import { TEAM_INFO } from '../game/yut'
-import { SYNC_QUESTIONS } from '../game/teamgames'
+import { SYNC_QUESTIONS, CT_COLORS } from '../game/teamgames'
 import {
   arr,
   resolvePending,
@@ -25,10 +25,16 @@ import {
   teamReactResult,
   teamReactDone,
   REACT_PENALTY_MS,
-  bombState,
-  bombPass,
-  BOMB_PASS_LOCK_MS,
+  bombExploded,
   BOMB_SETTLE_MS,
+  colorPhase,
+  colorResult,
+  colorAnswer,
+  colorAnswerOf,
+  colorPoints,
+  CT_ROUNDS,
+  CT_ANSWER_MS,
+  CT_WRONG,
 } from '../room'
 
 // 서버 시각으로 다시 그리기 (active 일 때만 ms 간격)
@@ -425,10 +431,10 @@ export function TapWarPanel({ room, pending: p, me, ctl, code }) {
         p={p}
         ctl={ctl}
         code={code}
-        emoji="🪢"
+        emoji="🦦"
         title={title}
         headline="30초 동안 연타! 줄을 당겨라"
-        startLabel="🪢 시작"
+        startLabel="🦦 시작"
         rules={
           <>
             시작하면 <b>30초 동안</b> 화면의 큰 버튼을 최대한 빨리 연타하세요. 연타할수록 줄이 우리 팀 쪽으로 와요. 끝나면 팀원 <b>1인당 평균 연타 수</b>가 적은 팀이 다 같이 마셔요 (인원이 달라도 공평). 동점이면 룰렛!
@@ -436,8 +442,8 @@ export function TapWarPanel({ room, pending: p, me, ctl, code }) {
         }
       />
     )
-  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🪢" title={title} />
-  if (now < p.startAt) return <CountScreen left={p.startAt - now} emoji="🪢" sub="준비! 엄지 두 개로 연타해도 돼요" />
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🦦" title={title} />
+  if (now < p.startAt) return <CountScreen left={p.startAt - now} emoji="🦦" sub="준비! 엄지 두 개로 연타해도 돼요" />
   // 내 기록은 내 폰 숫자가 가장 최신
   const taps = { ...(p.taps || {}), [me]: Math.max(p.taps?.[me] || 0, count) }
   const live2 = tapResult(room, { ...p, taps })
@@ -449,7 +455,7 @@ export function TapWarPanel({ room, pending: p, me, ctl, code }) {
         p={p}
         ctl={ctl}
         code={code}
-        emoji="🪢"
+        emoji="🦦"
         title={title}
         losers={r.losers}
         tie={r.tie}
@@ -477,7 +483,7 @@ export function TapWarPanel({ room, pending: p, me, ctl, code }) {
     <div className="ai-overlay tg tapwar">
       <div className="tg-box">
         <div className="tg-head">
-          <span>🪢 {title}</span>
+          <span>🦦 {title}</span>
           <span className={`tg-clock ${left < 5000 ? 'hot' : ''}`}>{playing ? `${(left / 1000).toFixed(1)}초` : '끝!'}</span>
         </div>
         {two ? (
@@ -493,7 +499,7 @@ export function TapWarPanel({ room, pending: p, me, ctl, code }) {
             <div className="rope" style={{ '--l': TEAM_INFO[rows[0].team].color, '--r': TEAM_INFO[rows[1].team].color }}>
               <i className="rope-mid" />
               <b className="rope-knot" style={{ left: `${50 + Math.max(-1, Math.min(1, pull)) * 42}%` }}>
-                🪢
+                🦦
               </b>
             </div>
           </div>
@@ -614,24 +620,20 @@ export function TeamReactPanel({ room, pending: p, me, ctl, code }) {
 }
 
 // ---------- 폭탄 돌리기 팀전 ----------
-// 주제에 맞는 단어를 말하고 '넘기기' → 다음 팀으로. 20~40초 사이 터질 때 폭탄을 든 팀이 마심
+// 오프라인으로 진행: 팀끼리 돌아가며 주제에 맞는 단어를 말함 (폰은 그냥 둠). 화면엔 째깍째깍 폭탄만 → 20~40초 사이 아무 때나 펑!
+// 터지면 진행자(도착한 사람·방장)가 그때 말할 차례였던 팀을 고름 → 그 팀 전원이 마심
 export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
   const live = p.stage === 'ticking'
-  const now = useNow(live, 100)
+  const now = useNow(live, 200)
   const title = p.title || '폭탄 돌리기 팀전'
-  const st = bombState(p, now)
-  const exploded = live && p.explodeAt && now >= p.explodeAt
+  const exploded = bombExploded(p, now)
   const boomRef = useRef(false)
   useEffect(() => {
     if (exploded && !boomRef.current) buzz([300, 100, 300, 100, 600])
     boomRef.current = !!exploded
   }, [exploded])
-  const holdRef = useRef(null)
-  useEffect(() => {
-    if (!live) return
-    if (holdRef.current !== null && holdRef.current !== st.holder && teamOf(room, me) === st.holder) buzz([60, 40, 60])
-    holdRef.current = st.holder
-  }, [live, st.holder])
+  const starter = TEAM_INFO[p.holder0] || TEAM_INFO[0]
+  const actor = room.players[p.playerId]
   if (p.stage === 'ready')
     return (
       <ReadyModal
@@ -645,71 +647,233 @@ export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
         startLabel="💣 폭탄 켜기"
         rules={
           <>
-            <b style={{ color: TEAM_INFO[p.holder0]?.color }}>{TEAM_INFO[p.holder0]?.name}</b>부터 폭탄을 들어요. 폭탄을 든 팀은 주제에 맞는 단어를 하나 말하고 <b>넘기기</b>를 눌러 다음 팀에 넘겨요. 폭탄은 20~40초 사이 아무 때나 터지고, <b>그때 폭탄을 들고 있던 팀이 다 같이 마셔요.</b> 이미 나온 단어나 3초 넘게 뜸 들이면 그 팀이 마셔요.
+            폭탄을 켜면 <b style={{ color: starter.color }}>{starter.name}</b>부터 팀끼리 돌아가며 주제에 맞는 단어를 <b>말로</b> 하나씩 말해요 (폰은 그냥 두세요). 폭탄은 <b>20~40초 사이 아무 때나</b> 터지고, 그때 말할 차례였던 팀이 다 같이 마셔요. 이미 나온 단어나 3초 넘게 뜸 들이면 그 팀이 마셔요.
           </>
         }
       />
     )
-  if (exploded && now >= p.explodeAt + BOMB_SETTLE_MS) {
-    const fin = bombState(p, p.explodeAt)
+  // 째깍째깍 (터질 때까지 시간은 안 보임)
+  if (!exploded)
+    return (
+      <div className="ai-overlay bomb team-bomb">
+        <div className="ai-reveal">
+          <div className="bomb-emo ticking">
+            💣
+            <i className="bomb-spark" />
+          </div>
+          <div className="ai-note">주제</div>
+          <div className="bomb-topic">{p.topic}</div>
+          <div className="bomb-holder">
+            <b style={{ color: starter.color }}>{starter.name}</b>부터 팀끼리 돌아가며 말해요
+          </div>
+          <div className="bomb-tick">째깍… 째깍…</div>
+          <div className="ai-sub">언제 터질지 아무도 몰라요</div>
+        </div>
+      </div>
+    )
+  // 펑!
+  if (now < p.explodeAt + BOMB_SETTLE_MS)
+    return (
+      <div className="ai-overlay bomb boom flash">
+        <div className="ai-reveal">
+          <div className="bomb-emo big">💥</div>
+          <div className="ai-congrats big">펑!</div>
+        </div>
+      </div>
+    )
+  const loser = p.loser == null ? null : Number(p.loser)
+  if (loser == null || !TEAM_INFO[loser])
     return (
       <div className="ai-overlay bomb boom">
         <div className="ai-reveal">
           <div className="bomb-emo">💥</div>
           <div className="ai-congrats">터졌다!</div>
-          <div className="ai-note">
-            {p.topic} · {fin.count}번 넘김
-          </div>
-          <Avatars room={room} ids={teamMembers(room, fin.holder)} />
-          <div className="ai-name">
-            <b style={{ color: '#fff' }}>{TEAM_INFO[fin.holder]?.name}</b> 다 같이 마셔! 🍶
-          </div>
-          <div className="ai-actions">
+          <div className="ai-note">주제: {p.topic}</div>
+          <div className="ai-name">누구 차례에 터졌어요?</div>
+          <div className="ai-actions bomb-teams">
             {ctl ? (
-              <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
-                확인
-              </button>
+              liveTeams(room).map((t) => (
+                <button key={t} className="btn btn-primary bomb-team" style={{ '--tc': TEAM_INFO[t].color }} onClick={() => resolvePending(code, room, 'bombLoser', t)}>
+                  {TEAM_INFO[t].emoji} {TEAM_INFO[t].name}
+                </button>
+              ))
             ) : (
-              <div className="waiting">{room.players[p.playerId]?.name}이(가) 확인하면 다음 차례로</div>
+              <div className="waiting">{actor?.name}이(가) 마실 팀을 골라요</div>
             )}
           </div>
         </div>
       </div>
     )
-  }
-  const info = TEAM_INFO[st.holder] || TEAM_INFO[0]
-  const mine = SOLO || teamOf(room, me) === st.holder
-  const lockLeft = st.last ? BOMB_PASS_LOCK_MS - (now - st.last.at) : 0
-  const nextTeam = (() => {
-    const ts = liveTeams(room)
-    const i = ts.indexOf(st.holder)
-    return ts[(i + 1) % ts.length]
-  })()
   return (
-    <div className="ai-overlay bomb team-bomb" style={{ '--tc': info.color }}>
+    <div className="ai-overlay bomb boom">
       <div className="ai-reveal">
-        {exploded ? (
-          <div className="bomb-emo">💥</div>
-        ) : (
-          <div className="bomb-emo ticking">💣</div>
-        )}
-        <div className="ai-note">주제</div>
-        <div className="bomb-topic">{p.topic}</div>
-        <div className="bomb-holder">
-          지금 폭탄: <b style={{ color: info.color }}>{info.name}</b>
-          {st.last && <span className="muted-light"> · {room.players[st.last.pid]?.name} 넘김</span>}
+        <Confetti color={TEAM_INFO[loser].color} />
+        <div className="bomb-emo">💥</div>
+        <div className="ai-congrats">
+          {TEAM_INFO[loser].emoji} {TEAM_INFO[loser].short} 차례에 펑!
         </div>
-        <div className="ai-sub">넘긴 횟수 {st.count}번</div>
-        {mine ? (
-          <button className="btn btn-primary bomb-pass" disabled={!!exploded || lockLeft > 0} onClick={() => bombPass(code, room)}>
-            말했다! 넘기기 → {TEAM_INFO[nextTeam]?.short}
-          </button>
-        ) : (
-          <div className="bomb-wait">
-            {info.name}이 말하는 중… <b>다음은 {TEAM_INFO[nextTeam]?.short}</b>
-          </div>
-        )}
+        <Avatars room={room} ids={teamMembers(room, loser)} />
+        <div className="ai-name">
+          <b style={{ color: '#fff' }}>{TEAM_INFO[loser].name}</b> 다 같이 마셔! 🍶
+        </div>
+        <div className="ai-actions">
+          {ctl ? (
+            <>
+              <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
+                확인
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => resolvePending(code, room, 'bombLoser', null)}>
+                다시 고르기
+              </button>
+            </>
+          ) : (
+            <div className="waiting">{actor?.name}이(가) 확인하면 다음 차례로</div>
+          )}
+        </div>
       </div>
     </div>
+  )
+}
+
+// ---------- 색깔 함정 (스트룹) ----------
+// 색 이름이 다른 색으로 칠해져 나옴 → 글자 '뜻' 말고 '글자 색깔'을 5초 안에. 5라운드, 빨리 맞힐수록 높은 점수
+// 점수: 정답 1000(바로) → 100(5초 직전) · 틀리면 -300 · 시간 초과 0. 5라운드 끝나고 팀 합계 공개 → 낮은 팀이 마심 (동점 → 룰렛)
+export function ColorTrapPanel({ room, pending: p, me, ctl, code }) {
+  const live = p.stage === 'play'
+  const now = useNow(live, 50)
+  const ph = colorPhase(p, now)
+  const title = p.title || '색깔 함정'
+  const rounds = arr(p.rounds)
+  const [local, setLocal] = useState({}) // 내가 누른 답 (서버 반영 전에도 바로 보이게)
+  const sentRef = useRef({}) // 문제마다 한 번만
+  const qRef = useRef(null)
+  useEffect(() => {
+    if (ph.phase === 'q' && qRef.current !== ph.q) {
+      qRef.current = ph.q
+      buzz(50)
+    }
+  }, [ph.phase, ph.q])
+  if (p.stage === 'ready')
+    return (
+      <ReadyModal
+        room={room}
+        p={p}
+        ctl={ctl}
+        code={code}
+        emoji="🎨"
+        title={title}
+        headline="글자 말고 색깔을 골라!"
+        startLabel="🎨 시작"
+        extra={
+          <div className="ct-example">
+            <span className="ct-ex-word" style={{ color: CT_COLORS[1].hex }}>
+              {CT_COLORS[0].name}
+            </span>
+            <span className="ct-ex-arrow">→ 정답은</span>
+            <b>{CT_COLORS[1].name}</b>
+          </div>
+        }
+        rules={
+          <>
+            색 이름이 <b>다른 색으로</b> 칠해져 나와요. 글자 뜻 말고 <b>글자 색깔</b>을 5초 안에 고르세요. 모두 {CT_ROUNDS}문제, <b>빨리 맞힐수록 점수가 커요</b> (바로 1000점 → 5초 100점). <b>틀리면 {CT_WRONG}점</b>, 시간 초과는 0점. 마지막 두 문제는 보기 글자까지 색이 섞여요. 끝나면 팀 점수 합계를 공개하고, 낮은 팀이 다 같이 마셔요. 동점이면 룰렛!
+          </>
+        }
+      />
+    )
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🎨" title={title} />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🎨" sub="글자 뜻 말고 글자 색깔!" />
+  if (ph.phase === 'q' || ph.phase === 'gap') {
+    const q = ph.q
+    const r = rounds[q] || { w: 0, i: 1, o: [0, 1, 2, 3] }
+    const server = colorAnswerOf(p, q, me)
+    const lp = local[q]
+    const mine = server || (lp ? { c: lp.c, ok: lp.c === r.i, pts: colorPoints(lp.c === r.i, lp.ms) } : null)
+    // 내 점수 (지금 문제까지): 팀 점수는 5문제가 끝나야 공개
+    const myTotal = Array.from({ length: q }, (_, k) => colorAnswerOf(p, k, me)?.pts || 0).reduce((a, b) => a + b, 0) + (mine?.pts || 0)
+    const asking = ph.phase === 'q'
+    const myTeam = teamOf(room, me)
+    const mates = teamMembers(room, myTeam)
+    const done = mates.filter((pid) => p.answers?.[`r${q}`]?.[pid] || (pid === me && mine)).length
+    const pickColor = (c) => {
+      if (!asking || mine || sentRef.current[q]) return
+      sentRef.current[q] = true
+      setLocal((x) => ({ ...x, [q]: { c, ms: Math.max(0, Math.round(serverNow() - ph.at)) } }))
+      colorAnswer(code, room, q, c)
+    }
+    return (
+      <div className="ai-overlay tg colortrap">
+        <div className="tg-box">
+          <div className="tg-head">
+            <span>
+              🎨 문제 {q + 1}/{CT_ROUNDS}
+              {q >= CT_ROUNDS - 2 ? <em className="ct-hard"> 함정 강화!</em> : null}
+            </span>
+            <span className="tg-score">내 점수 {myTotal}</span>
+          </div>
+          {asking ? (
+            <div className="tg-timer">
+              <i style={{ width: `${Math.max(0, (ph.left / CT_ANSWER_MS) * 100)}%` }} />
+            </div>
+          ) : (
+            <div className="tg-timer done" />
+          )}
+          <div className="ct-word" style={{ color: CT_COLORS[r.i]?.hex }}>
+            {CT_COLORS[r.w]?.name}
+          </div>
+          <div className="tg-q">
+            글자 <b>색깔</b>은?
+          </div>
+          <div className="ct-opts">
+            {arr(r.o).map((c, j) => {
+              const picked = mine?.c === c
+              const reveal = !asking || !!mine
+              return (
+                <button
+                  key={c}
+                  className={`ct-opt ${picked ? 'on' : ''} ${reveal && c === r.i ? 'right' : ''} ${reveal && picked && c !== r.i ? 'wrong' : ''}`}
+                  style={r.oi ? { color: CT_COLORS[arr(r.oi)[j]]?.hex } : undefined}
+                  disabled={!asking || !!mine}
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    pickColor(c)
+                  }}
+                  onClick={() => pickColor(c)}
+                >
+                  {CT_COLORS[c]?.name}
+                </button>
+              )
+            })}
+          </div>
+          <div className={`ct-fb ${mine ? (mine.ok ? 'ok' : 'no') : ''}`}>
+            {mine ? (mine.ok ? `정답! +${mine.pts}점` : `함정에 걸렸어요! ${mine.pts}점`) : asking ? `${Math.ceil(ph.left / 1000)}초 · 우리 팀 ${done}/${mates.length}명 골랐어요` : '시간 초과! 0점'}
+          </div>
+          {!asking && (
+            <div className="ai-sub">
+              정답 <b style={{ color: CT_COLORS[r.i]?.hex }}>{CT_COLORS[r.i]?.name}</b> · {q + 1 < CT_ROUNDS ? '다음 문제…' : '결과 공개!'}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+  // 끝: 결과 (팀 합계 공개)
+  const r = colorResult(room, p)
+  return (
+    <TeamResult
+      room={room}
+      p={p}
+      ctl={ctl}
+      code={code}
+      emoji="🎨"
+      title={title}
+      losers={r.losers}
+      tie={r.tie}
+      rows={r.rows.map((row) => ({
+        team: row.team,
+        main: r.byAvg ? `평균 ${Math.round(row.avg)}점` : `${row.sum}점`,
+        sub: row.per.map((x) => `${room.players[x.pid]?.name} ${x.total}`).join(' · ') + (r.byAvg ? ` · 합계 ${row.sum}` : ''),
+      }))}
+      note={r.byAvg ? '팀 인원이 달라서 1인 평균으로 비교해요' : r.mvp ? `🏅 MVP ${room.players[r.mvp.pid]?.name} ${r.mvp.total}점 (${r.mvp.ok}/${CT_ROUNDS} 정답)` : ''}
+    />
   )
 }

@@ -82,3 +82,47 @@ export const SYNC_QUESTIONS = [
   '문자 vs 음성 메시지',
   '선물 고르기 vs 받기',
 ]
+
+// ---------- 색깔 함정 (스트룹) ----------
+// 색 이름 글자가 다른 색으로 칠해져 나옴 → 글자 '뜻' 말고 '색깔'을 골라야 함
+export const CT_COLORS = [
+  { name: '빨강', hex: '#ff3b3b' },
+  { name: '파랑', hex: '#2f80ff' },
+  { name: '초록', hex: '#22c55e' },
+  { name: '노랑', hex: '#ffd60a' },
+  { name: '보라', hex: '#b15cff' },
+]
+// 라운드 n개: w = 글자 뜻(색 번호), i = 글자 색(정답), o = 보기 4개(정답·함정 포함, 섞음), oi = 보기 글자 색(마지막 2라운드만, 함정 강화)
+export function makeColorRounds(n = 5, rand = Math.random) {
+  const N = CT_COLORS.length
+  const pick = (k) => Math.floor(rand() * k)
+  const shuffle = (a) => {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = pick(i + 1)
+      ;[a[i], a[j]] = [a[j], a[i]]
+    }
+    return a
+  }
+  const out = []
+  let prevInk = -1
+  for (let k = 0; k < n; k++) {
+    let w
+    let ink
+    do {
+      w = pick(N)
+      ink = pick(N - 1)
+      if (ink >= w) ink++
+    } while (ink === prevInk)
+    prevInk = ink
+    const others = shuffle([...Array(N).keys()].filter((c) => c !== w && c !== ink)).slice(0, 2)
+    const o = shuffle([ink, w, ...others])
+    const r = { w, i: ink, o }
+    if (k >= n - 2) r.oi = o.map((c) => {
+      let x = pick(N - 1)
+      if (x >= c) x++
+      return x
+    })
+    out.push(r)
+  }
+  return out
+}
