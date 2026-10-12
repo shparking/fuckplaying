@@ -1412,9 +1412,9 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
 function BoardTools({ zoom, onToggle, hint }) {
   return (
     <div className="board-tools">
-      <span className="muted">{zoom ? '좌우로 밀어서 판을 보세요' : hint}</span>
-      <button className={`btn btn-ghost btn-sm ${zoom ? 'on' : ''}`} onClick={onToggle}>
-        {zoom ? '판 작게 보기' : '🔍 판 크게 보기'}
+      <span className="muted">{zoom ? '판을 손가락으로 밀어서 보세요' : hint}</span>
+      <button className={`btn btn-ghost btn-sm ${zoom ? '' : 'on'}`} onClick={onToggle}>
+        {zoom ? '🗺️ 전체 보기' : '🔍 크게 보기'}
       </button>
     </div>
   )
@@ -1464,7 +1464,19 @@ export default function App() {
   const [moveAnim, setMoveAnim] = useState(null) // { team, node, count }
   const [animating, setAnimating] = useState(false)
   const [sel, setSel] = useState(0) // 고른 윷 결과 번호
-  const [zoom, setZoom] = useState(false) // 판 크게 보기 (칸 글자까지 보임, 좌우로 밀어서 봄)
+  // 판 크게 보기 (기본): 칸마다 벌칙 글자까지 보이고 손가락으로 밀어서 봄. 전체 보기는 이모지·번호만
+  const [zoom, setZoom] = useState(() => {
+    try {
+      return localStorage.getItem('yt-board-zoom') !== '0'
+    } catch {
+      return true
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('yt-board-zoom', zoom ? '1' : '0')
+    } catch {}
+  }, [zoom])
   const boardRef = useRef(null)
   const [shake, setShake] = useState(() => {
     try {
@@ -1755,17 +1767,55 @@ export default function App() {
     return () => clearInterval(t)
   }, [room, me, code])
 
-  // 판 크게 보기: 켤 때·고를 칸이 생길 때 그 칸이 보이게 좌우로 이동
+  // 크게 보기: 봐야 할 곳(고를 칸·움직이는 말·지금 팀 말)이 창 가운데 오게 위아래·좌우로 이동
+  const boardFocus = (els, onlyIfHidden = false) => {
+    const box = boardRef.current
+    if (!zoom || !box || !els.length) return
+    const b = box.getBoundingClientRect()
+    let x1 = Infinity
+    let y1 = Infinity
+    let x2 = -Infinity
+    let y2 = -Infinity
+    els.forEach((el) => {
+      const r = el.getBoundingClientRect()
+      x1 = Math.min(x1, r.left)
+      y1 = Math.min(y1, r.top)
+      x2 = Math.max(x2, r.right)
+      y2 = Math.max(y2, r.bottom)
+    })
+    if (onlyIfHidden) {
+      const m = Math.min(b.width, b.height) * 0.15
+      if (x1 >= b.left + m && x2 <= b.right - m && y1 >= b.top + m && y2 <= b.bottom - m) return
+    }
+    const cx = (x1 + x2) / 2 - b.left + box.scrollLeft
+    const cy = (y1 + y2) / 2 - b.top + box.scrollTop
+    box.scrollTo({ left: cx - box.clientWidth / 2, top: cy - box.clientHeight / 2, behavior: 'smooth' })
+  }
   const destKey = [...dests].join(',')
   useEffect(() => {
     const box = boardRef.current
     if (!zoom || !box) return
-    const el = box.querySelector('.ycell.dest, .ytoken.can') || box.querySelector('.ycell.home')
-    if (!el) return
-    const b = box.getBoundingClientRect()
-    const r = el.getBoundingClientRect()
-    box.scrollTo({ left: box.scrollLeft + (r.left + r.width / 2) - (b.left + b.width / 2), behavior: 'smooth' })
+    const els = [...box.querySelectorAll('.ycell.dest, .ytoken.can')]
+    if (els.length) return boardFocus(els)
+    if (room?.status !== 'playing') return boardFocus([...box.querySelectorAll('.ycell.home')])
   }, [zoom, destKey, room?.status])
+  // 차례가 바뀌면 그 팀 말들(없으면 출발 칸) 쪽으로
+  useEffect(() => {
+    const box = boardRef.current
+    if (!zoom || !box || room?.status !== 'playing') return
+    const t = setTimeout(() => {
+      const mine = [...box.querySelectorAll(`.ytoken[data-team="${curTeam}"]`)]
+      boardFocus(mine.length ? mine : [...box.querySelectorAll('.ycell.home')])
+    }, 350)
+    return () => clearTimeout(t)
+  }, [zoom, room?.turnNo, room?.status])
+  // 말이 움직이는 동안: 창 밖으로 나가면 따라감
+  useEffect(() => {
+    const box = boardRef.current
+    if (!zoom || !box || !moveAnim) return
+    const el = box.querySelector('.ytoken.moving')
+    if (el) boardFocus([el], true)
+  }, [zoom, moveAnim?.node])
 
   // 대기실 ↔ 게임 화면이 바뀌면 맨 위(점수판·윷판)부터 보이게
   useEffect(() => {

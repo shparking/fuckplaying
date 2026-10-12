@@ -97,6 +97,7 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
             key={`${s.team}-${s.node}-${s.moving ? 'm' : s.ghost ? 'g' : ''}`}
             className={`ytoken ${BIG_NODES.has(s.node) ? 'on-big' : ''} ${s.moving ? 'moving' : ''} ${s.ghost ? 'ghost' : ''} ${canMove ? 'can' : ''}`}
             style={{ ...pos(n), '--tc': info.color }}
+            data-team={s.team}
             onClick={(e) => {
               e.stopPropagation()
               if (canMove) onStackTap?.(s.node)

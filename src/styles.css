@@ -826,6 +826,8 @@ textarea {
     0 16px 36px rgba(0, 0, 0, 0.38);
   /* 가장자리 칸의 말이 잘리지 않게 (배경은 border-radius 로 둥글게 잘림) */
   overflow: visible;
+  /* 칸 글자 크기를 판 너비에 비례시키는 기준 (cqw) */
+  container-type: inline-size;
 }
 :root[data-theme='light'] .yut-board {
   box-shadow:
@@ -901,7 +903,8 @@ textarea {
   top: 7%;
   left: 50%;
   transform: translateX(-50%);
-  font-size: clamp(5.5px, 1.6vw, 8px);
+  font-size: 6px;
+  font-size: max(5.5px, 1.55cqw);
   font-weight: 800;
   color: var(--text-3);
   line-height: 1;
@@ -911,7 +914,8 @@ textarea {
   top: 9%;
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: clamp(5.5px, 1.55vw, 8px);
+  font-size: 6px;
+  font-size: max(5.5px, 1.5cqw);
   letter-spacing: 0.02em;
   color: var(--accent);
   text-shadow: 0 0 6px var(--accent-glow);
@@ -921,12 +925,14 @@ textarea {
   text-shadow: 0 0 6px var(--soju-soft);
 }
 .ycell-emo {
-  font-size: clamp(11px, 3.3vw, 16px);
+  font-size: 12px;
+  font-size: max(10px, 3cqw);
   line-height: 1;
   margin-top: 22%;
 }
 .ycell.big .ycell-emo {
-  font-size: clamp(12px, 3.8vw, 18px);
+  font-size: 13px;
+  font-size: max(11px, 3.4cqw);
   margin-top: 16%;
 }
 /* 10×10 판은 칸이 작아서 글자는 '판 크게 보기'에서만 (평소엔 이모지·번호) */
@@ -934,8 +940,8 @@ textarea {
   display: none;
   flex-direction: column;
   align-items: center;
-  font-size: clamp(6.5px, 2vw, 9px);
-  line-height: 1.12;
+  font-size: 1.3cqw;
+  line-height: 1.14;
   font-weight: 700;
   text-align: center;
   margin-top: 1px;
@@ -943,27 +949,30 @@ textarea {
   letter-spacing: -0.04em;
 }
 .ycell-text.long {
-  font-size: clamp(6px, 1.75vw, 8px);
+  font-size: 1.12cqw;
 }
+/* 크게 보기: 판이 화면보다 커서 칸마다 벌칙 글자까지 보임 */
 .yut-board.zoom .ycell-text {
   display: flex;
-  font-size: clamp(6.5px, 2vw, 9px);
-}
-.yut-board.zoom .ycell-text.long {
-  font-size: clamp(6px, 1.8vw, 8px);
 }
 .yut-board.zoom .ycell-emo {
+  font-size: 2.3cqw;
   margin-top: 14%;
 }
+.yut-board.zoom .ycell.big .ycell-emo {
+  font-size: 2.6cqw;
+  margin-top: 13%;
+}
 .yut-board.zoom .ycell-no {
-  font-size: clamp(7px, 2vw, 10px);
+  font-size: 1.2cqw;
 }
 /* 진행 방향 화살표 */
 .ydir {
   position: absolute;
   z-index: 0;
   transform: translate(-50%, -50%) rotate(var(--rot));
-  font-size: clamp(11px, 3.4vw, 18px);
+  font-size: 14px;
+  font-size: max(11px, 3cqw);
   line-height: 1;
   color: var(--accent);
   opacity: 0.75;
@@ -1033,6 +1042,7 @@ textarea {
   background: #0b0c18;
   color: #fff;
   font-size: 9px;
+  font-size: max(9px, 1.1cqw);
   font-weight: 900;
   border-radius: 999px;
   padding: 0 4px;
@@ -1065,6 +1075,11 @@ textarea {
 .ytoken.ghost {
   opacity: 0.85;
 }
+/* 크게 보기에서는 칸이 커지니 말은 상대적으로 작게 (칸 글자 안 가리게) */
+.yut-board.zoom .ytoken {
+  width: 3.8%;
+  height: 3.8%;
+}
 /* 모서리·가운데·출발 같은 큰 원 칸: 원 안쪽 오른쪽 위 */
 .ytoken.on-big {
   transform: translate(-5%, -95%);
@@ -1090,15 +1105,22 @@ textarea {
   position: relative;
   border-radius: 26px;
 }
+/* 크게 보기: 화면 안의 창으로 큰 판을 손가락으로 밀어서 봄 (위아래·좌우) */
 .board-scroll.zoom {
-  overflow-x: auto;
-  overflow-y: hidden;
+  height: clamp(300px, calc(100dvh - var(--dock-h, 170px) - 210px), 135vw);
+  overflow: auto;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+  border: 1px solid var(--line-strong);
+  background: var(--board-bg);
+}
+.board-scroll.zoom::-webkit-scrollbar {
+  display: none;
 }
 .board-scroll.zoom .yut-board {
-  width: 175%;
+  width: 250%;
+  border-radius: 0;
+  border: 0;
 }
 .board-tools {
   display: flex;
