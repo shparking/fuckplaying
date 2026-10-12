@@ -105,7 +105,7 @@ function stacksOf(pieces, teamCount) {
   return Object.values(out)
 }
 
-export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackTap, movable, dests, activeNode, mover, hide, ghost, children }) {
+export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackTap, movable, dests, activeNode, mover, hide, ghost, bank, children }) {
   let stacks = stacksOf(pieces, teamCount)
   // 이동 애니메이션 중: 도착 칸의 말 묶음에서 움직이는 말 수만큼 빼고, 움직이는 말은 따로 그림
   if (hide) {
@@ -154,6 +154,8 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
                 <span key={i}>{l}</span>
               ))}
             </span>
+            {/* 소주 보관소: 모인 잔 수 */}
+            {c.type === 'sojuBank' && bank > 0 && <span className="ycell-bank">🍶{bank}</span>}
           </button>
         )
       })}

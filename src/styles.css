@@ -2742,3 +2742,518 @@ textarea {
   font-size: 10px;
 }
 
+
+/* ---------- 팀 대결 미니게임 ---------- */
+.tchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  border: 1.5px solid var(--tc);
+  background: color-mix(in srgb, var(--tc) 18%, transparent);
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.tchip i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--tc);
+  box-shadow: 0 0 8px var(--tc);
+}
+.tchip.sm {
+  font-size: 12.5px;
+  padding: 2px 8px 2px 7px;
+}
+.modal .tchip {
+  color: var(--text);
+}
+.tg-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.tg-roster-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.tg-names {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tg-avatars {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.ai-overlay.tg {
+  align-items: stretch;
+  padding: calc(16px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom));
+}
+.tg-box {
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  justify-content: center;
+}
+.tg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  letter-spacing: 0.01em;
+}
+.tg-score {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-end;
+}
+.tg-score-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: inherit;
+}
+.tg-score-team .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--tc);
+  box-shadow: 0 0 6px var(--tc);
+  margin-right: 3px;
+}
+.tg-score-team i:not(.dot),
+.tg-marks i {
+  font-style: normal;
+  font-family: 'Pretendard Variable', Pretendard, sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  display: inline-grid;
+  place-items: center;
+}
+.tg-score-team i.ok,
+.tg-marks i.ok {
+  background: #12b76a;
+  color: #fff;
+}
+.tg-score-team i.no,
+.tg-marks i.no {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.75);
+}
+.tg-marks {
+  display: inline-flex;
+  gap: 3px;
+}
+.tg-timer {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.tg-timer i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ffd23f, var(--accent));
+  box-shadow: 0 0 10px var(--accent-glow);
+  transition: width 0.1s linear;
+}
+.tg-q {
+  font-family: var(--font-display);
+  font-size: 22px;
+  text-align: center;
+  color: #ffd23f;
+  text-shadow: 0 0 12px rgba(255, 210, 63, 0.45);
+  word-break: keep-all;
+}
+.vs-sm {
+  font-size: 15px;
+  opacity: 0.7;
+  margin: 0 4px;
+}
+.sync-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+}
+.sync-opts .vs {
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.sync-opt {
+  min-height: 92px;
+  border-radius: 22px;
+  padding: 14px;
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.15;
+  color: #fff;
+  word-break: keep-all;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  transition: transform 0.08s ease;
+}
+.sync-opt:active {
+  transform: scale(0.97);
+}
+.sync-opt.on {
+  background: var(--accent);
+  border-color: #ffd9b8;
+  color: var(--accent-text);
+  box-shadow: 0 0 26px var(--accent-glow);
+}
+.tg-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.tg-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1.5px solid color-mix(in srgb, var(--tc) 55%, transparent);
+  text-align: left;
+}
+.tg-row.lose {
+  background: color-mix(in srgb, var(--tc) 22%, transparent);
+  border-color: var(--tc);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--tc) 40%, transparent);
+}
+.tg-row-main {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: #fff;
+  justify-self: end;
+}
+.tg-row-sub {
+  grid-column: 1 / -1;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.72);
+  word-break: keep-all;
+}
+.roulette .seg-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+/* 연타 줄다리기 */
+.tg-clock {
+  font-size: 30px;
+  color: #ffd23f;
+  text-shadow: 0 0 12px rgba(255, 210, 63, 0.5);
+}
+.tg-clock.hot {
+  color: #ff5468;
+  text-shadow: 0 0 14px rgba(255, 84, 104, 0.7);
+}
+.rope-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rope-ends {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-display);
+  font-size: 17px;
+}
+.rope {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(115deg, rgba(0, 0, 0, 0.22) 0 6px, transparent 6px 12px),
+    linear-gradient(90deg, var(--l), #d9b38c 45%, #d9b38c 55%, var(--r));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.rope-mid {
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  bottom: -10px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.6);
+}
+.rope-knot {
+  position: absolute;
+  top: 50%;
+  font-size: 34px;
+  transform: translate(-50%, -50%);
+  transition: left 0.6s cubic-bezier(0.3, 0.7, 0.3, 1);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+.tap-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tap-bar {
+  display: grid;
+  grid-template-columns: auto 1fr 40px;
+  align-items: center;
+  gap: 8px;
+}
+.tap-bar b {
+  font-family: var(--font-display);
+  font-size: 18px;
+  text-align: right;
+}
+.tap-bar-track {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.tap-bar-track i {
+  display: block;
+  height: 100%;
+  background: var(--tc);
+  box-shadow: 0 0 10px var(--tc);
+  transition: width 0.5s ease;
+}
+.tap-me {
+  text-align: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.8);
+}
+.tap-me b {
+  font-family: var(--font-display);
+  font-size: 40px;
+  color: #fff;
+  margin-left: 6px;
+}
+.tap-pad {
+  flex: 1;
+  min-height: 210px;
+  max-height: 46vh;
+  border-radius: 30px;
+  font-family: var(--font-display);
+  font-size: 46px;
+  color: #fff;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--tc) 70%, #fff), var(--tc) 60%, color-mix(in srgb, var(--tc) 55%, #000));
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 10px 0 color-mix(in srgb, var(--tc) 50%, #000),
+    0 0 40px color-mix(in srgb, var(--tc) 55%, transparent);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+}
+.tap-pad.pressed {
+  transform: translateY(6px) scale(0.985);
+  box-shadow:
+    0 4px 0 color-mix(in srgb, var(--tc) 50%, #000),
+    0 0 50px var(--tc);
+}
+.tap-pad:disabled {
+  opacity: 0.6;
+}
+/* 폭탄 돌리기 팀전: 배경이 폭탄 든 팀 색 */
+.ai-overlay.team-bomb {
+  background: radial-gradient(120% 90% at 50% 10%, color-mix(in srgb, var(--tc) 55%, transparent), rgba(4, 4, 10, 0.94) 70%);
+  transition: background 0.3s ease;
+}
+.bomb-holder {
+  font-weight: 800;
+  font-size: 17px;
+}
+.bomb-holder b {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 400;
+  text-shadow: 0 0 12px currentColor;
+}
+.bomb-pass {
+  width: 100%;
+  max-width: 360px;
+  height: 82px;
+  font-size: 24px;
+  border-radius: 22px;
+  margin-top: 6px;
+}
+.bomb-wait {
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 22px 0;
+}
+
+/* ---------- 팀 놉카드 · 연대책임 · 소주 보관소 ---------- */
+.score-nop {
+  font-size: 12px;
+  font-weight: 900;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--yellow-soft);
+  color: var(--yellow);
+  white-space: nowrap;
+}
+.score-nop.empty {
+  background: transparent;
+  color: var(--text-3);
+  opacity: 0.7;
+}
+.nop-badge.team {
+  font-size: 12px;
+  padding: 4px 9px;
+}
+.team-card .team-head {
+  align-items: center;
+}
+.ai-team-drink {
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1.25;
+  word-break: keep-all;
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.4);
+}
+.ai-team-drink span {
+  text-shadow: 0 0 14px currentColor;
+}
+.ycell-bank {
+  position: absolute;
+  bottom: 0.3cqw;
+  right: 0.35cqw;
+  font-size: 1.75cqw;
+  font-weight: 900;
+  line-height: 1;
+  padding: 0.25cqw 0.5cqw;
+  border-radius: 999px;
+  background: var(--soju);
+  color: #062b17;
+  box-shadow: 0 0 8px var(--soju);
+}
+.soju-jar {
+  font-size: 28px;
+  letter-spacing: 2px;
+  line-height: 1.3;
+  margin: 6px 0 4px;
+  word-break: break-all;
+}
+.soju-jar b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 22px;
+  color: var(--soju);
+}
+.timer.team {
+  border-color: color-mix(in srgb, var(--tc) 55%, transparent);
+}
+.timer.team .timer-bar {
+  background: color-mix(in srgb, var(--tc) 30%, transparent);
+}
+.timer.team .timer-who {
+  color: var(--tc);
+  font-weight: 800;
+}
+
+/* ---------- 3D 윷 던지기 ---------- */
+.throw-overlay.three {
+  display: block;
+  background: radial-gradient(90% 70% at 50% 45%, rgba(20, 14, 6, 0.35), rgba(6, 7, 16, 0.78));
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+.throw3d {
+  position: absolute;
+  inset: 0;
+}
+.throw3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.throw3d-who {
+  position: absolute;
+  top: calc(84px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 10, 22, 0.66);
+  border: 1.5px solid var(--tc, var(--accent));
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--tc, var(--accent)) 45%, transparent);
+}
+.throw3d-result {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(22% + env(safe-area-inset-bottom));
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 42px;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow:
+    0 0 18px color-mix(in srgb, var(--tc, var(--accent)) 85%, transparent),
+    0 3px 10px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.throw-overlay.three.shown .throw3d-result {
+  animation: pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.otter-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  text-decoration: none;
+}
+.otter-link .otter-emo {
+  font-size: 30px;
+}
+.otter-link b {
+  display: block;
+  font-size: 15px;
+}
+.otter-link .muted {
+  display: block;
+  font-size: 12.5px;
+}
+.otter-link .otter-go {
+  margin-left: auto;
+  font-size: 20px;
+  color: var(--accent);
+}

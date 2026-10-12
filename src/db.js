@@ -4,7 +4,12 @@ import { ref, set, get, update, onValue, onDisconnect, remove, serverTimestamp }
 // 주루마블과 같은 Firebase 프로젝트를 쓰되 데이터 위치만 분리
 export const ROOMS = 'yutRooms'
 
-export const DEMO = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('demo')
+const QS = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
+export const DEMO = QS.has('demo')
+// 여러 탭 데모(&share=1): 같은 브라우저의 탭끼리 메모리 DB 를 BroadcastChannel 로 맞춤 → 폰 여러 대처럼 테스트 (탭마다 ?pid= 로 다른 사람)
+export const SHARED = DEMO && QS.has('share')
+// 혼자 보는 데모: 한 화면이 모든 참가자 역할을 대신함 (지금 차례인 사람·아직 안 한 사람으로 행동)
+export const SOLO = DEMO && !SHARED
 
 // ---------- 메모리 백엔드 ----------
 const mem = { data: {}, subs: new Set() }
@@ -39,11 +44,11 @@ function memGet(path) {
   const copy = JSON.parse(JSON.stringify(cur))
   return FB_SHAPE ? fbShape(copy) ?? null : copy
 }
-function memSet(path, val) {
+function memApply(path, val) {
   const ps = parts(path)
   if (!ps.length) {
     mem.data = val ?? {}
-    return notify()
+    return
   }
   let cur = mem.data
   for (const k of ps.slice(0, -1)) {
@@ -53,10 +58,64 @@ function memSet(path, val) {
   const last = ps[ps.length - 1]
   if (val === null || val === undefined) delete cur[last]
   else cur[last] = JSON.parse(JSON.stringify(val))
-  notify()
 }
 function notify() {
   mem.subs.forEach((cb) => cb())
+}
+// 여러 탭 데모: 처음 연 탭이 '서버' 역할 — 모든 쓰기를 순서대로 확정(commit)해서 모든 탭에 같은 순서로 반영
+const TAB = Math.random().toString(36).slice(2)
+let chan = null
+let leader = false
+let ready = Promise.resolve()
+if (SHARED && typeof BroadcastChannel !== 'undefined') {
+  chan = new BroadcastChannel('juruyut-demo-db')
+  let done = false
+  let resolveReady
+  ready = new Promise((r) => (resolveReady = r))
+  const finish = () => {
+    if (done) return
+    done = true
+    resolveReady()
+  }
+  chan.onmessage = ({ data: m }) => {
+    if (!m) return
+    if (m.type === 'hello' && leader) chan.postMessage({ type: 'welcome', to: m.from, data: mem.data })
+    else if (m.type === 'welcome' && m.to === TAB && !done) {
+      mem.data = m.data || {}
+      finish()
+      notify()
+    } else if (m.type === 'write' && leader) commitWrites(m.list)
+    else if (m.type === 'commit') {
+      m.list.forEach(([p, v]) => memApply(p, v))
+      notify()
+    }
+  }
+  chan.postMessage({ type: 'hello', from: TAB })
+  setTimeout(() => {
+    if (!done) leader = true
+    finish()
+  }, 300)
+}
+function commitWrites(list) {
+  list.forEach(([p, v]) => memApply(p, v))
+  notify()
+  chan.postMessage({ type: 'commit', list })
+}
+// list: [[경로, 값], ...] 를 한 번에 반영 (여러 탭 데모면 '서버' 탭을 거쳐 모두에게)
+function memWrite(list) {
+  list = list.map(([p, v]) => [p, v === undefined ? null : v])
+  if (!chan || leader) {
+    if (chan) return commitWrites(list)
+    list.forEach(([p, v]) => memApply(p, v))
+    return notify()
+  }
+  // 내 화면엔 바로 반영 (Firebase 처럼), 확정 순서는 '서버' 탭이 정함
+  list.forEach(([p, v]) => memApply(p, v))
+  notify()
+  chan.postMessage({ type: 'write', list })
+}
+function memSet(path, val) {
+  memWrite([[path, val]])
 }
 // 데모에서도 Firebase 와 똑같이 쓰기 값을 검사 (undefined·NaN·함수·잘못된 키, update 경로 겹침이면 에러)
 // → 실서버에서만 터지는 버그를 데모 자동 테스트에서 미리 잡기 위함
@@ -100,7 +159,10 @@ export function initDb(db) {
 export const now = () => (DEMO ? Date.now() : serverTimestamp())
 
 export async function dbGet(path) {
-  if (DEMO) return memGet(path)
+  if (DEMO) {
+    await ready
+    return memGet(path)
+  }
   const snap = await get(ref(fbDb, path))
   return snap.exists() ? snap.val() : null
 }
@@ -114,7 +176,7 @@ export async function dbSet(path, val) {
 export async function dbUpdate(path, updates) {
   if (DEMO) {
     fbCheckUpdate(path, updates)
-    Object.entries(updates).forEach(([k, v]) => memSet(`${path}/${k}`, v))
+    memWrite(Object.entries(updates).map(([k, v]) => [`${path}/${k}`, v]))
     return
   }
   return update(ref(fbDb, path), updates)
@@ -126,9 +188,16 @@ export async function dbRemove(path) {
 export function dbOn(path, cb) {
   if (DEMO) {
     const fn = () => cb(memGet(path))
-    mem.subs.add(fn)
-    fn()
-    return () => mem.subs.delete(fn)
+    let off = false
+    ready.then(() => {
+      if (off) return
+      mem.subs.add(fn)
+      fn()
+    })
+    return () => {
+      off = true
+      mem.subs.delete(fn)
+    }
   }
   return onValue(ref(fbDb, path), (snap) => cb(snap.exists() ? snap.val() : null))
 }
@@ -158,7 +227,7 @@ export function dbPresence(path) {
 
 // 데모용: 가짜 참가자 추가
 export function demoSeed(code, names, colors) {
-  if (!DEMO) return
+  if (!SOLO) return
   names.forEach((n, i) => memSet(`${ROOMS}/${code}/players/demo${i}`, { name: n, color: colors[(i + 1) % colors.length], nop: i === 1 ? 2 : 0, team: (i + 1) % 2, joinedAt: Date.now() }))
 }
 
@@ -197,9 +266,16 @@ export async function dbPurgeOldRooms() {
 export function dbOnRooms(cb) {
   if (DEMO) {
     const fn = () => cb(memGet(ROOMS) || {})
-    mem.subs.add(fn)
-    fn()
-    return () => mem.subs.delete(fn)
+    let off = false
+    ready.then(() => {
+      if (off) return
+      mem.subs.add(fn)
+      fn()
+    })
+    return () => {
+      off = true
+      mem.subs.delete(fn)
+    }
   }
   return onValue(ref(fbDb, ROOMS), (snap) => cb(snap.exists() ? snap.val() : {}))
 }

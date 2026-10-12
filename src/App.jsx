@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import YutBoard from './components/YutBoard'
-import { ThrowOverlay, Sticks } from './components/YutSticks'
-import { DEMO, LOBBY_TTL_MS } from './db'
+import { ThrowOverlay, Sticks, preloadThrow3D } from './components/YutSticks'
+import { SOLO, LOBBY_TTL_MS } from './db'
 import {
   myId,
   createRoom,
@@ -59,10 +59,16 @@ import {
   missionReveal,
   missionResult,
   missionDone,
-  giveNop,
   missionAck,
   subscribeRoomList,
+  teamNop,
+  teamsOf,
+  teamLabel,
+  optionTargets,
+  TEAM_GAMES,
+  liveTeams,
 } from './room'
+import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel } from './components/TeamGames'
 import { BALANCE_TOPICS } from './game/balance'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
@@ -95,6 +101,12 @@ const KIND_LABEL = {
   home: '출발·골인',
   caught: '잡기',
   win: '승리',
+  teamSync: '팀 이구동성',
+  tapWar: '연타 줄다리기',
+  teamReact: '팀 반응속도',
+  teamBomb: '폭탄 돌리기 팀전',
+  sojuAdd: '소주 +1 적립',
+  sojuBank: '소주 보관소',
 }
 const oneLine = (t) => String(t || '').replace(/\n/g, ' ')
 // 갈림길 선택지 화살표: 첫 걸음 방향 (y 는 아래로)
@@ -206,9 +218,11 @@ function CountOverlay({ step, emoji, sub }) {
 }
 
 // 축하 화면: 지목된 사람(들) 공개 + 컨페티
-function CongratsOverlay({ room, targets, actorId, iAct, canNop, onDone, onTargetNop, title = '🎉 Congratulations! 🎉', note, refused = {} }) {
+function CongratsOverlay({ room, targets, actorId, iAct, canNop, onDone, onTargetNop, title = '🎉 Congratulations! 🎉', note, refused = {}, teamWide = false }) {
   const pieces = Array.from({ length: 28 })
   const names = targets.map((t) => room.players[t]?.name).filter(Boolean)
+  // 연대책임: 걸린 사람의 팀 전원이 같이 마심
+  const drinkTeams = teamsOf(room, targets.filter((t) => !refused[t]))
   const nameEls = targets.map((t, i) => (
     <span key={t} className={refused[t] ? 'refused' : ''}>
       {room.players[t]?.name}
@@ -234,8 +248,19 @@ function CongratsOverlay({ room, targets, actorId, iAct, canNop, onDone, onTarge
         </div>
         {note && <div className="ai-note">{note}</div>}
         <div className="ai-name">
-          <b>{names.length ? nameEls : '—'}</b> 마셔! 🍶
+          <b>{names.length ? nameEls : '—'}</b> {teamWide ? '' : '걸렸다!'}
         </div>
+        {drinkTeams.length > 0 && (
+          <div className="ai-team-drink">
+            {drinkTeams.map((t, i) => (
+              <span key={t} style={{ color: TEAM_INFO[t]?.color }}>
+                {TEAM_INFO[t]?.name}
+                {i < drinkTeams.length - 1 ? ', ' : ''}
+              </span>
+            ))}{' '}
+            다 같이 마셔! 🍶
+          </div>
+        )}
         <div className="ai-actions">
           {canNop && (
             <button className="btn btn-ghost" onClick={onTargetNop}>
@@ -260,7 +285,7 @@ function AiPickOverlay({ room, pending, me, iAct, onDone, onTargetNop }) {
   const step = useCountdown(`${pending.target}-${pending.startedAt}`)
   if (step > 0) return <CountOverlay step={step} emoji="🤖" sub="AI가 한 명을 고르고 있어요…" />
   const target = room.players[pending.target]
-  const isTarget = DEMO || pending.target === me
+  const isTarget = SOLO || pending.target === me
   return (
     <CongratsOverlay room={room} targets={[pending.target]} actorId={pending.playerId} iAct={iAct} canNop={false} onDone={onDone} onTargetNop={onTargetNop} />
   )
@@ -322,12 +347,12 @@ function VotePanel({ room, pending: p, me, iAct, code }) {
   const ids = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
   const votes = p.votes || {}
   const votedCount = ids.filter((pid) => votes[pid]).length
-  const myVote = DEMO ? null : votes[me]
+  const myVote = SOLO ? null : votes[me]
   const step = useCountdown(p.stage === 'result' ? `r-${p.revealedAt}` : 'vote')
   if (p.stage === 'result') {
     if (step > 0) return <CountOverlay step={step} emoji="🗳️" sub="투표 결과를 집계하고 있어요…" />
     const winners = voteWinners(p)
-    const canNop = (DEMO || winners.includes(me)) && (room.players[DEMO ? winners[0] : me]?.nop || 0) > 0
+    const canNop = (SOLO || winners.includes(me)) && (room.players[SOLO ? winners[0] : me]?.nop || 0) > 0
     return (
       <CongratsOverlay
         room={room}
@@ -411,7 +436,7 @@ function BalancePanel({ room, pending: p, me, iAct, code }) {
   const [ta, tb] = (BALANCE_TOPICS[p.topic] || ' vs ').split(' vs ')
   const votes = p.votes || {}
   const votedCount = ids.filter((pid) => votes[pid]).length
-  const myVote = DEMO ? null : votes[me]
+  const myVote = SOLO ? null : votes[me]
   const r = balanceResult(p)
   const step = useCountdown(p.stage === 'vote' ? 'vote' : `${p.stage}-${p.revealedAt}`)
   const actor = room.players[p.playerId]
@@ -437,7 +462,7 @@ function BalancePanel({ room, pending: p, me, iAct, code }) {
     )
   if (p.stage === 'result') {
     if (step > 0) return <CountOverlay step={step} emoji="⚖️" sub="투표 결과를 집계하고 있어요…" />
-    const canNop = (DEMO || r.losers.includes(me)) && !p.refused?.[DEMO ? r.losers[0] : me] && (room.players[DEMO ? r.losers[0] : me]?.nop || 0) > 0
+    const canNop = (SOLO || r.losers.includes(me)) && !p.refused?.[SOLO ? r.losers[0] : me] && (room.players[SOLO ? r.losers[0] : me]?.nop || 0) > 0
     return (
       <CongratsOverlay
         room={room}
@@ -588,7 +613,8 @@ function RouletteOverlay({ room, actorId, iAct, onDone, revealKey, title, note, 
 // 놉카드 도박: 할지 말지 선택 → 룰렛. 카드 있으면 +2 vs 전부 소멸, 없으면 안 마셔 vs 마셔
 function GamblePanel({ room, pending: p, iAct, code }) {
   const actor = room.players[p.playerId]
-  const nop = actor?.nop || 0
+  const myTeam = teamOf(room, p.playerId)
+  const nop = teamNop(room, myTeam)
   if (p.stage === 'spin') {
     const win = p.roulette === 'win'
     const had = p.nopAtSpin ?? nop
@@ -600,9 +626,9 @@ function GamblePanel({ room, pending: p, iAct, code }) {
           ]
         : [
             { emoji: '😇', label: '안 마셔', color: '#06d6a0' },
-            { emoji: '🍶', label: '마셔', color: '#ea002c' },
+            { emoji: '🍶', label: '팀 다 같이 마셔', color: '#ea002c' },
           ]
-    const resultText = had > 0 ? (win ? '놉카드 +2! 🎫🎫' : `놉카드 ${had}장 소멸… 💀`) : win ? '안 마셔도 돼요! 😇' : '마셔! 🍶'
+    const resultText = had > 0 ? (win ? `${TEAM_INFO[myTeam].name} 놉카드 +2! 🎫🎫` : `${TEAM_INFO[myTeam].name} 놉카드 ${had}장 소멸… 💀`) : win ? '안 마셔도 돼요! 😇' : `${TEAM_INFO[myTeam].name} 다 같이 마셔! 🍶`
     return (
       <RouletteOverlay
         room={room}
@@ -610,7 +636,7 @@ function GamblePanel({ room, pending: p, iAct, code }) {
         iAct={iAct}
         revealKey={p.revealedAt}
         title="🎰 놉카드 도박"
-        note={`${actor?.name} · 놉카드 ${had}장`}
+        note={`${actor?.name} · ${TEAM_INFO[myTeam].name} 놉카드 ${had}장`}
         options={options}
         pick={win ? 0 : 1}
         resultText={resultText}
@@ -624,14 +650,14 @@ function GamblePanel({ room, pending: p, iAct, code }) {
         <div className="kicker">🎰 놉카드 도박</div>
         <h2>도박, 할까요?</h2>
         <div className="muted">
-          <b style={{ color: actor?.color }}>{actor?.name}</b> — 현재 놉카드 {nop}장.{' '}
+          <b style={{ color: actor?.color }}>{actor?.name}</b> — {TEAM_INFO[myTeam].name} 놉카드 {nop}장.{' '}
           {nop > 0 ? (
             <>
-              룰렛 50%로 <b>놉카드 +2</b> 아니면 <b>보유 놉카드 전부 소멸</b>이에요.
+              룰렛 50%로 <b>팀 놉카드 +2</b> 아니면 <b>팀 놉카드 전부 소멸</b>이에요.
             </>
           ) : (
             <>
-              카드가 없어서 룰렛 50%로 <b>안 마시기</b> 아니면 <b>마시기</b>예요.
+              카드가 없어서 룰렛 50%로 <b>안 마시기</b> 아니면 <b>우리 팀 다 같이 마시기</b>예요.
             </>
           )}{' '}
           안 해도 아무 일 없어요.
@@ -751,7 +777,7 @@ function ReactionPanel({ room, pending: p, me, iAct, code }) {
   const ids = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
   if (p.stage === 'armed') {
     const go = p.goAt && serverNow() >= p.goAt
-    const mine = DEMO ? null : p.results?.[me]
+    const mine = SOLO ? null : p.results?.[me]
     const tapped = mine != null
     const doneCount = ids.filter((pid) => p.results?.[pid] != null).length
     return (
@@ -889,11 +915,11 @@ function LiarPanel({ room, pending: p, me, iAct, code }) {
   const [show, setShow] = useState(false)
   useEffect(() => setShow(false), [p.stage])
   const ids = Object.keys(p.words || {}).filter((pid) => room.players[pid]?.name)
-  const myWord = DEMO ? p.majority : p.words?.[me]
+  const myWord = SOLO ? p.majority : p.words?.[me]
   const revealedCount = ids.filter((pid) => p.revealed?.[pid]).length
   const votes = p.votes || {}
   const votedCount = ids.filter((pid) => votes[pid]).length
-  const myVote = DEMO ? null : votes[me]
+  const myVote = SOLO ? null : votes[me]
   const cat = liarCategory(p.category)
   // 설명 순서: 행동 주체부터 차례대로
   const order = roomOrder(room)
@@ -965,7 +991,7 @@ function LiarPanel({ room, pending: p, me, iAct, code }) {
               {ids.map((pid) => {
                 const pl = room.players[pid]
                     return (
-                  <button key={pid} className={`steal-btn ${myVote === pid ? 'picked' : ''}`} disabled={!DEMO && !p.words?.[me]} onClick={() => liarVote(code, room, pid)}>
+                  <button key={pid} className={`steal-btn ${myVote === pid ? 'picked' : ''}`} disabled={!SOLO && !p.words?.[me]} onClick={() => liarVote(code, room, pid)}>
                     <span className="avatar sm" style={{ background: pl.color }}>
                       {pl.name.slice(0, 1)}
                     </span>
@@ -1080,7 +1106,7 @@ function MissionBanner({ room, me }) {
   const left = Math.max(0, m.endsAt - serverNow())
   const mm = String(Math.floor(left / 60000)).padStart(2, '0')
   const ss = String(Math.floor((left % 60000) / 1000)).padStart(2, '0')
-  const mine = DEMO || m.playerId === me
+  const mine = SOLO || m.playerId === me
   const pct = Math.max(0, Math.min(100, (left / (m.minutes * 60000)) * 100))
   return (
     <div className="timers">
@@ -1100,7 +1126,7 @@ function MissionBanner({ room, me }) {
 function MissionCard({ room, me, code, onClose }) {
   const m = room.mission
   if (!m || m.stage !== 'active') return null
-  const mine = DEMO || m.playerId === me
+  const mine = SOLO || m.playerId === me
   const done = () => {
     missionAck(code, room)
     onClose()
@@ -1112,8 +1138,8 @@ function MissionCard({ room, me, code, onClose }) {
         <h2>{mine ? m.detail : '누군가에게 돌발 미션이 주어졌습니다!'}</h2>
         <div className="muted">
           {mine
-            ? `${m.minutes}분 안에 아무도 눈치 못 채게 수행하세요. 시간이 끝나면 다른 사람들이 어떤 미션이었는지 5지선다로 맞혀요. 절반 이상이 맞히면 당신이, 못 맞히면 틀린 사람들이 마셔요.`
-            : `${m.minutes}분 동안 누가 이상한 행동을 하는지 잘 관찰하세요 👀 시간이 끝나면 그 사람이 공개되고, 어떤 미션이었는지 5지선다로 맞히는 투표가 열려요. 절반 이상이 맞히면 그 사람이, 못 맞히면 틀린 사람들이 마셔요.`}
+            ? `${m.minutes}분 안에 아무도 눈치 못 채게 수행하세요. 시간이 끝나면 다른 사람들이 어떤 미션이었는지 5지선다로 맞혀요. 절반 이상이 맞히면 우리 팀이, 못 맞히면 틀린 사람들의 팀이 다 같이 마셔요.`
+            : `${m.minutes}분 동안 누가 이상한 행동을 하는지 잘 관찰하세요 👀 시간이 끝나면 그 사람이 공개되고, 어떤 미션이었는지 5지선다로 맞히는 투표가 열려요. 절반 이상이 맞히면 그 사람 팀이, 못 맞히면 틀린 사람들의 팀이 다 같이 마셔요.`}
         </div>
         <div className="actions">
           <button className="btn btn-primary" onClick={done}>
@@ -1131,12 +1157,12 @@ function MissionQuiz({ room, me, code }) {
   const step = useCountdown(m?.stage === 'result' ? `${m.revealedAt}` : 'x')
   if (!m || (m.stage !== 'quiz' && m.stage !== 'result')) return null
   const who = room.players[m.playerId]
-  const isPerformer = !DEMO && m.playerId === me
-  const canControl = DEMO || isPerformer || room.hostId === me
+  const isPerformer = !SOLO && m.playerId === me
+  const canControl = SOLO || isPerformer || room.hostId === me
   const voters = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name && pid !== m.playerId)
   const votes = m.votes || {}
   const votedCount = voters.filter((pid) => votes[pid] != null).length
-  const myVote = DEMO ? null : votes[me]
+  const myVote = SOLO ? null : votes[me]
   if (m.stage === 'result') {
     if (step > 0) return <CountOverlay step={step} emoji="🎯" sub="정답을 공개합니다…" />
     const r = missionResult(room, m)
@@ -1165,7 +1191,11 @@ function MissionQuiz({ room, me, code }) {
             })}
           </div>
           <div className="muted" style={{ marginTop: 10 }}>
-            {r.caught ? `절반 이상이 맞혔어요 → ${who?.name} 마셔! 🍶` : `${r.wrong.length ? r.wrong.map((pid) => room.players[pid]?.name).join(', ') + ' 마셔! 🍶' : '아무도 안 마셔요 😇'}`}
+            {r.caught
+              ? `절반 이상이 맞혔어요 → ${who?.name}의 ${teamLabel(teamsOf(room, [m.playerId]))} 다 같이 마셔! 🍶`
+              : r.wrong.length
+                ? `틀린 사람: ${r.wrong.map((pid) => room.players[pid]?.name).join(', ')} → ${teamLabel(teamsOf(room, r.wrong))} 다 같이 마셔! 🍶`
+                : '아무도 안 마셔요 😇'}
           </div>
           <div className="actions">
             {canControl ? (
@@ -1217,7 +1247,62 @@ function MissionQuiz({ room, me, code }) {
   )
 }
 
-// 진행 중인 옵션 타이머 (모든 폰에 표시, 1초마다 갱신)
+// 소주 보관소 (가운데 40번): 모인 술을 도착한 팀이 의리주로. 도착한 사람이 마지막 순서
+function SojuBankPanel({ room, pending: p, iAct, code }) {
+  const n = Math.max(0, Number(p.count) || 0)
+  const step = useCountdown(`soju-${room.lastMove?.id}-${p.pos}`)
+  const t = teamOf(room, p.playerId)
+  const info = TEAM_INFO[t] || TEAM_INFO[0]
+  if (n > 0 && step > 0) return <CountOverlay step={step} emoji="🏺" sub="소주 보관소를 여는 중…" />
+  const order = arr(p.order).filter((pid) => room.players[pid]?.name)
+  return (
+    <div className="modal-backdrop">
+      <div className="modal">
+        <div className="kicker">🏺 소주 보관소 · 가운데 40번</div>
+        {n > 0 ? (
+          <>
+            <h2>
+              <span style={{ color: info.color }}>{info.name}</span> 의리주 {n}잔!
+            </h2>
+            <div className="soju-jar" aria-label={`소주 ${n}잔`}>
+              {'🍶'.repeat(Math.min(n, 12))}
+              {n > 12 && <b> +{n - 12}</b>}
+            </div>
+            <div className="muted">보관소에 모인 {n}잔을 한 글라스에 모아 이 순서로 나눠 마셔요. 마지막 사람(도착한 사람)이 남은 걸 다 마셔요!</div>
+            <div className="shuffle-list">
+              {order.map((pid, i) => (
+                <div key={pid} className={`shuffle-row ${i === order.length - 1 ? 'loser' : ''}`}>
+                  <span className="order">{i + 1}</span>
+                  <span className="avatar sm" style={{ background: room.players[pid].color }}>
+                    {room.players[pid].name.slice(0, 1)}
+                  </span>
+                  <span className="pname">{room.players[pid].name}</span>
+                  {i === order.length - 1 && <span className="tag">마지막 🥃</span>}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <h2>보관소가 비어 있어요 😇</h2>
+            <div className="muted">아직 '소주 +1' 칸에서 모인 술이 없어요. {info.name} 그냥 통과!</div>
+          </>
+        )}
+        <div className="actions">
+          {iAct ? (
+            <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
+              {n > 0 ? '다 마셨다! 🍻' : '확인'}
+            </button>
+          ) : (
+            <div className="waiting">{room.players[p.playerId]?.name}이(가) 확인하면 다음 차례로</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 진행 중인 옵션 타이머 (모든 폰에 표시, 1초마다 갱신) — 옵션이 걸린 팀 색으로
 function OptionTimers({ options }) {
   const [, tick] = useState(0)
   useEffect(() => {
@@ -1235,10 +1320,10 @@ function OptionTimers({ options }) {
         const ss = String(Math.floor((left % 60000) / 1000)).padStart(2, '0')
         const pct = o.minutes ? Math.max(0, Math.min(100, (left / (o.minutes * 60000)) * 100)) : 0
         return (
-          <div className={`timer ${left < 60000 ? 'soon' : ''}`} key={k}>
+          <div className={`timer ${left < 60000 ? 'soon' : ''} ${o.team != null ? 'team' : ''}`} key={k} style={o.team != null && TEAM_INFO[o.team] ? { '--tc': TEAM_INFO[o.team].color } : undefined}>
             <div className="timer-bar" style={{ width: `${pct}%` }} />
-            <span className="timer-text">{o.text}</span>
-            <span className="timer-who">{o.who || '모두'}</span>
+            <span className="timer-text">{oneLine(o.text)}</span>
+            <span className="timer-who">{o.team != null && TEAM_INFO[o.team] ? `${TEAM_INFO[o.team].name}에 걸림` : o.who || '모두'}</span>
             <span className="timer-time">{left === 0 ? '끝!' : `${mm}:${ss}`}</span>
           </div>
         )
@@ -1278,7 +1363,9 @@ function DebugPanel({ room, code, me, connected }) {
       turnNo: room.turnNo,
       yut: room.yut,
       pieces: room.pieces,
-      players: Object.fromEntries(Object.entries(room.players || {}).map(([k, v]) => [k, `${v.name} team=${v.team} nop=${v.nop || 0} drinks=${v.drinks || 0} online=${v.online}`])),
+      players: Object.fromEntries(Object.entries(room.players || {}).map(([k, v]) => [k, `${v.name} team=${v.team} drinks=${v.drinks || 0} online=${v.online}`])),
+      teamNop: room.teamNop,
+      sojuBank: room.sojuBank,
       pending: room.pending,
       lastMove: room.lastMove && { id: room.lastMove.id, team: room.lastMove.team, path: room.lastMove.path, dest: room.lastMove.dest, caught: room.lastMove.caught },
       options: room.options,
@@ -1448,10 +1535,9 @@ export default function App() {
   const [peek, setPeek] = useState(null)
   const [showLog, setShowLog] = useState(false)
   const [missionSeen, setMissionSeen] = useState(null) // 확인한 돌발 미션 id
-  const [nopConfirm, setNopConfirm] = useState(null) // 놉카드 사용 확인 중인 참가자 id
+  const [nopConfirm, setNopConfirm] = useState(null) // 놉카드 사용 확인 중인 팀 { team }
   const [showDrinks, setShowDrinks] = useState(false) // 🍺 오늘의 술고래 순위 팝업
   const [summaryHidden, setSummaryHidden] = useState(null) // 닫은 결과 카드 id
-  const [nopGive, setNopGive] = useState(false) // 양도 대상 선택 중
   const [pwInput, setPwInput] = useState('') // 방 만들 때 비밀번호(선택)
   const [roomList, setRoomList] = useState([]) // 홈 화면 방 목록
   const [joinTarget, setJoinTarget] = useState(null) // 비밀번호 입력 중인 방 {code}
@@ -1566,7 +1652,8 @@ export default function App() {
       try {
         navigator.vibrate?.(40)
       } catch {}
-      await sleep(900)
+      // 윷가락이 날아가 멍석에 떨어져 멈출 때까지 (3D 던지기 시간에 맞춤)
+      await sleep(1300)
       if (cancelled) return
       setThrowAnim({ ...th, phase: 'show' })
       if (isBonus(th.value) || th.value === 0) ding()
@@ -1624,7 +1711,7 @@ export default function App() {
   const cur = curId && room?.players?.[curId]
   const curTeam = room ? currentTeam(room) : 0
   const curInfo = TEAM_INFO[curTeam] || TEAM_INFO[0]
-  const myTurn = DEMO || (!!curId && curId === me)
+  const myTurn = SOLO || (!!curId && curId === me)
   const pending = room?.pending
   const y = room?.yut || {}
   const results = arr(y.results)
@@ -1636,7 +1723,9 @@ export default function App() {
   // 윷가락이 돌아가는 동안에는 결과(칩·윷가락 모양)를 숨김 — 스포 방지
   const throwHidden = throwAnim ? throwAnim.phase === 'spin' : unplayedThrow
   const showPending = !!pending && !busy
-  const iAct = DEMO || pending?.playerId === me
+  const iAct = SOLO || pending?.playerId === me
+  // 팀 대결 게임은 도착한 사람 또는 방장이 진행 (도착한 사람이 자리를 비워도 막히지 않게)
+  const ctlTeam = SOLO || pending?.playerId === me || isHost
   const playing = room?.status === 'playing'
   const canThrow = playing && myTurn && !pending && stage === 'throw' && room.winner == null && !busy
   const canMove = playing && myTurn && !pending && stage === 'move' && room.winner == null && !busy
@@ -1665,7 +1754,7 @@ export default function App() {
     if (prevTurnRef.current === key) return
     const wasSet = prevTurnRef.current !== null
     prevTurnRef.current = key
-    if (wasSet && curId === me && !DEMO) {
+    if (wasSet && curId === me && !SOLO) {
       try {
         navigator.vibrate?.([120, 60, 120])
       } catch {}
@@ -1769,6 +1858,11 @@ export default function App() {
     return () => clearInterval(t)
   }, [room, me, code])
 
+
+  // 게임 화면에 들어오면 3D 윷 던지기를 미리 불러 둠 (첫 던지기부터 바로 나오게)
+  useEffect(() => {
+    if (room?.status === 'playing') preloadThrow3D()
+  }, [room?.status])
 
   // 대기실 ↔ 게임 화면이 바뀌면 맨 위(점수판·윷판)부터 보이게
   useEffect(() => {
@@ -1997,6 +2091,15 @@ export default function App() {
             )}
             {!name.trim() && roomList.length > 0 && <div className="muted">입장하려면 먼저 이름을 입력하세요.</div>}
           </div>
+
+          <a className="card card-pad otter-link" href="./otter.html">
+            <span className="otter-emo">🦦</span>
+            <span>
+              <b>3D 수달 말 미리보기</b>
+              <span className="muted">윷판 위의 팀별 수달 말을 돌려 보고, 팀·크기를 골라 추가해 봐요</span>
+            </span>
+            <span className="otter-go">→</span>
+          </a>
         </>
       )}
 
@@ -2058,6 +2161,8 @@ export default function App() {
             </div>
             <div className="muted">
               팀마다 말 {pieceCountOf(room)}개. 오른쪽 아래 출발 칸에서 위로 돌아 말을 옮기고, {pieceCountOf(room)}개가 먼저 다 들어오는 팀이 이겨요. 모서리·가운데에 멈춘 말은 다음에 대각선(지름길)과 직진 중에서 골라요. 상대 말을 잡으면 그 팀이 마시고 한 번 더 던져요.
+              <br />
+              🍶 걸리면 <b>팀 전원이 같이</b> 마셔요 (연대책임) · 🎫 놉카드는 <b>팀 단위</b> · ⏱ 옵션 칸은 <b>상대 팀</b>에 걸려요 · 🏺 가운데 40번은 소주 보관소
             </div>
           </div>
 
@@ -2196,6 +2301,9 @@ export default function App() {
                   <div className="score-top">
                     <span className="team-dot" />
                     <b>{info.short}</b>
+                    <span className={`score-nop ${teamNop(room, t) ? '' : 'empty'}`} title={`${info.name} 놉카드 ${teamNop(room, t)}장`}>
+                      🎫{teamNop(room, t)}
+                    </span>
                     <span className="score-goal" title={`골인 ${goal}/${pcs.length}`}>
                       {goal}
                       <small>/{pcs.length}</small>
@@ -2294,28 +2402,40 @@ export default function App() {
               mover={mover}
               hide={hide}
               ghost={ghost}
+              bank={room.sojuBank || 0}
             />
           </div>
           <BoardHint hint="칸을 누르면 벌칙이 크게 보여요" />
           <ThrowOverlay anim={throwAnim} who={room.players[throwAnim?.playerId]?.name || ''} teamColor={TEAM_INFO[teamOf(room, throwAnim?.playerId)]?.color} />
 
-          {/* 팀원 · 놉카드 (내 배지를 눌러 사용/양도) */}
+          {/* 팀원 · 팀 놉카드 (우리 팀 배지를 눌러 사용) */}
           <div className="card card-pad teams">
             <div className="teams-title">
-              팀원 · 놉카드
+              팀원 · 팀 놉카드
               <span className="spacer" />
               <span className="muted" style={{ fontSize: 12, fontWeight: 600, letterSpacing: 0 }}>
-                내 🎫 배지를 누르면 사용·양도
+                우리 팀 🎫 배지를 누르면 사용
               </span>
             </div>
             {Array.from({ length: tc }, (_, t) => {
               const info = TEAM_INFO[t]
               const mem = teamMembers(room, t)
+              const n = teamNop(room, t)
+              const ours = SOLO || teamOf(room, me) === t
               return (
                 <div className={`team-card ${t === curTeam ? 'turn' : ''}`} style={{ '--tc': info.color }} key={t}>
                   <div className="team-head">
                     <b>{info.name}</b>
                     <span className="muted">{mem.length}명</span>
+                    <span className="spacer" />
+                    <button
+                      className={`nop-badge team ${n === 0 ? 'empty' : ''}`}
+                      onClick={() => ours && n > 0 && setNopConfirm({ team: t })}
+                      disabled={!ours || n === 0}
+                      title={ours ? '우리 팀 놉카드 사용' : `${info.name} 놉카드`}
+                    >
+                      <NopIcon /> 팀 놉카드 {n}
+                    </button>
                   </div>
                   <div className="team-members">
                     {mem.map((pid) => {
@@ -2327,19 +2447,6 @@ export default function App() {
                             {p.name.slice(0, 1)}
                           </span>
                           <span className="pname">{p.name}</span>
-                          <button
-                            className={`nop-badge ${(p.nop || 0) === 0 ? 'empty' : ''}`}
-                            onClick={() => {
-                              if ((mine || DEMO) && (p.nop || 0) > 0) {
-                                setNopGive(false)
-                                setNopConfirm(pid)
-                              }
-                            }}
-                            disabled={(!mine && !DEMO) || (p.nop || 0) === 0}
-                            title={mine ? '내 놉카드 사용' : '놉카드 보유 수'}
-                          >
-                            <NopIcon /> {p.nop || 0}
-                          </button>
                         </div>
                       )
                     })}
@@ -2371,13 +2478,14 @@ export default function App() {
           iAct={iAct}
           canNop={false}
           title="🎯 잡았다!"
+          teamWide
           note={`${TEAM_INFO[pending.victim]?.name} 말 ${pending.count}개가 집으로!${pending.count > 1 ? ` · ${pending.count}잔씩` : ''} · ${room.players[pending.playerId]?.name} 한 번 더 던져요`}
           onDone={() => resolvePending(code, room, 'done')}
         />
       )}
 
       {/* ---------- 승리 ---------- */}
-      {room && showPending && pending.kind === 'win' && <WinOverlay room={room} pending={pending} isHost={isHost || DEMO} onDone={() => resolvePending(code, room, 'done')} />}
+      {room && showPending && pending.kind === 'win' && <WinOverlay room={room} pending={pending} isHost={isHost || SOLO} onDone={() => resolvePending(code, room, 'done')} />}
 
       {/* ---------- AI 지목 ---------- */}
       {room && showPending && pending.kind === 'aiPick' && (
@@ -2412,6 +2520,15 @@ export default function App() {
       {/* ---------- 의리주 순서 ---------- */}
       {room && showPending && pending.kind === 'shuffle' && <ShufflePanel room={room} pending={pending} iAct={iAct} code={code} />}
 
+      {/* ---------- 팀 대결 미니게임 (도착한 사람 또는 방장이 진행) ---------- */}
+      {room && showPending && pending.kind === 'teamSync' && <SyncPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'tapWar' && <TapWarPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'teamReact' && <TeamReactPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'teamBomb' && <TeamBombPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+
+      {/* ---------- 소주 보관소 (가운데 40번) ---------- */}
+      {room && showPending && pending.kind === 'sojuBank' && <SojuBankPanel room={room} pending={pending} iAct={iAct} code={code} />}
+
       {/* ---------- 훈민정음 ---------- */}
       {room && showPending && pending.kind === 'hunmin' && (
         <HunminPanel room={room} pending={pending} iAct={iAct} code={code} keyId={`${room.lastMove?.id}-${pending.pos}-${pending.title || ''}`} />
@@ -2420,7 +2537,8 @@ export default function App() {
       {/* ---------- 도착 칸 모달 ---------- */}
       {room &&
         showPending &&
-        !['aiPick', 'vote', 'hunmin', 'shuffle', 'balance', 'bomb', 'reaction', 'gamble', 'caught', 'win'].includes(pending.kind) &&
+        !['aiPick', 'vote', 'hunmin', 'shuffle', 'balance', 'bomb', 'reaction', 'gamble', 'caught', 'win', 'sojuBank'].includes(pending.kind) &&
+        !TEAM_GAMES.has(pending.kind) &&
         !(pending.kind === 'liar' && pending.stage !== 'category') &&
         !(pending.kind === 'pick' && pending.stage === 'result') &&
         pendingCell && (
@@ -2446,11 +2564,10 @@ export default function App() {
               {pending.kind === 'choose' && (
                 <div className="cat-grid">
                   {[
-                    ['balance', '⚖️', '밸런스 게임'],
-                    ['liar', '🤥', '라이어 게임'],
-                    ['hunmin', '📝', '훈민정음 게임'],
-                    ['bomb', '💣', '폭탄 돌리기'],
-                    ['reaction', '⚡', '반응속도 게임'],
+                    ['teamSync', '👯', '팀 이구동성'],
+                    ['tapWar', '🪢', '연타 줄다리기'],
+                    ['teamReact', '⚡', '팀 반응속도'],
+                    ['teamBomb', '💣', '폭탄 돌리기 팀전'],
                   ].map(([k, e, n]) => (
                     <button key={k} className="cat-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', k)}>
                       <span className="cat-emo">{e}</span>
@@ -2461,24 +2578,28 @@ export default function App() {
               )}
               <div className="muted">
                 <b style={{ color: room.players[pending.playerId]?.color }}>{room.players[pending.playerId]?.name}</b>
-                {pending.kind === 'nop' && ' — 놉카드 1장이 지급되었어요.'}
+                {pending.kind === 'nop' && ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 놉카드 +1! (지금 ${pending.teamNop ?? teamNop(room, teamOf(room, pending.playerId))}장 · 팀 누구나 쓸 수 있어요)`}
                 {pending.kind === 'normal' && (iAct ? ' — 수행하고 완료를 눌러주세요.' : ' — 수행 중이에요.')}
-                {pending.kind === 'normal' && pendingCell.drink && (pendingCell.drink === 'all' ? ' (전원 잔 수 +1)' : pendingCell.drink === 'team' ? ' (우리 팀 잔 수 +1)' : ' (잔 수 +1)')}
+                {pending.kind === 'normal' && pendingCell.drink && (pendingCell.drink === 'all' ? ' (전원 다 같이 마셔요)' : ` (연대책임! ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 다 같이 마셔요)`)}
+                {pending.kind === 'sojuAdd' && ` — 소주 보관소에 1잔 적립! 지금 ${pending.bank ?? room.sojuBank ?? 0}잔 모였어요. 가운데 40번 보관소에 도착한 팀이 의리주로 다 마셔요 🏺`}
                 {pending.kind === 'again' && ' — 보너스! 이번 차례에 윷을 한 번 더 던져요 🎲'}
                 {pending.kind === 'home' && ' — 빽도로 출발 칸에 들어왔어요. 다음에 이 말을 움직이면 바로 골인!'}
                 {pending.kind === 'option' &&
-                  !pendingCell.pair &&
-                  (room.options?.[optionKey(pending.pos)]?.endsAt > Date.now()
-                    ? ` — 이미 진행 중인 옵션이에요. 모두에게 ${pendingCell.minutes || 5}분이 추가됩니다. `
-                    : ` — 모두에게 적용되는 옵션이에요. ${pendingCell.minutes || 5}분 타이머가 전원 화면에 표시됩니다. `)}
-                {pending.kind === 'option' && pendingCell.pair && ` — 무작위로 정해진 짝과 ${pendingCell.minutes || 5}분 동안 벌칙을 함께 받아요. `}
-                {pending.kind === 'release' && ' — 진행 중이던 옵션 타이머가 모두 종료됐어요.'}
+                  (() => {
+                    const ts = optionTargets(room, pending.playerId)
+                    const on = ts.some((t) => room.options?.[optionKey(pending.pos, t)]?.endsAt > Date.now())
+                    return ` — 상대 팀(${teamLabel(ts)})에 ${oneLine(pendingCell.text)} ${pendingCell.minutes || 5}분이 걸려요${on ? ' (이미 걸려 있어서 시간 추가)' : ''}. 시간 안에 어기면 그 팀이 다 같이 마셔요! 남은 시간은 모든 폰 위에 떠요.`
+                  })()}
+                {pending.kind === 'release' &&
+                  (pending.released
+                    ? ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name}에 걸린 옵션 ${pending.released}개가 풀렸어요 🔓`
+                    : ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name}에 걸린 옵션이 없어요.`)}
                 {pending.kind === 'steal' &&
-                  (Object.entries(room.players).some(([pid, pl]) => pid !== pending.playerId && (pl.nop || 0) > 0)
+                  (liveTeams(room).some((t) => t !== teamOf(room, pending.playerId) && teamNop(room, t) > 0)
                     ? iAct
-                      ? ' — 놉카드를 가진 사람을 골라 1장 가져오세요.'
-                      : ' — 누구의 놉카드를 가져갈지 고르고 있어요.'
-                    : ' — 놉카드를 가진 사람이 없어요.')}
+                      ? ' — 놉카드가 있는 팀을 골라 1장을 우리 팀으로 가져오세요.'
+                      : ' — 어느 팀 놉카드를 가져올지 고르고 있어요.'
+                    : ' — 다른 팀에 놉카드가 없어요.')}
                 {pending.kind === 'choose' && (iAct ? ' — 진행할 게임을 하나 고르세요.' : ' — 게임을 고르고 있어요.')}
                 {pending.kind === 'liar' && (iAct ? ' — 키워드 카테고리를 고르면 모두에게 키워드가 배정돼요. 한 명만 비슷하지만 다른 키워드를 받아요.' : ' — 카테고리를 고르고 있어요.')}
                 {pending.kind === 'pick' && (iAct ? ' — 마실 사람 한 명을 고르세요.' : ` — ${room.players[pending.playerId]?.name}이(가) 마실 사람을 고르고 있어요.`)}
@@ -2512,16 +2633,14 @@ export default function App() {
               )}
               {pending.kind === 'steal' && (
                 <div className="steal-list">
-                  {Object.entries(room.players)
-                    .filter(([pid, pl]) => pid !== pending.playerId && pl.name)
-                    .map(([pid, pl]) => (
-                      <button key={pid} className={`steal-btn ${(pl.nop || 0) > 0 ? '' : 'none'}`} disabled={!iAct || (pl.nop || 0) === 0} onClick={() => resolvePending(code, room, 'steal', pid)}>
-                        <span className="avatar sm" style={{ background: pl.color }}>
-                          {pl.name.slice(0, 1)}
-                        </span>
-                        <span className="pname">{pl.name}</span>
-                        <span className={`nop-badge ${(pl.nop || 0) === 0 ? 'empty' : ''}`}>
-                          <NopIcon /> {pl.nop || 0}
+                  {liveTeams(room)
+                    .filter((t) => t !== teamOf(room, pending.playerId))
+                    .map((t) => (
+                      <button key={t} className={`steal-btn ${teamNop(room, t) > 0 ? '' : 'none'}`} disabled={!iAct || teamNop(room, t) === 0} onClick={() => resolvePending(code, room, 'steal', t)}>
+                        <span className="team-dot" style={{ '--tc': TEAM_INFO[t].color }} />
+                        <span className="pname">{TEAM_INFO[t].name}</span>
+                        <span className={`nop-badge ${teamNop(room, t) === 0 ? 'empty' : ''}`}>
+                          <NopIcon /> {teamNop(room, t)}
                         </span>
                       </button>
                     ))}
@@ -2529,14 +2648,12 @@ export default function App() {
               )}
               {iAct ? (
                 <div className="actions">
-                  {!['liar', 'choose', 'pick'].includes(pending.kind) && !(pending.kind === 'steal' && Object.entries(room.players).some(([pid, pl]) => pid !== pending.playerId && (pl.nop || 0) > 0)) && (
+                  {!['liar', 'choose', 'pick'].includes(pending.kind) && !(pending.kind === 'steal' && liveTeams(room).some((t) => t !== teamOf(room, pending.playerId) && teamNop(room, t) > 0)) && (
                     <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
                       {pending.kind === 'normal'
                         ? '수행 완료'
                         : pending.kind === 'option'
-                          ? room.options?.[optionKey(pending.pos)]?.endsAt > Date.now()
-                            ? `⏱ +${pendingCell.minutes || 5}분 추가`
-                            : `⏱ ${pendingCell.minutes || 5}분 시작`
+                          ? `⏱ 상대 팀에 ${pendingCell.minutes || 5}분 걸기`
                           : pending.kind === 'again'
                             ? '🎲 한 번 더!'
                             : '확인'}
@@ -2555,71 +2672,29 @@ export default function App() {
       {/* ---------- 🍺 오늘의 술고래 순위 ---------- */}
       {showDrinks && room && <DrinksModal room={room} me={me} onClose={() => setShowDrinks(false)} />}
 
-      {/* ---------- 놉카드 사용 / 양도 ---------- */}
-      {nopConfirm && room?.players?.[nopConfirm] && (DEMO || nopConfirm === me) && (
+      {/* ---------- 팀 놉카드 사용 ---------- */}
+      {nopConfirm && room && TEAM_INFO[nopConfirm.team] && (SOLO || teamOf(room, me) === nopConfirm.team) && (
         <div className="modal-backdrop" onClick={() => setNopConfirm(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="kicker">🎫 놉카드</div>
-            {nopGive ? (
-              <>
-                <h2>누구에게 양도할까요?</h2>
-                <div className="muted">
-                  <b style={{ color: room.players[nopConfirm].color }}>{room.players[nopConfirm].name}</b>의 놉카드 1장을 넘겨요. 넘기면 모두에게 알림이 떠요.
-                </div>
-                <div className="steal-list">
-                  {Object.entries(room.players)
-                    .filter(([pid, pl]) => pid !== nopConfirm && pl.name)
-                    .map(([pid, pl]) => (
-                      <button
-                        key={pid}
-                        className="steal-btn"
-                        onClick={() => {
-                          giveNop(code, room, pid, nopConfirm)
-                          setNopConfirm(null)
-                          setNopGive(false)
-                        }}
-                      >
-                        <span className="avatar sm" style={{ background: pl.color }}>
-                          {pl.name.slice(0, 1)}
-                        </span>
-                        <span className="pname">{pl.name}</span>
-                        <span className={`nop-badge ${(pl.nop || 0) === 0 ? 'empty' : ''}`}>
-                          <NopIcon /> {pl.nop || 0}
-                        </span>
-                      </button>
-                    ))}
-                </div>
-                <div className="actions">
-                  <button className="btn btn-ghost" onClick={() => setNopGive(false)}>
-                    뒤로
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2>내 놉카드, 어떻게 할까요?</h2>
-                <div className="muted">
-                  <b style={{ color: room.players[nopConfirm].color }}>{room.players[nopConfirm].name}</b> · 보유 {room.players[nopConfirm].nop || 0}장. 사용하면 벌칙을 거부하고, 양도하면 다른 사람에게 1장을 넘겨요. 둘 다 모두에게 알림이 떠요.
-                </div>
-                <div className="actions">
-                  <button className="btn btn-ghost" onClick={() => setNopConfirm(null)}>
-                    취소
-                  </button>
-                  <button className="btn btn-ghost" onClick={() => setNopGive(true)}>
-                    🎁 양도
-                  </button>
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => {
-                      useNopAnytime(code, room, nopConfirm)
-                      setNopConfirm(null)
-                    }}
-                  >
-                    🙅 사용
-                  </button>
-                </div>
-              </>
-            )}
+            <div className="kicker">🎫 팀 놉카드</div>
+            <h2>{TEAM_INFO[nopConfirm.team].name} 놉카드를 쓸까요?</h2>
+            <div className="muted">
+              우리 팀 놉카드 {teamNop(room, nopConfirm.team)}장. 1장 쓰면 벌칙 하나를 거부할 수 있고, 모두에게 알림이 떠요. 팀원 누구나 쓸 수 있어요.
+            </div>
+            <div className="actions">
+              <button className="btn btn-ghost" onClick={() => setNopConfirm(null)}>
+                취소
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  useNopAnytime(code, room, nopConfirm.team)
+                  setNopConfirm(null)
+                }}
+              >
+                🙅 1장 사용
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2656,10 +2731,15 @@ export default function App() {
             <h2>
               {peek.cell.emoji} {oneLine(peek.cell.text)}
             </h2>
-            {peek.cell.locked && <div className="muted">고정 칸 (편집 불가) — 여기에 도착하거나 지나가면 골인!</div>}
+            {peek.node === 'o0' && <div className="muted">고정 칸 (편집 불가) — 여기에 도착하거나 지나가면 골인!</div>}
+            {peek.cell.type === 'sojuBank' && (
+              <div className="muted">
+                고정 칸 · '소주 +1' 칸에 걸릴 때마다 여기에 한 잔씩 모여요. 지금 <b>{room?.sojuBank || 0}잔</b>. 여기에 도착한 팀이 모인 술을 의리주로 다 마시고, 도착한 사람이 마지막 순서예요.
+              </div>
+            )}
             {CORNERS.has(peek.node) && peek.node !== CORNER_BL && <div className="muted">이 모서리에 멈춘 말은 다음 이동 때 대각선(지름길)과 직진 중에서 골라요.</div>}
             {peek.node === CORNER_BL && <div className="muted">대각선이 끝나는 모서리예요. 여기서는 아래 변을 따라 출발 칸(골인) 쪽으로 가요.</div>}
-            {peek.node === 'C' && <div className="muted">가운데에 멈춘 말은 다음 이동 때 골인 쪽 대각선과 직진 중에서 골라요.</div>}
+            {peek.node === 'C' && <div className="muted" style={{ marginTop: 6 }}>가운데에 멈춘 말은 다음 이동 때 골인 쪽 대각선과 직진 중에서 골라요.</div>}
             <div className="actions">
               <button className="btn btn-ghost" onClick={() => setPeek(null)}>
                 닫기

@@ -100,6 +100,7 @@ const TEAM = { emoji: '🍻', text: '우리 팀\n다 같이 마셔', drink: 'tea
 const SHUFFLE = { emoji: '🥂', text: '의리주 마셔!\n(글라스에)', type: 'shuffle' }
 const TRUTH = { emoji: '🎯', text: '진실 게임\n(질문 1개)' }
 const GAMBLE = { emoji: '🎰', text: '놉카드\n도박', type: 'gamble' }
+// (밸런스·라이어·다수결·개인 반응속도·개인 폭탄은 지금 기본 판에 없음 — 벌칙 리스트에서 다시 쓸 수 있게 남겨 둠)
 const BALANCE = { emoji: '⚖️', text: '밸런스\n게임', type: 'balance' }
 const TWOTOUCH = { emoji: '✌️', text: '투터치', type: 'option', minutes: 5 }
 const REACT = { emoji: '⚡', text: '반응속도\n게임', type: 'reaction' }
@@ -110,6 +111,14 @@ const NOWORD = { emoji: '🙊', text: '아니·근데\n진짜 금지', type: 'op
 const RELEASE = { emoji: '🔓', text: '옵션 해제', type: 'release' }
 const CHEERS = { emoji: '🥃', text: '건배사 후\n전원 원샷', drink: 'all' }
 const VOTE = { emoji: '🗳️', text: '다수결 지목\n너 마셔!', type: 'vote' }
+// 팀 대결 미니게임: 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심 (개인전 게임 자리를 대신함)
+const SYNC = { emoji: '👯', text: '팀\n이구동성', type: 'teamSync' }
+const TAPWAR = { emoji: '🪢', text: '연타\n줄다리기', type: 'tapWar' }
+const TREACT = { emoji: '⚡', text: '팀\n반응속도', type: 'teamReact' }
+const TBOMB = { emoji: '💣', text: '폭탄 돌리기\n팀전', type: 'teamBomb' }
+// 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
+const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
+const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
 
 export const DEFAULT_YUT_CELLS = {
   o0: { emoji: '🏁', text: '출발·골인', type: 'home', locked: true },
@@ -118,19 +127,19 @@ export const DEFAULT_YUT_CELLS = {
   o9: CHOOSE, // 오른쪽 위 모서리
   // 위 변 (→ 왼쪽)
   o10: NOENG, o11: PICK, o12: AGAIN, o13: TEAM, o14: NOP, o15: SHUFFLE, o16: TRUTH, o17: GAMBLE,
-  o18: BALANCE, // 왼쪽 위 모서리
+  o18: SYNC, // 왼쪽 위 모서리
   // 왼쪽 변 (→ 아래로)
-  o19: C1, o20: TWOTOUCH, o21: AI, o22: REACT, o23: RIVAL, o24: YOUNG, o25: BOMB, o26: NOP,
-  o27: LIAR, // 왼쪽 아래 모서리
+  o19: SOJU_ADD, o20: TWOTOUCH, o21: AI, o22: TREACT, o23: RIVAL, o24: YOUNG, o25: TBOMB, o26: NOP,
+  o27: TAPWAR, // 왼쪽 아래 모서리
   // 아래 변 (→ 골인)
-  o28: AGAIN, o29: TEAM, o30: NOWORD, o31: PICK, o32: RELEASE, o33: SON, o34: C1, o35: CHEERS,
+  o28: AGAIN, o29: TEAM, o30: NOWORD, o31: PICK, o32: RELEASE, o33: SON, o34: SOJU_ADD, o35: CHEERS,
   // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래)
-  a1: BOMB, a2: NOP, a3: TRUTH, a4: C1,
-  C: VOTE, // 가운데
-  a5: RELEASE, a6: REACT, a7: SHUFFLE, a8: STEAL,
+  a1: SYNC, a2: NOP, a3: TRUTH, a4: SOJU_ADD,
+  C: SOJU_BANK, // 가운데: 소주 보관소 (고정)
+  a5: RELEASE, a6: TBOMB, a7: TAPWAR, a8: STEAL,
   // 대각선 B (왼쪽 위 → 가운데 → 골인)
-  b1: REACT, b2: YOUNG, b3: AGAIN, b4: AI,
-  b5: C1, b6: GAMBLE, b7: TEAM, b8: CHEERS,
+  b1: TREACT, b2: YOUNG, b3: AGAIN, b4: AI,
+  b5: SOJU_ADD, b6: GAMBLE, b7: TEAM, b8: CHEERS,
 }
 
 // ---------- 윷 던지기 ----------
