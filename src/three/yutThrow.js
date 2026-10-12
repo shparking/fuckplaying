@@ -1,4 +1,4 @@
-// 3D 윷 던지기: 윷가락 4개를 손에서 던진 것처럼 날아가 멍석 위에 떨어져 튀고 구르다가, 정해진 결과 면으로 멈춤
+// 3D 윷 던지기: 윷가락 4개를 손에서 던진 것처럼 날아가 떨어져 튀고 구르다가, 정해진 결과 면으로 멈춤 (바닥 판 없이 그림자만)
 //  · 결과(배/등)는 서버에서 정한 sticks 그대로 → 모든 폰이 같은 결과
 //  · 움직임은 던지기 id 로 정한 난수라 모든 폰에서 똑같이 보임
 //  · 배(평평한 면, X 무늬) = true, 등(둥근 면) = false. 0번 윷가락은 빽도 윷: 배에 XXX 대신 '-'
@@ -82,46 +82,6 @@ function woodTexture(light, marks, backdo) {
   t.anisotropy = 4
   return t
 }
-function matTexture() {
-  const s = 512
-  const c = document.createElement('canvas')
-  c.width = c.height = s
-  const g = c.getContext('2d')
-  g.fillStyle = '#c59d63'
-  g.fillRect(0, 0, s, s)
-  // 멍석 짜임 (가로·세로 엮은 짚)
-  for (let y = 0; y < s; y += 16)
-    for (let x = 0; x < s; x += 16) {
-      const on = ((x + y) / 16) % 2 === 0
-      g.fillStyle = on ? 'rgba(255,240,200,0.18)' : 'rgba(90,55,20,0.18)'
-      g.fillRect(x + 1, y + 1, 14, 14)
-      g.strokeStyle = 'rgba(80,50,18,0.35)'
-      g.lineWidth = 1
-      g.beginPath()
-      if (on) {
-        g.moveTo(x + 2, y + 5)
-        g.lineTo(x + 14, y + 5)
-        g.moveTo(x + 2, y + 11)
-        g.lineTo(x + 14, y + 11)
-      } else {
-        g.moveTo(x + 5, y + 2)
-        g.lineTo(x + 5, y + 14)
-        g.moveTo(x + 11, y + 2)
-        g.lineTo(x + 11, y + 14)
-      }
-      g.stroke()
-    }
-  // 가장자리 어둡게
-  const v = g.createRadialGradient(s / 2, s / 2, s * 0.28, s / 2, s / 2, s * 0.5)
-  v.addColorStop(0, 'rgba(0,0,0,0)')
-  v.addColorStop(1, 'rgba(40,20,5,0.55)')
-  g.fillStyle = v
-  g.fillRect(0, 0, s, s)
-  const t = new THREE.CanvasTexture(c)
-  t.colorSpace = THREE.SRGBColorSpace
-  return t
-}
-
 // 윷가락 하나: 반원기둥 (평평한 면 +y, 길이는 x 방향)
 function makeStick(i, mats) {
   const g = new THREE.Group()
@@ -162,10 +122,11 @@ function setup() {
   key.shadow.camera.bottom = -4
   key.shadow.bias = -0.0005
   scene.add(key)
-  const mat = new THREE.Mesh(new THREE.CircleGeometry(3.3, 72), new THREE.MeshStandardMaterial({ map: matTexture(), roughness: 0.95 }))
-  mat.rotation.x = -Math.PI / 2
-  mat.receiveShadow = true
-  scene.add(mat)
+  // 바닥 판(멍석)은 그리지 않음: 윷가락만 보이고, 떨어진 자리에 그림자만 은은하게
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(4, 48), new THREE.ShadowMaterial({ opacity: 0.38 }))
+  ground.rotation.x = -Math.PI / 2
+  ground.receiveShadow = true
+  scene.add(ground)
   const mats = {
     flat: new THREE.MeshStandardMaterial({ map: woodTexture(true, true, false), roughness: 0.55 }),
     flatBack: new THREE.MeshStandardMaterial({ map: woodTexture(true, true, true), roughness: 0.55 }),
@@ -298,7 +259,7 @@ export function playThrow(container, { id, sticks }) {
     el.style.width = '100%'
     el.style.height = '100%'
     s.camera.aspect = w / h
-    // 세로 화면이면 멍석이 가로에 다 들어오게 조금 멀리
+    // 세로 화면이면 윷가락이 가로에 다 들어오게 조금 멀리
     const portrait = w < h
     s.camera.fov = portrait ? 52 : 40
     s.camera.position.set(0, portrait ? 7.4 : 5.6, portrait ? 4.6 : 4.0)

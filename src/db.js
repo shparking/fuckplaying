@@ -5,7 +5,9 @@ import { ref, set, get, update, onValue, onDisconnect, remove, serverTimestamp }
 export const ROOMS = 'yutRooms'
 
 const QS = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams()
-export const DEMO = QS.has('demo')
+// 혼자 연습 게임(?practice=게임 이름 또는 1): 서버 없이 이 기기 메모리에서, 다른 참가자는 가짜 (실제 방과 상관없음)
+export const PRACTICE = QS.get('practice') || ''
+export const DEMO = QS.has('demo') || !!PRACTICE
 // 여러 탭 데모(&share=1): 같은 브라우저의 탭끼리 메모리 DB 를 BroadcastChannel 로 맞춤 → 폰 여러 대처럼 테스트 (탭마다 ?pid= 로 다른 사람)
 export const SHARED = DEMO && QS.has('share')
 // 혼자 보는 데모: 한 화면이 모든 참가자 역할을 대신함 (지금 차례인 사람·아직 안 한 사람으로 행동)

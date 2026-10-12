@@ -2,7 +2,7 @@
 // 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심. 동점이면 룰렛.
 // 시간은 서버 시각(serverNow) 기준이라 모든 폰이 같은 순간에 같은 화면을 봄
 import { useEffect, useRef, useState } from 'react'
-import { SOLO } from '../db'
+import { SOLO, PRACTICE } from '../db'
 import { TEAM_INFO } from '../game/yut'
 import { SYNC_QUESTIONS, CT_COLORS } from '../game/teamgames'
 import {
@@ -27,6 +27,7 @@ import {
   REACT_PENALTY_MS,
   bombExploded,
   BOMB_SETTLE_MS,
+  practiceEnd,
   colorPhase,
   colorResult,
   colorAnswer,
@@ -587,7 +588,7 @@ export function TeamReactPanel({ room, pending: p, me, ctl, code }) {
       />
     )
   }
-  const mine = SOLO ? null : p.results?.[me]
+  const mine = SOLO && !PRACTICE ? null : p.results?.[me]
   const tapped = mine != null
   const ids = liveTeams(room).flatMap((t) => teamMembers(room, t))
   const doneCount = ids.filter((pid) => p.results?.[pid] != null).length
@@ -681,6 +682,25 @@ export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
         </div>
       </div>
     )
+  // 혼자 연습: 마실 팀 고르기 없이 몇 초 만에 터졌는지만
+  if (PRACTICE) {
+    const sec = Math.round((p.explodeAt - (p.startAt || p.explodeAt)) / 1000)
+    return (
+      <div className="ai-overlay bomb boom">
+        <div className="ai-reveal">
+          <div className="bomb-emo">💥</div>
+          <div className="ai-congrats">{sec}초 만에 펑!</div>
+          <div className="ai-note">주제: {p.topic}</div>
+          <div className="ai-sub">실제 게임에서는 터질 때 말할 차례였던 팀이 다 같이 마셔요 (진행자가 팀을 골라요)</div>
+          <div className="ai-actions">
+            <button className="btn btn-primary" onClick={() => practiceEnd(code, `💣 연습: ${sec}초 만에 펑!`)}>
+              확인
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
   const loser = p.loser == null ? null : Number(p.loser)
   if (loser == null || !TEAM_INFO[loser])
     return (

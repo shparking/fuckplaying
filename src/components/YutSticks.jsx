@@ -63,7 +63,7 @@ export const RESULT_TEXT = {
   5: '모! 5칸 · 한 번 더',
 }
 
-// 던지는 순간 모든 폰에 뜨는 윷 애니메이션: 윷가락을 실제로 던져 멍석 위에 굴리는 3D (같은 결과·같은 움직임)
+// 던지는 순간 모든 폰에 뜨는 윷 애니메이션: 윷가락을 실제로 던져 굴리는 3D (바닥 판 없이, 같은 결과·같은 움직임)
 export function ThrowOverlay({ anim, who, teamColor }) {
   const box = useRef(null)
   const [ready, setReady] = useState(!!throwMod)

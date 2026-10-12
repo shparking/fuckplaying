@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import YutBoard from './components/YutBoard'
-import GameBoard, { preloadBoard3D, board3dOk } from './components/GameBoard'
 import { ThrowOverlay, Sticks, preloadThrow3D } from './components/YutSticks'
-import { SOLO, LOBBY_TTL_MS } from './db'
+import { SOLO, LOBBY_TTL_MS, PRACTICE } from './db'
 import {
   myId,
   createRoom,
@@ -67,6 +66,8 @@ import {
   teamLabel,
   optionTargets,
   TEAM_GAMES,
+  PRACTICE_GAMES,
+  practiceStart,
   liveTeams,
 } from './room'
 import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel } from './components/TeamGames'
@@ -74,7 +75,7 @@ import { BALANCE_TOPICS } from './game/balance'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
 import { LIAR_CATEGORIES, liarCategory } from './game/liar'
-import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID, START } from './game/yut'
+import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID } from './game/yut'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // 흔들어서 던지기 감도 (m/s², 횟수, ms): 세게 흔드는 동안 0.8초 안에 4번 이상 강한 움직임
@@ -1336,8 +1337,6 @@ function OptionTimers({ options }) {
 
 // 진단 패널: 주소 뒤에 ?debug=1 을 붙이면 표시. 오류와 방 상태를 모아 복사할 수 있음
 const DEBUG = new URLSearchParams(window.location.search).has('debug')
-// 테스트 도구(?debug)에서만 보이는 예전 말 선택 목록 (&nolist 를 붙이면 판에서 고르는 화면 그대로)
-const DEBUG_MOVES = DEBUG && !new URLSearchParams(window.location.search).has('nolist')
 const errLog = []
 if (DEBUG) {
   window.addEventListener('error', (e) => errLog.push(`[error] ${e.message} @${e.filename?.split('/').pop()}:${e.lineno}`))
@@ -1503,14 +1502,9 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
   )
 }
 
-// 판 아래 안내 한 줄 (판은 항상 전체가 보이고 칸마다 글자가 보임) + 오른쪽에 3D/평면 판 바꾸기
-function BoardHint({ hint, extra }) {
-  return (
-    <div className={`board-hint ${extra ? 'with-extra' : ''}`}>
-      <span>{hint}</span>
-      {extra}
-    </div>
-  )
+// 판 아래 안내 한 줄 (판은 항상 전체가 보이고 칸마다 글자가 보임)
+function BoardHint({ hint }) {
+  return <div className="board-hint">{hint}</div>
 }
 
 export default function App() {
@@ -1526,6 +1520,7 @@ export default function App() {
     }
   })
   const [code, setCode] = useState(() => {
+    if (PRACTICE) return '' // 혼자 연습: 연습 방을 새로 만듦 (아래)
     const q = new URLSearchParams(window.location.search).get('room')
     if (q) return q.toUpperCase()
     try {
@@ -1556,22 +1551,6 @@ export default function App() {
   const [moveAnim, setMoveAnim] = useState(null) // { team, node, count }
   const [animating, setAnimating] = useState(false)
   const [sel, setSel] = useState(0) // 고른 윷 결과 번호
-  const [pick, setPick] = useState(null) // 판에서 고른 말 (칸 id 또는 'home' = 새 말)
-  // 게임 판 3D(수달 말) / 평면 — 기기마다 기억. 3D 를 못 띄우면 이번만 평면으로
-  const [board3d, setBoard3dState] = useState(() => {
-    try {
-      return localStorage.getItem('board3d') !== '0'
-    } catch {
-      return true
-    }
-  })
-  const setBoard3d = (on, auto) => {
-    setBoard3dState(on)
-    if (auto) return
-    try {
-      localStorage.setItem('board3d', on ? '1' : '0')
-    } catch {}
-  }
   const boardRef = useRef(null)
   const [shake, setShake] = useState(() => {
     try {
@@ -1611,7 +1590,7 @@ export default function App() {
       return
     }
     try {
-      sessionStorage.setItem('room', code)
+      if (!PRACTICE) sessionStorage.setItem('room', code)
     } catch {}
     let first = true
     const off = subscribeRoom(code, (r) => {
@@ -1666,6 +1645,32 @@ export default function App() {
     }
   }, [room, me, name, code])
 
+  // ---- 혼자 연습 게임 (?practice=): 이 기기 메모리에 연습 방 → 바로 게임 화면 → 고른 게임 시작 ----
+  const [practicePick, setPracticePick] = useState(false) // 홈 화면의 연습 게임 고르기 창
+  const practiceRef = useRef({ creating: false, started: false })
+  useEffect(() => {
+    if (!PRACTICE || code || practiceRef.current.creating) return
+    practiceRef.current.creating = true
+    createRoom(name.trim() || '나', '')
+      .then(setCode)
+      .catch((e) => setError(e.message || '연습을 시작하지 못했어요'))
+  }, [])
+  useEffect(() => {
+    if (!PRACTICE || !room) return
+    if (room.status === 'lobby' && room.hostId === me) startGame(code, room)
+    else if (room.status === 'playing' && !practiceRef.current.started) {
+      practiceRef.current.started = true
+      if (!room.pending && PRACTICE_GAMES.some(([k]) => k === PRACTICE)) practiceStart(code, room, PRACTICE)
+    }
+  }, [room?.status])
+  const goHome = () => {
+    try {
+      sessionStorage.removeItem('room')
+    } catch {}
+    window.location.href = window.location.pathname
+  }
+  const openPractice = (k) => (window.location.href = `${window.location.pathname}?practice=${k}`)
+
   // 윷 던지기 애니메이션: lastThrow 가 바뀌면 모든 폰에서 같은 결과로 재생
   useEffect(() => {
     const th = room?.lastThrow
@@ -1677,7 +1682,7 @@ export default function App() {
       try {
         navigator.vibrate?.(40)
       } catch {}
-      // 윷가락이 날아가 멍석에 떨어져 멈출 때까지 (3D 던지기 시간에 맞춤)
+      // 윷가락이 날아가 떨어져 멈출 때까지 (3D 던지기 시간에 맞춤)
       await sleep(1300)
       if (cancelled) return
       setThrowAnim({ ...th, phase: 'show' })
@@ -1759,22 +1764,11 @@ export default function App() {
   const options = canMove && selIdx >= 0 ? moveOptions(pieces, curTeam, results[selIdx]) : []
   const movable = new Set(options.filter((o) => o.from !== 'home').map((o) => o.from))
   movable.team = curTeam
-  // 판에서 말 고르기: 튀는 말(또는 출발 칸의 '새 말')을 누르면 고른 말 → 그 말이 갈 칸만 빛남. 고를 말이 하나뿐이면 저절로 골라 둠
-  const canNew = options.some((o) => o.from === 'home')
-  const homeLeft = options.find((o) => o.from === 'home')?.homeLeft || 0
-  const froms = [...new Set(options.map((o) => o.from))]
-  const selFrom = pick != null && froms.includes(pick) ? pick : froms.length === 1 ? froms[0] : null
-  const selOpts = selFrom != null ? options.filter((o) => o.from === selFrom) : []
-  const dests = new Set(selOpts.filter((o) => !o.finished).map((o) => o.dest))
-  const selGoal = selOpts.some((o) => o.finished)
-  const routes = selOpts.length > 1 ? Object.fromEntries(selOpts.filter((o) => !o.finished).map((o) => [o.dest, `${routeArrow(o)} ${routeLabel(o) || '이동'}`])) : null
+  const dests = new Set(options.filter((o) => !o.finished).map((o) => o.dest))
   const playerCount = Object.keys(room?.players || {}).filter((pid) => room.players[pid]?.name).length
 
-  // 결과가 바뀌면 첫 번째 쓸 수 있는 윷을 기본 선택 + 고른 말 풀기
-  useEffect(() => {
-    setSel(0)
-    setPick(null)
-  }, [results.length, room?.turnNo])
+  // 결과가 바뀌면 첫 번째 쓸 수 있는 윷을 기본 선택
+  useEffect(() => setSel(0), [results.length, room?.turnNo])
 
   // 이동 애니메이션 표시값: 움직이는 말 / 도착 칸에서 잠시 숨길 말 / 잡힌 말(애니메이션 끝까지 보여줌)
   const lm = room?.lastMove
@@ -1896,11 +1890,9 @@ export default function App() {
 
 
   // 게임 화면에 들어오면 3D 윷 던지기를 미리 불러 둠 (첫 던지기부터 바로 나오게)
-  // 3D 판은 대기실에서부터 미리 불러 둠 (게임 시작하자마자 3D 로 보이게)
   useEffect(() => {
     if (room?.status === 'playing') preloadThrow3D()
-    if ((room?.status === 'playing' || room?.status === 'lobby') && board3d) preloadBoard3D()
-  }, [room?.status, board3d])
+  }, [room?.status])
 
   // 대기실 ↔ 게임 화면이 바뀌면 맨 위(점수판·윷판)부터 보이게
   useEffect(() => {
@@ -1990,32 +1982,13 @@ export default function App() {
     } catch {}
   }
 
-  // ---- 판 탭 (말 고르기·이동도 판에서) ----
-  const moveSel = (o) => {
-    setPick(null)
-    moveYut(code, room, selIdx, o.from, o.route)
-  }
-  // 말 고르기: 누르면 고름 → 고른 말을 다시 누르면 취소 (고를 말이 그것뿐이면 바로 이동)
-  const pickOrGo = (from) => {
-    const mine = options.filter((o) => o.from === from)
-    if (!mine.length) return
-    if (selFrom === from) {
-      if (froms.length > 1) return setPick(null)
-      if (mine.length === 1) return moveSel(mine[0])
-      return flash('갈림길! 빛나는 칸 중 가고 싶은 쪽을 눌러 주세요')
-    }
-    setPick(from)
-  }
-  const onCellTap = (node, via) => {
+  // ---- 판 탭 ----
+  const onCellTap = (node) => {
     if (!room) return
     const cell = cells[node] || {}
-    if (canMove) {
-      // 고른 말이 갈 칸 (골인은 출발 칸)
-      const o = via === 'new' ? null : selOpts.find((x) => (x.finished ? node === START : x.dest === node))
-      if (o) return moveSel(o)
-      // 출발 칸 = 새 말 꺼내기 (출발 칸에 서 있는 말은 말을 직접 누름)
-      if (node === START && canNew) return pickOrGo('home')
-      if (movable.has(node)) return pickOrGo(node)
+    if (canMove && dests.has(node)) {
+      const o = options.find((x) => !x.finished && x.dest === node)
+      if (o) return moveYut(code, room, selIdx, o.from, o.route)
     }
     if (isHost && !cell.locked && room.status === 'lobby') {
       setEditing({ node, cell, text: cell.text })
@@ -2024,8 +1997,10 @@ export default function App() {
     setPeek({ node, cell })
   }
   const onStackTap = (node) => {
-    if (!canMove || !movable.has(node)) return onCellTap(node)
-    pickOrGo(node)
+    if (!canMove || !movable.has(node)) return
+    const mine = options.filter((o) => o.from === node)
+    if (mine.length === 1) return moveYut(code, room, selIdx, node, mine[0].route)
+    if (mine.length > 1) flash('대각선으로 갈지 직진할지 아래에서 골라 주세요 (빛나는 칸을 눌러도 돼요)')
   }
 
   // 도착 칸에 다른 팀/우리 팀 말이 있는지 (선택지 설명용)
@@ -2058,9 +2033,7 @@ export default function App() {
                       : '윷을 던지세요'
                 : `${cur?.name || ''}이(가) 던질 차례`
               : myTurn
-                ? results.length > 1
-                  ? '쓸 윷을 고르고, 판에서 말을 고르세요'
-                  : '판에서 움직일 말을 고르세요'
+                ? '쓸 윷을 고르고, 움직일 말을 고르세요'
                 : `${cur?.name || ''}이(가) 말을 고르는 중…`
 
   // ---------- 렌더 ----------
@@ -2071,18 +2044,18 @@ export default function App() {
           <span className={`brand-dot ${connected ? '' : 'off'}`} title={connected ? '연결됨' : '연결 중…'} /> 주루윷놀이
         </div>
         <div className="row">
-          {room && (
+          {room && !PRACTICE && (
             <button className="icon-btn" onClick={() => setShowDrinks(true)} aria-label="오늘의 술고래" title="오늘의 술고래">
               <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>🍺</span>
             </button>
           )}
-          {room && (
+          {room && !PRACTICE && (
             <button className="icon-btn" onClick={() => setShowLog(true)} aria-label="게임 로그" title="게임 로그">
               <Icon name="log" />
             </button>
           )}
-          {room && (
-            <button className="icon-btn" onClick={onLeave} aria-label="나가기" title="나가기">
+          {(room || PRACTICE) && (
+            <button className="icon-btn" onClick={PRACTICE ? goHome : onLeave} aria-label={PRACTICE ? '홈으로' : '나가기'} title={PRACTICE ? '홈으로' : '나가기'}>
               <Icon name="exit" />
             </button>
           )}
@@ -2092,8 +2065,33 @@ export default function App() {
         </div>
       </header>
 
+      {/* ---------- 혼자 연습 게임 ---------- */}
+      {PRACTICE && (
+        <div className="practice">
+          <div className="card card-pad practice-head">
+            <div className="kicker">🎯 혼자 연습 게임</div>
+            <h2>해 볼 게임을 고르세요</h2>
+            <div className="muted">판에 있는 팀 대결 게임을 미리 해 봐요. 우리 팀 1명과 상대 팀 2명은 가짜 참가자예요 (진짜 방과 상관없고 기록도 안 남아요).</div>
+          </div>
+          <div className="practice-grid">
+            {PRACTICE_GAMES.map(([k, e, n, d]) => (
+              <button key={k} className={`card practice-card ${room?.practiceKind === k ? 'last' : ''}`} disabled={!room || room.status !== 'playing' || !!room.pending} onClick={() => practiceStart(code, room, k)}>
+                <span className="practice-emo">{e}</span>
+                <b>{n}</b>
+                <span className="muted">{d}</span>
+                {room?.practiceKind === k && <em>↻ 다시 하기</em>}
+              </button>
+            ))}
+          </div>
+          {error && <div className="error">{error}</div>}
+          <button className="btn btn-ghost btn-block" onClick={goHome}>
+            🏠 홈으로
+          </button>
+        </div>
+      )}
+
       {/* ---------- 홈 ---------- */}
-      {!room && (
+      {!room && !PRACTICE && (
         <>
           <div className="hero">
             <div className="sign">
@@ -2149,15 +2147,39 @@ export default function App() {
             {!name.trim() && roomList.length > 0 && <div className="muted">입장하려면 먼저 이름을 입력하세요.</div>}
           </div>
 
-          <a className="card card-pad otter-link" href="./otter.html">
-            <span className="otter-emo">🦦</span>
+          <button className="card card-pad home-link" onClick={() => setPracticePick(true)}>
+            <span className="home-link-emo">🎯</span>
             <span>
-              <b>3D 수달 말 미리보기</b>
-              <span className="muted">윷판 위의 팀별 수달 말을 돌려 보고, 팀·크기를 골라 추가해 봐요</span>
+              <b>혼자 연습 게임</b>
+              <span className="muted">판에 있는 팀 게임(폭탄 돌리기·연타 줄다리기 등)을 혼자 미리 해 봐요</span>
             </span>
-            <span className="otter-go">→</span>
-          </a>
+            <span className="home-link-go">→</span>
+          </button>
         </>
+      )}
+
+      {/* ---------- 홈: 연습 게임 고르기 (게임 선택권처럼) ---------- */}
+      {practicePick && !room && !PRACTICE && (
+        <div className="modal-backdrop" onClick={() => setPracticePick(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="kicker">🎯 혼자 연습 게임</div>
+            <h2>어떤 게임을 해 볼까요?</h2>
+            <div className="cat-grid">
+              {PRACTICE_GAMES.map(([k, e, n]) => (
+                <button key={k} className="cat-btn" onClick={() => openPractice(k)}>
+                  <span className="cat-emo">{e}</span>
+                  <span>{n}</span>
+                </button>
+              ))}
+            </div>
+            <div className="muted">다른 참가자는 가짜예요. 진짜 방에는 아무 영향이 없어요.</div>
+            <div className="actions">
+              <button className="btn btn-ghost" onClick={() => setPracticePick(false)}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ---------- 비밀번호 입력 ---------- */}
@@ -2197,7 +2219,7 @@ export default function App() {
       )}
 
       {/* ---------- 대기실 ---------- */}
-      {room && room.status === 'lobby' && (
+      {room && !PRACTICE && room.status === 'lobby' && (
         <>
           {room.summary && room.summary.id !== summaryHidden && room.summary.rows?.length > 0 && (
             <SummaryCard summary={room.summary} me={me} onClose={() => setSummaryHidden(room.summary.id)} />
@@ -2345,7 +2367,7 @@ export default function App() {
       )}
 
       {/* ---------- 게임 ---------- */}
-      {room && playing && (
+      {room && !PRACTICE && playing && (
         <>
           {/* 팀 점수판: 팀별 말 상태(○집 ●판 ◎골인)와 골인 수 */}
           <div className="scoreboard" style={{ '--n': tc }}>
@@ -2409,57 +2431,31 @@ export default function App() {
               </div>
             )}
 
-            {/* 말 고르기는 판에서: 여기엔 고른 말이 어디로 가는지만 한 줄로 */}
             {canMove && options.length > 0 && (
-              <div className={`move-hint ${selFrom != null ? 'picked' : ''}`}>
-                {selFrom == null ? (
-                  <>
-                    <b>👆 판에서 움직일 말을 누르세요</b>
-                    <span>통통 튀는 말{canNew ? ` · 새 말은 빛나는 출발 칸 (${homeLeft}개 대기)` : ''}</span>
-                  </>
-                ) : (
-                  <>
-                    <b>
-                      {selFrom === 'home' ? '🆕 새 말' : `${selOpts[0]?.count > 1 ? `말 ${selOpts[0].count}개` : '말'} · ${nodeName(selFrom)}`}
-                      {selOpts.length > 1 ? ' — 갈림길!' : ''}
-                    </b>
-                    {selOpts.map((o) => {
-                      const occ = o.finished ? null : occupant(o.dest)
-                      const hint = occ == null ? '' : occ === curTeam ? ' · 🤝 업기' : ` · 🎯 ${TEAM_INFO[occ].short} 잡기!`
-                      return (
-                        <span key={moveKey(o)} className="mh-dest">
-                          → {o.route ? `${routeArrow(o)} ${routeLabel(o)}: ` : ''}
+              <>
+                <div className="move-opts">
+                  {options.map((o) => {
+                    const occ = o.finished ? null : occupant(o.dest)
+                    const hint = occ == null ? '' : occ === curTeam ? ' · 🤝 업기' : ` · 🎯 ${TEAM_INFO[occ].short} 잡기!`
+                    return (
+                      <button key={moveKey(o)} className={`move-opt ${o.route ? `route-${o.route}` : ''}`} onClick={() => moveYut(code, room, selIdx, o.from, o.route)}>
+                        <span className="mo-from">{o.from === 'home' ? `🆕 새 말 (${o.homeLeft}개 대기)` : `${o.count > 1 ? `말 ${o.count}개` : '말'} · ${nodeName(o.from)}`}</span>
+                        <span className="mo-arrow">→</span>
+                        <span className="mo-dest">
+                          {o.route && (
+                            <b className="mo-route">
+                              {routeArrow(o)} {routeLabel(o)}
+                            </b>
+                          )}
                           {o.finished ? '🏁 골인!' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
                           {hint && <em>{hint}</em>}
                         </span>
-                      )
-                    })}
-                    <span className="mh-sub">
-                      {selOpts.length > 1 ? '빛나는 칸 중 가고 싶은 쪽을 누르세요' : '빛나는 칸을 누르면 이동'}
-                      {froms.length > 1 ? ' · 고른 말을 다시 누르면 취소' : ''}
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
-            {/* 테스트(?debug)에서만: 예전 선택지 목록 */}
-            {canMove && options.length > 0 && DEBUG_MOVES && (
-              <div className="move-opts">
-                {options.map((o) => (
-                  <button key={moveKey(o)} className={`move-opt ${o.route ? `route-${o.route}` : ''}`} onClick={() => moveSel(o)}>
-                    <span className="mo-from">{o.from === 'home' ? `🆕 새 말 (${o.homeLeft}개 대기)` : `${o.count > 1 ? `말 ${o.count}개` : '말'} · ${nodeName(o.from)}`}</span>
-                    <span className="mo-arrow">→</span>
-                    <span className="mo-dest">
-                      {o.route && (
-                        <b className="mo-route">
-                          {routeArrow(o)} {routeLabel(o)}
-                        </b>
-                      )}
-                      {o.finished ? '🏁 골인!' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
-                    </span>
-                  </button>
-                ))}
-              </div>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="dock-hint">판에서 통통 튀는 말이나 빛나는 칸을 눌러도 옮겨져요</div>
+              </>
             )}
 
             {stage !== 'move' && room.winner == null && (
@@ -2473,41 +2469,22 @@ export default function App() {
           <MissionBanner room={room} me={me} />
 
           <div ref={boardRef} className="board-scroll">
-            <GameBoard
-              use3d={board3d}
-              cells={canMove && canNew ? { ...cells, [START]: { ...cells[START], emoji: '🆕', text: '새 말\n꺼내기' } } : cells}
-              onFail3d={() => {
-                setBoard3d(false, true)
-                flash('이 폰에서는 3D 판을 띄울 수 없어서 평면 판으로 보여요')
-              }}
+            <YutBoard
+              cells={cells}
               pieces={pieces}
               teamCount={tc}
               onCellTap={onCellTap}
               onStackTap={onStackTap}
               movable={canMove ? movable : null}
-              selected={canMove ? selFrom : null}
               dests={canMove ? dests : null}
-              routes={canMove ? routes : null}
-              goal={canMove && selGoal}
-              newPiece={canMove && canNew ? { team: curTeam, count: homeLeft, can: true } : null}
               activeNode={moveAnim?.node || null}
               mover={mover}
-              moverFrom={lm?.from}
               hide={hide}
               ghost={ghost}
               bank={room.sojuBank || 0}
             />
           </div>
-          <BoardHint
-            hint="칸을 누르면 벌칙이 크게 보여요"
-            extra={
-              board3dOk() ? (
-                <button className="board-mode" onClick={() => setBoard3d(!board3d)} title="판 보기 바꾸기">
-                  {board3d ? '▦ 평면 판으로' : '🦦 3D 판으로'}
-                </button>
-              ) : null
-            }
-          />
+          <BoardHint hint="칸을 누르면 벌칙이 크게 보여요" />
           <ThrowOverlay anim={throwAnim} who={room.players[throwAnim?.playerId]?.name || ''} teamColor={TEAM_INFO[teamOf(room, throwAnim?.playerId)]?.color} />
 
           {/* 팀원 · 팀 놉카드 (우리 팀 배지를 눌러 사용) */}

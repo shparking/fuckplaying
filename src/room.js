@@ -9,7 +9,7 @@
 //   lastThrow: { id, playerId, value, sticks }, lastMove: { id, team, from, path, count, dest, caught },
 //   pending: { kind, playerId, pos(노드) } | null, winner, event, log, options/{칸_팀}: 상대 팀에 건 옵션 타이머, mission, cells/{노드}: 텍스트
 // }
-import { dbGet, dbSet, dbUpdate, dbRemove, dbOn, dbOnConnected, dbPresence, now, DEMO, SOLO, demoSeed, dbPurgeOldRooms, dbWatchServerOffset, serverNow, dbOnRooms, shouldPurge, ROOMS } from './db'
+import { dbGet, dbSet, dbUpdate, dbRemove, dbOn, dbOnConnected, dbPresence, now, DEMO, SOLO, PRACTICE, demoSeed, dbPurgeOldRooms, dbWatchServerOffset, serverNow, dbOnRooms, shouldPurge, ROOMS } from './db'
 import './firebase'
 import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf } from './game/yut'
 import { BALANCE_TOPICS } from './game/balance'
@@ -1441,8 +1441,15 @@ export async function tapReport(code, room, count, final = false) {
   const n = Math.max(0, Math.floor(count))
   if ((p.taps?.[id] || 0) === n && !final) return
   const upd = { [`pending/taps/${id}`]: n }
+  // 혼자 연습: 가짜 참가자도 시간에 맞춰 같이 연타 (1초에 5~8번) → 줄이 실제처럼 움직임
+  if (PRACTICE) {
+    const sec = Math.max(0, Math.min(TAP_MS, serverNow() - p.startAt)) / 1000
+    Object.keys(room.players || {}).forEach((pid) => {
+      if (pid !== id && room.players[pid]?.name) upd[`pending/taps/${pid}`] = Math.round(sec * fakeRate(`${pid}:${p.startAt}`)) // 판마다 빠르기가 달라짐
+    })
+  }
   // 혼자 보는 데모: 가짜 참가자 연타 수를 내 기록 근처로 채움
-  if (SOLO && final)
+  else if (SOLO && final)
     Object.keys(room.players || {}).forEach((pid) => {
       if (pid !== id && room.players[pid]?.name) upd[`pending/taps/${pid}`] = Math.round(n * (0.6 + Math.random() * 0.8))
     })
@@ -1476,6 +1483,19 @@ export async function teamReactTap(code, room) {
   const p = room.pending
   if (!p || p.kind !== 'teamReact' || p.stage !== 'armed' || !p.goAt) return
   const ids = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
+  // 혼자 연습: 내가 한 번 탭하면 내 기록 + 가짜 참가자 기록(0.2~0.65초, 가끔 부정출발)
+  if (PRACTICE) {
+    const me = myId()
+    if (p.results?.[me] != null) return
+    const t = serverNow()
+    if (t >= p.goAt + REACT_TIMEOUT_MS) return
+    const upd = { [`pending/results/${me}`]: t < p.goAt ? -1 : t - p.goAt }
+    ids.forEach((pid) => {
+      if (pid !== me && p.results?.[pid] == null) upd[`pending/results/${pid}`] = Math.random() < 0.08 ? -1 : 200 + Math.floor(Math.random() * 450)
+    })
+    await roomUpdate(code, upd)
+    return
+  }
   const id = SOLO ? ids.find((pid) => p.results?.[pid] == null) : myId()
   if (!id || !ids.includes(id) || p.results?.[id] != null) return
   const t = serverNow()
@@ -1553,6 +1573,33 @@ export async function colorAnswer(code, room, q, c) {
     })
   }
   await roomUpdate(code, upd)
+}
+
+// ---------- 혼자 연습 게임 (홈 → 연습 게임, ?practice=) ----------
+// 연습 방은 이 기기 메모리에만 있음 (가짜 참가자 3명: 우리 팀 1명 + 상대 팀 2명). 게임 선택권처럼 팀 게임을 골라 바로 시작
+export const PRACTICE_GAMES = [
+  ['teamSync', '👯', '팀 이구동성', '질문 4개, 우리 팀이 고를 것 같은 답 고르기'],
+  ['tapWar', '🦦', '연타 줄다리기', '30초 동안 최대한 빨리 연타'],
+  ['teamReact', '⚡', '팀 반응속도', '초록불이 되면 바로 탭'],
+  ['teamBomb', '💣', '폭탄 돌리기 팀전', '째깍째깍… 언제 터질지 몰라요'],
+  ['colorTrap', '🎨', '색깔 함정', '글자 뜻 말고 글자 색깔 고르기'],
+]
+function fakeRate(pid) {
+  let h = 7
+  for (const ch of String(pid)) h = (h * 31 + ch.charCodeAt(0)) % 1000
+  return 5 + (h / 1000) * 3
+}
+export async function practiceStart(code, room, kind) {
+  if (!PRACTICE || !TEAM_GAMES.has(kind) || !room || room.status !== 'playing') return
+  const id = myId()
+  const p = makePending(room, id, 'o9', kind, TEAM_TITLE[kind])
+  p.practice = true
+  await roomUpdate(code, { pending: p, practiceKind: kind })
+}
+// 연습 끝 (폭탄처럼 마실 팀을 고를 필요가 없을 때): 결과만 남기고 정리
+export async function practiceEnd(code, text) {
+  if (!PRACTICE) return
+  await roomUpdate(code, { pending: null, event: { id: newId(), text: text || '연습 끝!' } })
 }
 
 // 게임별 결과 → { rows, losers, tie } (아직 안 끝났으면 null)
