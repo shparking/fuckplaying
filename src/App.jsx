@@ -110,8 +110,21 @@ const KIND_LABEL = {
   colorTrap: '색깔 함정',
   sojuAdd: '소주 +1 적립',
   sojuBank: '소주 보관소',
+  pickTeam: '너희 팀 마셔 (지목)',
+  toast: '같이 짠',
+  nhaeng: '랜덤 n행시',
+  back: '뒤로 가기',
 }
 const oneLine = (t) => String(t || '').replace(/\n/g, ' ')
+// 칸 보기 팝업 설명 (새 칸들)
+const KIND_DESC = {
+  pickTeam: '상대 팀 전원이 다 같이 마셔요. 2팀이면 바로 상대 팀, 3팀 이상이면 도착한 사람이 마실 팀을 골라요.',
+  toast: '상대 팀에서 한 명을 골라 둘이 같이 짠! 둘만 마셔요.',
+  nhaeng: '랜덤 키워드가 나오면 글자 수만큼 n행시를 짓고 다 같이 마셔요. 키워드는 바꿀 수 있어요.',
+  back: '말이 4칸 뒤로 가요 (업힌 말도 같이). 도착한 칸 미션도 하고, 상대 말이 있으면 잡아요. 팀 놉카드로 거부할 수 있어요.',
+}
+// 상대 팀 사람들 (같이 짠 칸)
+const rivalsOf = (room, pid) => Object.keys(room.players || {}).filter((x) => room.players[x]?.name && teamOf(room, x) !== teamOf(room, pid))
 // 갈림길 선택지 화살표: 첫 걸음 방향 (y 는 아래로)
 const ARROW8 = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗']
 function routeArrow(o) {
@@ -2627,7 +2640,7 @@ export default function App() {
               <div className="kicker">
                 {nodeName(pending.pos)} · {KIND_LABEL[pending.kind] || '미션'}
               </div>
-              <h2>{pending.title || oneLine(pendingCell.text)}</h2>
+              <h2>{pending.title || pendingCell.full || oneLine(pendingCell.text)}</h2>
               {pending.kind === 'option' && pendingCell.pair && pending.partner && (
                 <div className="pair-card">
                   <span className="avatar" style={{ background: room.players[pending.playerId]?.color }}>
@@ -2684,7 +2697,67 @@ export default function App() {
                 {pending.kind === 'choose' && (iAct ? ' — 진행할 게임을 하나 고르세요.' : ' — 게임을 고르고 있어요.')}
                 {pending.kind === 'liar' && (iAct ? ' — 키워드 카테고리를 고르면 모두에게 키워드가 배정돼요. 한 명만 비슷하지만 다른 키워드를 받아요.' : ' — 카테고리를 고르고 있어요.')}
                 {pending.kind === 'pick' && (iAct ? ' — 마실 사람 한 명을 고르세요.' : ` — ${room.players[pending.playerId]?.name}이(가) 마실 사람을 고르고 있어요.`)}
+                {pending.kind === 'pickTeam' &&
+                  (pending.stage === 'confirm' && TEAM_INFO[pending.target]
+                    ? ` — 상대 팀 ${TEAM_INFO[pending.target].emoji} ${TEAM_INFO[pending.target].name} 다 같이 마셔요! 🍻`
+                    : liveTeams(room).some((t) => t !== teamOf(room, pending.playerId))
+                      ? iAct
+                        ? ' — 다 같이 마실 팀을 고르세요.'
+                        : ' — 마실 팀을 고르고 있어요.'
+                      : ' — 마실 상대 팀이 없어요.')}
+                {pending.kind === 'toast' &&
+                  (rivalsOf(room, pending.playerId).length
+                    ? iAct
+                      ? ' — 상대 팀에서 한 명을 골라 둘이 같이 짠! 🥂 (둘만 마셔요)'
+                      : ' — 같이 짠 할 사람을 고르고 있어요 🥂'
+                    : ' — 같이 짠 할 상대가 없어요.')}
+                {pending.kind === 'nhaeng' && ` — 이 키워드로 ${[...(pending.word || '')].length}행시! 다 지으면 다 같이 마셔요 🍻`}
+                {pending.kind === 'back' &&
+                  (pending.to
+                    ? ` — 말이 ${pending.steps || 4}칸 뒤로 가서 ${nodeName(pending.to)}「${oneLine(cells[pending.to]?.text)}」에 도착해요. 업힌 말도 같이 가고, 도착한 칸 미션도 해요.`
+                    : ' — 뒤로 갈 칸이 없어요.')}
               </div>
+              {pending.kind === 'pickTeam' && pending.stage === 'choose' && (
+                <div className="steal-list">
+                  {liveTeams(room)
+                    .filter((t) => t !== teamOf(room, pending.playerId))
+                    .map((t) => (
+                      <button key={t} className="steal-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'pickTeam', t)}>
+                        <span className="team-dot" style={{ '--tc': TEAM_INFO[t].color }} />
+                        <span className="pname">{TEAM_INFO[t].name}</span>
+                        <span className="cnt">{teamMembers(room, t).length}명</span>
+                      </button>
+                    ))}
+                </div>
+              )}
+              {pending.kind === 'toast' && (
+                <div className="steal-list">
+                  {rivalsOf(room, pending.playerId).map((pid) => {
+                    const pl = room.players[pid]
+                    return (
+                      <button key={pid} className="steal-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', pid)}>
+                        <span className="avatar sm" style={{ background: pl.color }}>
+                          {pl.name.slice(0, 1)}
+                        </span>
+                        <span className="pname">{pl.name}</span>
+                        <span className="team-chip" style={{ '--tc': TEAM_INFO[teamOf(room, pid)]?.color }}>
+                          {TEAM_INFO[teamOf(room, pid)]?.short}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {pending.kind === 'nhaeng' && pending.word && (
+                <div className="nhaeng-card" key={pending.word}>
+                  <div className="nhaeng-word">
+                    {[...pending.word].map((ch, i) => (
+                      <span key={i}>{ch}</span>
+                    ))}
+                  </div>
+                  <div className="nhaeng-n">{[...pending.word].length}행시</div>
+                </div>
+              )}
               {pending.kind === 'pick' && (
                 <div className="steal-list">
                   {Object.entries(room.players)
@@ -2729,17 +2802,36 @@ export default function App() {
               )}
               {iAct ? (
                 <div className="actions">
-                  {!['liar', 'choose', 'pick'].includes(pending.kind) && !(pending.kind === 'steal' && liveTeams(room).some((t) => t !== teamOf(room, pending.playerId) && teamNop(room, t) > 0)) && (
-                    <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
-                      {pending.kind === 'normal'
-                        ? '수행 완료'
-                        : pending.kind === 'option'
-                          ? `⏱ 상대 팀에 ${pendingCell.minutes || 5}분 걸기`
-                          : pending.kind === 'again'
-                            ? '🎲 한 번 더!'
-                            : '확인'}
+                  {pending.kind === 'nhaeng' && (
+                    <button className="btn btn-ghost" onClick={() => resolvePending(code, room, 'reroll')}>
+                      🔄 다른 키워드
                     </button>
                   )}
+                  {pending.kind === 'back' && pending.to && teamNop(room, teamOf(room, pending.playerId)) > 0 && (
+                    <button className="btn btn-ghost" onClick={() => resolvePending(code, room, 'nop-skip')}>
+                      🎫 놉카드로 거부
+                    </button>
+                  )}
+                  {!['liar', 'choose', 'pick'].includes(pending.kind) &&
+                    !(pending.kind === 'steal' && liveTeams(room).some((t) => t !== teamOf(room, pending.playerId) && teamNop(room, t) > 0)) &&
+                    !(pending.kind === 'pickTeam' && pending.stage === 'choose' && liveTeams(room).some((t) => t !== teamOf(room, pending.playerId))) &&
+                    !(pending.kind === 'toast' && rivalsOf(room, pending.playerId).length) && (
+                      <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
+                        {pending.kind === 'normal'
+                          ? '수행 완료'
+                          : pending.kind === 'option'
+                            ? `⏱ 상대 팀에 ${pendingCell.minutes || 5}분 걸기`
+                            : pending.kind === 'again'
+                              ? '🎲 한 번 더!'
+                              : pending.kind === 'pickTeam' && pending.stage === 'confirm' && TEAM_INFO[pending.target]
+                                ? `👉 ${TEAM_INFO[pending.target].name} 마셔!`
+                                : pending.kind === 'nhaeng'
+                                  ? '🍻 다 같이 마셔!'
+                                  : pending.kind === 'back' && pending.to
+                                    ? `⏪ ${pending.steps || 4}칸 뒤로`
+                                    : '확인'}
+                      </button>
+                    )}
                 </div>
               ) : (
                 <div className="actions">
@@ -2810,8 +2902,9 @@ export default function App() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="kicker">{nodeName(peek.node)}</div>
             <h2>
-              {peek.cell.emoji} {oneLine(peek.cell.text)}
+              {peek.cell.emoji} {peek.cell.full || oneLine(peek.cell.text)}
             </h2>
+            {KIND_DESC[peek.cell.type] && <div className="muted">{KIND_DESC[peek.cell.type]}</div>}
             {peek.node === 'o0' && <div className="muted">고정 칸 (편집 불가) — 여기에 도착하거나 지나가면 골인!</div>}
             {peek.cell.type === 'sojuBank' && (
               <div className="muted">

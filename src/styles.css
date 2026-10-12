@@ -26,6 +26,10 @@
   --accent-glow: rgba(255, 122, 26, 0.55);
   --soju: #3be38b;
   --soju-soft: rgba(59, 227, 139, 0.15);
+  /* 모서리·가운데 칸: 보라 (갈 수 있는 칸 주황 깜빡임과 헷갈리지 않게) */
+  --corner: #b388ff;
+  --corner-soft: rgba(179, 136, 255, 0.17);
+  --corner-glow: rgba(179, 136, 255, 0.5);
   --pink: #ff4d8d;
   --pink-soft: rgba(255, 77, 141, 0.16);
   --cyan: #3cd3f5;
@@ -77,6 +81,9 @@
   --accent-glow: rgba(242, 106, 15, 0.32);
   --soju: #0f9f55;
   --soju-soft: rgba(15, 159, 85, 0.12);
+  --corner: #7c3aed;
+  --corner-soft: rgba(124, 58, 237, 0.1);
+  --corner-glow: rgba(124, 58, 237, 0.3);
   --pink: #e2306c;
   --pink-soft: rgba(226, 48, 108, 0.1);
   --cyan: #0891b2;
@@ -883,15 +890,15 @@ textarea {
   height: 8.3%;
   border-color: color-mix(in srgb, var(--pink) 34%, var(--cell-line));
 }
-/* 모서리·가운데: 네온 주황 테두리 / 출발·골인: 소주병 초록 */
+/* 모서리·가운데: 네온 보라 테두리 (주황은 '갈 수 있는 칸' 깜빡임 전용) / 출발·골인: 소주병 초록 */
 .ycell.big {
   background:
-    radial-gradient(circle at 50% 25%, var(--accent-soft), transparent 75%),
+    radial-gradient(circle at 50% 25%, var(--corner-soft), transparent 75%),
     var(--node-bg);
-  border: 1.5px solid var(--accent);
+  border: 1.5px solid var(--corner);
   box-shadow:
-    0 0 10px var(--accent-glow),
-    inset 0 0 10px var(--accent-soft);
+    0 0 10px var(--corner-glow),
+    inset 0 0 10px var(--corner-soft);
   color: var(--text);
 }
 .ycell.home {
@@ -916,8 +923,8 @@ textarea {
   letter-spacing: -0.02em;
 }
 .ycell.big .ycell-no {
-  color: var(--accent);
-  text-shadow: 0 0 5px var(--accent-glow);
+  color: var(--corner);
+  text-shadow: 0 0 5px var(--corner-glow);
 }
 .ycell.home .ycell-no {
   color: var(--soju);
@@ -1898,6 +1905,45 @@ textarea {
 }
 .steal-btn.none {
   opacity: 0.45;
+}
+.steal-btn .cnt {
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 랜덤 n행시 키워드 */
+.nhaeng-card {
+  margin: 14px 0 6px;
+  padding: 14px 12px 10px;
+  border-radius: 18px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--line-strong);
+  text-align: center;
+  animation: pop 0.35s ease-out;
+}
+.nhaeng-word {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.nhaeng-word span {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 900;
+}
+.nhaeng-n {
+  margin-top: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 /* 진단 패널 (?debug=1) */

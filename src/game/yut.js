@@ -82,65 +82,76 @@ export function nodeName(id) {
 }
 
 // ---------- 칸 내용 (기본값) ----------
-// type 은 주루마블과 같은 미니게임/기능. drink: 'self' | 'team' | 'all' 이면 수행 완료 시 잔 수 자동 +1
-// (임시 배치 — 사용자가 보내 줄 벌칙 리스트로 바꿀 예정)
-const C1 = { emoji: '🍶', text: '한 잔 마셔', drink: 'self' }
+// type 은 미니게임/기능. drink: 'self' | 'team' | 'all' 이면 수행 완료 시 잔 수 자동 +1
+// (10/12 사용자와 같이 정한 배치. 대각선은 일단 소주 +1 적립 — 새 아이디어가 나오면 채움)
 const NOP = { emoji: '🎫', text: '놉카드 +1', type: 'nop' }
 const HUNMIN = { emoji: '📝', text: '훈민정음\n게임', type: 'hunmin' }
-const LOVE = { emoji: '🥂', text: '옆 사람과\n러브샷', drink: 'self' }
+const ALL = { emoji: '🍻', text: '다 같이\n마셔!', drink: 'all' }
 const AI = { emoji: '🤖', text: 'AI 지목\n마셔!', type: 'aiPick' }
-const SON = { emoji: '🖐️', text: '손병호\n게임' }
-const YOUNG = { emoji: '🎂', text: '막내\n마셔!' }
 const STEAL = { emoji: '😈', text: '놉카드\n내놔!', type: 'steal' }
 const CHOOSE = { emoji: '🎁', text: '게임\n선택권', type: 'choose' }
 const NOENG = { emoji: '🔤', text: '영어금지', type: 'option', minutes: 5 }
-const PICK = { emoji: '👉', text: '너! 마셔!\n(지목)', type: 'pick' }
+const BUNNY = { emoji: '🐰', text: '바니바니\n게임' }
 const AGAIN = { emoji: '🎲', text: '한 번 더\n던지기!', type: 'again' }
-const TEAM = { emoji: '🍻', text: '우리 팀\n다 같이 마셔', drink: 'team' }
-const SHUFFLE = { emoji: '🥂', text: '의리주 마셔!\n(글라스에)', type: 'shuffle' }
-const TRUTH = { emoji: '🎯', text: '진실 게임\n(질문 1개)' }
+const TEAM = { emoji: '🤝', text: '우리 팀\n다 같이 마셔!', drink: 'team' }
+// 너희 팀 다 같이 마셔: 2팀이면 상대 팀 자동, 3팀 이상이면 도착한 사람이 팀을 고름
+const THEIRS = { emoji: '👉', text: '너희 팀\n다 같이 마셔!', type: 'pickTeam' }
+const SHUFFLE = { emoji: '🍺', text: '의리주 마셔!\n(글라스에)', type: 'shuffle' }
 const GAMBLE = { emoji: '🎰', text: '놉카드\n도박', type: 'gamble' }
-// (밸런스·라이어·다수결·개인 반응속도·개인 폭탄은 지금 기본 판에 없음 — 벌칙 리스트에서 다시 쓸 수 있게 남겨 둠)
-const BALANCE = { emoji: '⚖️', text: '밸런스\n게임', type: 'balance' }
 const TWOTOUCH = { emoji: '✌️', text: '투터치', type: 'option', minutes: 5 }
-const REACT = { emoji: '⚡', text: '반응속도\n게임', type: 'reaction' }
-const RIVAL = { emoji: '🤝', text: '상대 1명\n골라 짠!', drink: 'self' }
-const BOMB = { emoji: '💣', text: '폭탄\n돌리기', type: 'bomb' }
-const LIAR = { emoji: '🤥', text: '라이어\n게임', type: 'liar' }
+// 랜덤 n행시: 키워드를 랜덤으로 주고 그 글자 수만큼 n행시 → 다 같이 마셔
+const NHAENG = { emoji: '🎤', text: '랜덤n행시\n다같이 마셔!', full: '랜덤 n행시 후 다같이 마셔!', type: 'nhaeng' } // 칸에는 짧게, 팝업에는 full
+// 상대 팀에서 한 명을 골라 둘이 같이 짠 (둘만 마심)
+const RIVAL = { emoji: '🥂', text: '상대 1명 골라\n같이 짠♥', type: 'toast' }
 const NOWORD = { emoji: '🙊', text: '아니·근데\n진짜 금지', type: 'option', minutes: 3 }
 const RELEASE = { emoji: '🔓', text: '옵션 해제', type: 'release' }
-const CHEERS = { emoji: '🥃', text: '건배사 후\n전원 원샷', drink: 'all' }
-const VOTE = { emoji: '🗳️', text: '다수결 지목\n너 마셔!', type: 'vote' }
-// 팀 대결 미니게임: 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심 (개인전 게임 자리를 대신함)
-const SYNC = { emoji: '👯', text: '팀\n이구동성', type: 'teamSync' }
-const TAPWAR = { emoji: '🦦', text: '연타\n줄다리기', type: 'tapWar' }
-const TREACT = { emoji: '⚡', text: '팀\n반응속도', type: 'teamReact' }
-const TBOMB = { emoji: '💣', text: '폭탄 돌리기\n팀전', type: 'teamBomb' }
-const TRAP = { emoji: '🎨', text: '색깔\n함정', type: 'colorTrap' }
+// N칸 뒤로: 도착한 말(업힌 말 포함)이 N칸 뒤로 가고, 거기서 잡기·업기와 그 칸 내용
+const BACK4 = { emoji: '⏪', text: '4칸 뒤로', type: 'back', steps: 4 }
+// 팀 대결 미니게임: 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심
+const SYNC = { emoji: '👯', text: '이구동성\n게임', type: 'teamSync' }
+const TAPWAR = { emoji: '🦦', text: '줄다리기\n게임', type: 'tapWar' }
+const TREACT = { emoji: '⚡', text: '반응 속도\n게임', type: 'teamReact' }
+const TBOMB = { emoji: '💣', text: '폭탄\n돌리기', type: 'teamBomb' }
+const TRAP = { emoji: '🎨', text: '색깔 함정\n게임', type: 'colorTrap' }
 // 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
 const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
 const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
+// (지금 판에 없는 칸 — 나중에 다시 쓸 수 있게 남겨 둠)
+export const SPARE_CELLS = {
+  C1: { emoji: '🍶', text: '한 잔 마셔', drink: 'self' },
+  LOVE: { emoji: '🥂', text: '옆 사람과\n러브샷', drink: 'self' },
+  SON: { emoji: '🖐️', text: '손병호\n게임' },
+  YOUNG: { emoji: '🎂', text: '막내\n마셔!' },
+  PICK: { emoji: '👉', text: '너! 마셔!\n(지목)', type: 'pick' },
+  TRUTH: { emoji: '🎯', text: '진실 게임\n(질문 1개)' },
+  CHEERS: { emoji: '🥃', text: '건배사 후\n전원 원샷', drink: 'all' },
+  BALANCE: { emoji: '⚖️', text: '밸런스\n게임', type: 'balance' },
+  REACT: { emoji: '⚡', text: '반응속도\n게임', type: 'reaction' },
+  BOMB: { emoji: '💣', text: '폭탄\n돌리기', type: 'bomb' },
+  LIAR: { emoji: '🤥', text: '라이어\n게임', type: 'liar' },
+  VOTE: { emoji: '🗳️', text: '다수결 지목\n너 마셔!', type: 'vote' },
+}
 
 export const DEFAULT_YUT_CELLS = {
   o0: { emoji: '🏁', text: '출발·골인', type: 'home', locked: true },
-  // 오른쪽 변 (출발 → 위로)
-  o1: C1, o2: NOP, o3: HUNMIN, o4: LOVE, o5: AI, o6: SON, o7: YOUNG, o8: STEAL,
-  o9: CHOOSE, // 오른쪽 위 모서리
-  // 위 변 (→ 왼쪽)
-  o10: NOENG, o11: PICK, o12: AGAIN, o13: TEAM, o14: NOP, o15: SHUFFLE, o16: TRUTH, o17: GAMBLE,
-  o18: SYNC, // 왼쪽 위 모서리
-  // 왼쪽 변 (→ 아래로)
-  o19: SOJU_ADD, o20: TWOTOUCH, o21: AI, o22: TREACT, o23: RIVAL, o24: YOUNG, o25: TBOMB, o26: NOP,
-  o27: TAPWAR, // 왼쪽 아래 모서리
-  // 아래 변 (→ 골인)
-  o28: AGAIN, o29: TEAM, o30: NOWORD, o31: PICK, o32: RELEASE, o33: TRAP, o34: SOJU_ADD, o35: CHEERS,
-  // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래)
-  a1: SYNC, a2: NOP, a3: TRUTH, a4: SOJU_ADD,
-  C: SOJU_BANK, // 가운데: 소주 보관소 (고정)
-  a5: RELEASE, a6: TBOMB, a7: TAPWAR, a8: STEAL,
-  // 대각선 B (왼쪽 위 → 가운데 → 골인)
-  b1: TREACT, b2: TRAP, b3: AGAIN, b4: AI,
-  b5: SOJU_ADD, b6: GAMBLE, b7: TEAM, b8: CHEERS,
+  // 오른쪽 변 (출발 → 위로) 1~8
+  o1: HUNMIN, o2: SOJU_ADD, o3: ALL, o4: TBOMB, o5: TREACT, o6: CHOOSE, o7: STEAL, o8: NOENG,
+  o9: NOP, // 9 오른쪽 위 모서리
+  // 위 변 (→ 왼쪽) 10~17
+  o10: RELEASE, o11: BUNNY, o12: SOJU_ADD, o13: TEAM, o14: THEIRS, o15: GAMBLE, o16: TWOTOUCH, o17: CHOOSE,
+  o18: NOP, // 18 왼쪽 위 모서리
+  // 왼쪽 변 (→ 아래로) 19~26
+  o19: SOJU_ADD, o20: TAPWAR, o21: NHAENG, o22: RIVAL, o23: TRAP, o24: NOWORD, o25: AI, o26: SHUFFLE,
+  o27: NOP, // 27 왼쪽 아래 모서리
+  // 아래 변 (→ 골인) 28~35
+  o28: CHOOSE, o29: STEAL, o30: RELEASE, o31: SYNC, o32: SOJU_ADD, o33: AGAIN, o34: RIVAL, o35: BACK4,
+  // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래) 36~39 · 41~44
+  a1: SOJU_ADD, a2: SOJU_ADD, a3: SOJU_ADD, a4: SOJU_ADD,
+  C: SOJU_BANK, // 40 가운데: 소주 보관소 (고정)
+  a5: SOJU_ADD, a6: SOJU_ADD, a7: SOJU_ADD, a8: SOJU_ADD,
+  // 대각선 B (왼쪽 위 → 가운데 → 골인) 45~52
+  b1: SOJU_ADD, b2: SOJU_ADD, b3: SOJU_ADD, b4: SOJU_ADD,
+  b5: SOJU_ADD, b6: SOJU_ADD, b7: SOJU_ADD, b8: SOJU_ADD,
 }
 
 // ---------- 윷 던지기 ----------
@@ -197,6 +208,18 @@ for (let i = 2; i <= HALF; i++) {
   PREV[`b${HALF + i}`] = `b${HALF + i - 1}`
 }
 export const prevNode = (node) => PREV[node]
+// 'N칸 뒤로' 칸: piece 에서 N칸 뒤로 가는 길 (첫 걸음은 들어온 칸 p, 그다음은 기본 뒤 칸). 출발 칸 너머로는 안 감
+export function backPath(piece, n) {
+  const path = []
+  let cur = piece?.n
+  for (let i = 0; i < n; i++) {
+    const back = i === 0 && piece.p && piece.p !== 'home' ? piece.p : PREV[cur]
+    if (!back || cur === START) break
+    path.push(back)
+    cur = back
+  }
+  return path
+}
 
 // 갈림길: 여기에 멈춘 말은 다음 이동 첫 걸음에서 대각선(short)/직진(long) 중 고름
 export const BRANCH_NODES = new Set([CORNER_TR, CORNER_TL, 'C'])

@@ -11,7 +11,8 @@
 // }
 import { dbGet, dbSet, dbUpdate, dbRemove, dbOn, dbOnConnected, dbPresence, now, DEMO, SOLO, PRACTICE, demoSeed, dbPurgeOldRooms, dbWatchServerOffset, serverNow, dbOnRooms, shouldPurge, ROOMS } from './db'
 import './firebase'
-import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf } from './game/yut'
+import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf, backPath, prevNode } from './game/yut'
+import { pickNhaengWord } from './game/words'
 import { BALANCE_TOPICS } from './game/balance'
 import { pickLiarWords } from './game/liar'
 import { pickBombTopic } from './game/bomb'
@@ -481,6 +482,23 @@ function makePending(room, playerId, pos, kind, title) {
     }
   }
   if (kind === 'pick') p.stage = 'choose'
+  if (kind === 'toast') p.stage = 'choose' // 상대 팀에서 한 명 골라 같이 짠
+  if (kind === 'pickTeam') {
+    // 너희 팀 다 같이 마셔: 상대 팀이 하나면 그 팀으로 정해짐, 여럿이면 도착한 사람이 고름
+    const others = liveTeams(room).filter((t) => t !== teamOf(room, playerId))
+    if (others.length === 1) Object.assign(p, { stage: 'confirm', target: others[0] })
+    else p.stage = 'choose'
+  }
+  if (kind === 'nhaeng') p.word = pickNhaengWord(room.lastWord)
+  if (kind === 'back') {
+    // N칸 뒤로: 갈 칸을 미리 계산해서 보여 줌
+    const cell = roomCells(room)[pos] || {}
+    p.steps = cell.steps || 4
+    const t = teamOf(room, playerId)
+    const piece = roomPieces(room)[t]?.find((pc) => pc.n === pos)
+    const path = piece ? backPath(piece, p.steps) : []
+    if (path.length) p.to = path[path.length - 1]
+  }
   if (kind === 'sojuBank') {
     // 소주 보관소: 모인 술을 도착한 팀이 의리주로 (도착한 사람이 마지막 순서)
     p.count = Math.max(0, Number(room.sojuBank) || 0)
@@ -676,26 +694,80 @@ export async function moveYut(code, room, ri, from, route) {
   } else if (opt.finished) {
     upd.event = { id: newId(), text: `🏁 ${info.name} 말 ${moving.length}개 골인!` }
     Object.assign(upd, nextTurnUpdates(after))
+  } else arriveUpdates(room, after, upd, id, t, opt.dest, stacked)
+  await roomUpdate(code, upd)
+}
+
+// 말이 칸에 도착했을 때: 그 칸의 미션(대기 상태) + 놉카드·소주 적립·옵션 해제 같은 바로 적용되는 것
+function arriveUpdates(room, after, upd, id, t, dest, stacked) {
+  const info = TEAM_INFO[t]
+  const me = room.players[id] || {}
+  upd.pending = pendingFor(after, id, dest)
+  if (stacked) upd.event = { id: newId(), text: `🤝 ${info.name} 업었다! 말 ${after.pieces[t].filter((pc) => pc.n === dest).length}개 함께 이동` }
+  const ctype = roomCells(room)[dest]?.type || 'normal'
+  if (ctype === 'nop') {
+    // 놉카드는 팀 단위로 모음
+    const n = teamNop(room, t) + 1
+    upd[`teamNop/${nopKey(t)}`] = n
+    upd.pending.teamNop = n
+    upd.event = { id: newId(), text: `🎫 ${info.name} 놉카드 +1 (지금 ${n}장)` }
+  }
+  if (ctype === 'sojuAdd') {
+    // 소주 보관소에 한 잔 적립 (가운데 보관소에 도착한 팀이 의리주로 마심)
+    const n = Math.max(0, Number(room.sojuBank) || 0) + 1
+    upd.sojuBank = n
+    upd.pending.bank = n
+    upd.event = { id: newId(), text: `🍶 ${me.name} 소주 +1 적립 → 보관소에 ${n}잔` }
+  }
+  withReleaseUpdates(room, upd.pending, upd)
+  withTopicUpdates(room, upd.pending, upd)
+  return upd
+}
+
+// 'N칸 뒤로' 칸: 도착한 말(업힌 말 포함)이 N칸 뒤로 → 거기서 잡기·업기, 그 칸의 미션까지
+async function backMove(code, room, p) {
+  const id = p.playerId
+  const t = teamOf(room, id)
+  const n = teamCount(room)
+  const pieces = roomPieces(room)
+  const me = room.players[id] || {}
+  const info = TEAM_INFO[t]
+  const idx = pieces[t].map((pc, i) => (pc.n === p.pos ? i : -1)).filter((i) => i >= 0)
+  const path = idx.length ? backPath(pieces[t][idx[0]], p.steps || 4) : []
+  if (!path.length) {
+    await roomUpdate(code, { ...nextTurnUpdates(room), event: { id: newId(), text: '⏪ 뒤로 갈 칸이 없어요' } })
+    return
+  }
+  const dest = path[path.length - 1]
+  const next = JSON.parse(JSON.stringify(pieces))
+  const stacked = pieces[t].some((pc, i) => pc.n === dest && !idx.includes(i))
+  idx.forEach((i) => (next[t][i] = { n: dest, p: prevNode(dest) || 'home' }))
+  // 잡기: 뒤로 간 칸에 다른 팀 말이 있으면 전부 집으로 (한 번 더 던짐)
+  let caught = null
+  for (let o = 0; o < n; o++) {
+    if (o === t) continue
+    const ci = next[o].map((pc, i) => (pc.n === dest ? i : -1)).filter((i) => i >= 0)
+    if (ci.length) {
+      ci.forEach((i) => (next[o][i] = { n: 'home' }))
+      caught = { team: o, count: ci.length, node: dest }
+    }
+  }
+  const y = room.yut || {}
+  const upd = {
+    pieces: next,
+    lastMove: { id: newId(), team: t, from: p.pos, path, count: idx.length, dest, caught },
+  }
+  upd[`log/${newId()}`] = {
+    t: Date.now(),
+    text: `${info.emoji} ${me.name} ⏪ ${path.length}칸 뒤로${idx.length > 1 ? ` (말 ${idx.length}개)` : ''} → ${nodeName(dest)}${stacked ? ' · 업기' : ''}${caught ? ` · ${TEAM_INFO[caught.team].name} ${caught.count}개 잡기!` : ''}`,
+  }
+  if (caught) {
+    upd['yut/extra'] = (y.extra || 0) + 1
+    upd.pending = { kind: 'caught', playerId: id, pos: dest, victim: caught.team, count: caught.count, startedAt: Date.now() }
+    upd.event = { id: newId(), text: `🎯 ${me.name} 뒤로 가서 잡았다! ${TEAM_INFO[caught.team].name} 말 ${caught.count}개 → 집으로` }
   } else {
-    upd.pending = pendingFor(after, id, opt.dest)
-    if (stacked) upd.event = { id: newId(), text: `🤝 ${info.name} 업었다! 말 ${next[t].filter((pc) => pc.n === opt.dest).length}개 함께 이동` }
-    const ctype = roomCells(room)[opt.dest]?.type || 'normal'
-    if (ctype === 'nop') {
-      // 놉카드는 팀 단위로 모음
-      const n = teamNop(room, t) + 1
-      upd[`teamNop/${nopKey(t)}`] = n
-      upd.pending.teamNop = n
-      upd.event = { id: newId(), text: `🎫 ${info.name} 놉카드 +1 (지금 ${n}장)` }
-    }
-    if (ctype === 'sojuAdd') {
-      // 소주 보관소에 한 잔 적립 (가운데 보관소에 도착한 팀이 의리주로 마심)
-      const n = Math.max(0, Number(room.sojuBank) || 0) + 1
-      upd.sojuBank = n
-      upd.pending.bank = n
-      upd.event = { id: newId(), text: `🍶 ${me.name} 소주 +1 적립 → 보관소에 ${n}잔` }
-    }
-    withReleaseUpdates(room, upd.pending, upd)
-    withTopicUpdates(room, upd.pending, upd)
+    upd.event = { id: newId(), text: `⏪ ${me.name} ${path.length}칸 뒤로 → ${nodeName(dest)}` }
+    arriveUpdates(room, { ...room, pieces: next }, upd, id, t, dest, stacked)
   }
   await roomUpdate(code, upd)
 }
@@ -1090,6 +1162,67 @@ export async function resolvePending(code, room, action, target) {
           event: { id: newId(), text: `👉 지목 → ${drinkText(room, [p.target])}` },
         }, [p.target]))
       }
+      return
+    }
+    case 'pickTeam': {
+      // 너희 팀 다 같이 마셔 (상대 팀 전원)
+      const mt = teamOf(room, id)
+      if (action === 'done' && !liveTeams(room).some((x) => x !== mt)) {
+        await roomUpdate(code, { ...nextTurnUpdates(room), event: { id: newId(), text: '👉 마실 상대 팀이 없어요 😅' } })
+        return
+      }
+      const tt = action === 'pickTeam' ? Number(target) : action === 'done' ? Number(p.target) : NaN
+      if (!Number.isInteger(tt) || tt === mt || !liveTeams(room).includes(tt)) return
+      await roomUpdate(code, addDrinks(room, {
+        ...nextTurnUpdates(room),
+        event: { id: newId(), text: `👉 ${me.name} → ${TEAM_INFO[tt].name} 다 같이 마셔! 🍻` },
+      }, teamMembers(room, tt)))
+      return
+    }
+    case 'toast': {
+      // 상대 팀 한 명과 둘이 같이 짠 (둘만 마심)
+      const rivals = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name && teamOf(room, pid) !== teamOf(room, id))
+      if (action === 'done' && !rivals.length) {
+        await roomUpdate(code, { ...nextTurnUpdates(room), event: { id: newId(), text: '🥂 같이 짠 할 상대가 없어요 😅' } })
+        return
+      }
+      if (action !== 'choose' || !target) return
+      const tp = room.players[target]
+      if (!tp?.name || teamOf(room, target) === teamOf(room, id)) return
+      await roomUpdate(code, addDrinks(room, {
+        ...nextTurnUpdates(room),
+        event: { id: newId(), text: `🥂 ${me.name} ♥ ${tp.name} 같이 짠!` },
+      }, [id, target]))
+      return
+    }
+    case 'nhaeng': {
+      // 랜덤 n행시: 키워드 바꾸기 / 다 하면 다 같이 마셔
+      if (action === 'reroll') {
+        await roomUpdate(code, { 'pending/word': pickNhaengWord(p.word) })
+        return
+      }
+      if (action !== 'done') return
+      const all = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
+      await roomUpdate(code, addDrinks(room, {
+        ...nextTurnUpdates(room),
+        lastWord: p.word || null,
+        event: { id: newId(), text: `🎤 ${me.name} ${String(p.word || '').length}행시 「${p.word}」 → 다 같이 마셔! 🍻` },
+      }, all))
+      return
+    }
+    case 'back': {
+      if (action === 'nop-skip') {
+        // 팀 놉카드 1장으로 뒤로 가기 거부
+        const mt = teamOf(room, id)
+        if (teamNop(room, mt) <= 0) return
+        await roomUpdate(code, {
+          ...nextTurnUpdates(room),
+          [`teamNop/${nopKey(mt)}`]: teamNop(room, mt) - 1,
+          event: { id: newId(), text: `🎫 ${TEAM_INFO[mt].name} 놉카드 사용! ${p.steps || 4}칸 뒤로 거부 🙅` },
+        })
+        return
+      }
+      if (action === 'done') await backMove(code, room, p)
       return
     }
     case 'aiPick': {
