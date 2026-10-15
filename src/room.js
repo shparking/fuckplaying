@@ -2300,7 +2300,9 @@ async function resolveTeamGame(code, room, p, action, target) {
       upd.usedPlaces = [...arr(room.usedPlaces), ...rounds].slice(-25)
     }
     if (p.kind === 'worldPin') {
-      const rounds = pickWorldRounds(arr(room.usedWorld))
+      // 데모: &wround=0,13,14,15,36 처럼 문제(장소 번호)를 고정 (테스트용)
+      const forced = DEMO ? (new URLSearchParams(window.location.search).get('wround') || '').split(',').filter(Boolean).map(Number).filter((i) => WORLD_PLACES[i]) : []
+      const rounds = forced.length === WP_ROUNDS ? forced : pickWorldRounds(arr(room.usedWorld))
       Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': rounds, 'pending/answers': SOLO ? fakeWorldAnswers(room, rounds) : null })
       upd.usedWorld = [...arr(room.usedWorld), ...rounds].slice(-30)
     }

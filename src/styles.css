@@ -4143,6 +4143,23 @@ textarea {
   transform: scale(0.94);
 }
 
+/* 세계 지도 찍기: 나라 힌트 */
+.mp-hint {
+  display: table;
+  margin: 2px auto 8px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(76, 201, 240, 0.14);
+  border: 1px solid rgba(76, 201, 240, 0.45);
+  color: #bfefff;
+  font-size: 15px;
+  font-weight: 800;
+}
+.pg-best-hint {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
 /* ---------- 단어 노래 (43번) ---------- */
 .song-word {
   font-family: var(--font-display);

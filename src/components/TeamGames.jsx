@@ -1935,7 +1935,7 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
         }
         rules={
           <>
-            도시·명소 이름이 나오면 세계 지도에 <b>핀을 꽂아요</b>. <b>두 손가락으로 확대</b>, 끌어서 이동, 그냥 누르면 핀 (다시 누르면 옮겨져요, ＋ － 버튼도 있어요). 모두 {WP_ROUNDS}문제, 문제마다 {WP_ANSWER_MS / 1000}초, 점점 어려워져요. 실제 위치와 <b>가까울수록 점수가 커요</b> (딱 맞히면 1000점, 500km 차이 500점). 끝나면 팀 점수가 낮은 팀이 다 같이 마셔요.
+            도시·명소 이름이 나오면 (나라 힌트도 같이) 세계 지도에 <b>핀을 꽂아요</b>. <b>두 손가락으로 확대</b>, 끌어서 이동, 그냥 누르면 핀 (다시 누르면 옮겨져요, ＋ － 버튼도 있어요). 모두 {WP_ROUNDS}문제, 문제마다 {WP_ANSWER_MS / 1000}초, 점점 어려워져요. 실제 위치와 <b>가까울수록 점수가 커요</b> (딱 맞히면 1000점, 500km 차이 500점). 끝나면 팀 점수가 낮은 팀이 다 같이 마셔요.
           </>
         }
       />
@@ -1974,6 +1974,7 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
           </div>
           <div className={`tg-timer ${asking ? '' : 'done'}`}>{asking && <i style={{ width: `${Math.max(0, (ph.left / WP_ANSWER_MS) * 100)}%` }} />}</div>
           <div className="mp-q">📍 {place.name}</div>
+          {place.country && <div className="mp-hint">🧭 {place.country}</div>}
           <WorldMap data={data} view={view} setView={setView} onTap={onTap}>
             {(k) => (
               <>
@@ -2010,7 +2011,10 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
             const b = r.best[q]
             return (
               <div key={q} className="pg-best-row">
-                <span>📍 {WORLD_PLACES[idx]?.name}</span>
+                <span>
+                  📍 {WORLD_PLACES[idx]?.name}
+                  {WORLD_PLACES[idx]?.country && <small className="pg-best-hint"> {WORLD_PLACES[idx].country}</small>}
+                </span>
                 <em>{b ? `🎯 ${name(b.pid)} ${kmText(b.km)}` : '아무도 안 찍음'}</em>
               </div>
             )
