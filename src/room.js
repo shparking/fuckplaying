@@ -247,11 +247,15 @@ export const nopKey = (t) => `t${t}`
 export function teamNop(room, t) {
   return Math.max(0, Number(room?.teamNop?.[nopKey(t)]) || 0)
 }
-// 팀 방패 (방패 칸에서 모음). 우리 말이 잡힐 때 쓸지 고름 → 쓰면 안 잡힘. 키는 놉카드와 같이 t0·t1…
+// 팀 방패 (방패 칸에서 모음). 우리 말이 잡힐 때 쓸지 고름 → 쓰면 안 잡힘 (고를 때까지 기다림, 시간 제한 없음). 키는 놉카드와 같이 t0·t1…
 export function teamShield(room, t) {
   return Math.max(0, Number(room?.teamShield?.[nopKey(t)]) || 0)
 }
-export const SHIELD_MS = 15000 // 방패 쓸지 고르는 시간 (지나면 자동으로 씀)
+// 그 팀 사람이 모두 연결이 끊김 → 방장·던진 사람이 대신 고를 수 있음 (게임이 멈추지 않게)
+export function teamAllOffline(room, t) {
+  const m = teamMembers(room, t)
+  return m.length > 0 && m.every((pid) => room.players?.[pid]?.online === false)
+}
 // 연대책임: 마셔야 하는 사람이 있으면 그 사람 팀 전원이 같이 마심
 export function withTeams(room, ids) {
   const teams = new Set((ids || []).filter((pid) => room.players?.[pid]?.name).map((pid) => teamOf(room, pid)))
@@ -425,6 +429,14 @@ export async function startGame(code, room) {
   // 데모: &nop=2 처럼 빨강팀 놉카드 수 지정 (테스트용)
   const demoNop = DEMO ? parseInt(new URLSearchParams(window.location.search).get('nop'), 10) : NaN
   if (demoNop >= 0) upd.teamNop = { t0: demoNop }
+  // 데모: &offline=b,d 처럼 그 참가자(탭의 pid 또는 참가자 id)를 연결 끊김으로 표시 (테스트용)
+  const demoOff = DEMO ? new URLSearchParams(window.location.search).get('offline') : null
+  if (demoOff)
+    demoOff
+      .split(',')
+      .map((x) => (room.players?.[x]?.name ? x : room.players?.[`p_${x}`]?.name ? `p_${x}` : null))
+      .filter(Boolean)
+      .forEach((x) => (upd[`players/${x}/online`] = false))
   // 데모: &shield=1:2 처럼 팀별 방패 수 지정 (테스트용)
   const demoShield = DEMO ? new URLSearchParams(window.location.search).get('shield') : null
   if (demoShield) {
@@ -739,9 +751,8 @@ function sendHome(pieces, teams, dest) {
   teams.forEach((o) => (pieces[o] || []).forEach((pc, i) => pc.n === dest && (pieces[o][i] = { n: 'home' })))
 }
 const victimText = (vs) => vs.map((v) => `${TEAM_INFO[v.team]?.name} 말 ${v.count}개`).join(' · ')
-// 잡힐 말의 팀에 방패가 있으면: 말은 일단 같은 칸에 두고, 그 팀이 방패를 쓸지 고름 (asks: t1 → wait | use | skip)
+// 잡힐 말의 팀에 방패가 있으면: 말은 일단 같은 칸에 두고, 그 팀이 방패를 쓸지 고름 (asks: t1 → wait | use | skip, 시간 제한 없음)
 function shieldAskPending(id, pos, victims, asking, stacked, via) {
-  const at = serverNow()
   return {
     kind: 'shieldAsk',
     playerId: id,
@@ -750,8 +761,7 @@ function shieldAskPending(id, pos, victims, asking, stacked, via) {
     asks: Object.fromEntries(asking.map((v) => [nopKey(v.team), 'wait'])),
     stacked: !!stacked,
     via, // move | back (4칸 뒤로)
-    startedAt: at,
-    deadline: at + SHIELD_MS,
+    startedAt: serverNow(),
   }
 }
 // 잡기 확정: 잡은 사람은 한 번 더, 잡힌 팀 전원이 잡힌 말 수만큼 마심 (확인할 때 — resolvePending 'caught')
@@ -763,30 +773,29 @@ function caughtUpdates(room, upd, id, pos, victims, back = false) {
   return upd
 }
 // 방패 쓸지 고르기: 잡힐 팀 사람 누구나 (혼자 모드는 한 화면에서). use = true 쓰기 / false 안 쓰고 잡히기
-// 시간(SHIELD_MS) 안에 안 고르면 자동으로 방패를 씀 (auto: 도착한 사람·방장 화면이 부르고, 그 둘이 없으면 다른 화면이 조금 뒤에)
-export async function shieldDecide(code, room, team, use, auto = false) {
+// 고를 때까지 기다림 (시간 제한 없음). 그 팀이 모두 연결이 끊겼으면 방장·던진 사람이 대신 고를 수 있음
+export function canShieldFor(room, team) {
+  const id = myId()
+  if (SOLO) return true
+  if (!room.players?.[id]?.name) return false
+  if (teamOf(room, id) === Number(team)) return true
+  return teamAllOffline(room, Number(team)) && (id === room.hostId || id === room.pending?.playerId)
+}
+export async function shieldDecide(code, room, team, use) {
   const p = room.pending
   if (!p || p.kind !== 'shieldAsk') return
   const asks = { ...(p.asks || {}) }
-  if (auto) {
-    if (serverNow() < (p.deadline || 0)) return
-    // 도착한 사람·방장 화면이 먼저, 둘 다 자리에 없으면 2.5초 뒤 다른 사람 화면이
-    if (!SOLO && myId() !== p.playerId && myId() !== room.hostId && serverNow() < (p.deadline || 0) + 2500) return
-    Object.keys(asks).forEach((k) => asks[k] === 'wait' && (asks[k] = 'use'))
-  } else {
-    const k = nopKey(Number(team))
-    if (asks[k] !== 'wait') return
-    if (!SOLO && (!room.players?.[myId()]?.name || teamOf(room, myId()) !== Number(team))) return
-    asks[k] = use ? 'use' : 'skip'
-  }
+  const k = nopKey(Number(team))
+  if (asks[k] !== 'wait' || !canShieldFor(room, team)) return
+  asks[k] = use ? 'use' : 'skip'
   if (Object.values(asks).some((v) => v === 'wait')) {
     await roomUpdate(code, { 'pending/asks': asks }) // 아직 고르는 팀이 있음
     return
   }
-  await roomUpdate(code, shieldFinalUpdates(room, p, asks, auto))
+  await roomUpdate(code, shieldFinalUpdates(room, p, asks))
 }
 // 다 골랐으면: 방패 쓴 팀은 안 잡힘(같은 칸에 같이 있음), 안 쓴 팀은 잡힘. 아무도 안 잡히면 잡은 사람도 한 번 더 없이 도착한 칸 미션
-function shieldFinalUpdates(room, p, asks, auto) {
+function shieldFinalUpdates(room, p, asks) {
   const id = p.playerId
   const t = teamOf(room, id)
   const next = JSON.parse(JSON.stringify(roomPieces(room)))
@@ -796,7 +805,7 @@ function shieldFinalUpdates(room, p, asks, auto) {
   const caughtV = victims.filter((v) => !used.includes(v.team))
   const upd = {}
   used.forEach((o) => (upd[`teamShield/${nopKey(o)}`] = Math.max(0, teamShield(room, o) - 1)))
-  const usedText = used.length ? `🛡️ ${teamLabel(used)} 방패${auto ? '(자동)' : ''}! 안 잡혀요` : ''
+  const usedText = used.length ? `🛡️ ${teamLabel(used)} 방패! 안 잡혀요` : ''
   const skipText = skipped.length ? `${teamLabel(skipped)} 방패 안 씀` : ''
   if (skipText) upd[`log/${newId()}`] = { t: Date.now(), text: `🛡️ ${skipText}` } // 쓴 쪽은 이벤트에 나옴
   if (caughtV.length) {

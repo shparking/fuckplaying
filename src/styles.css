@@ -4015,11 +4015,11 @@ textarea {
 .shield-row.skip .shield-done {
   color: var(--danger);
 }
-.shield-time {
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-2);
+.shield-proxy {
+  font-size: 12px;
   font-weight: 700;
+  color: var(--text-2);
+  margin: -4px 0 8px;
 }
 /* 한 칸에 여러 팀 말 (방패로 막은 뒤): 두 번째 팀은 칸 왼쪽 위, 세 번째는 오른쪽 아래, 네 번째는 왼쪽 아래 */
 .ytoken.slot1 {

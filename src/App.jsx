@@ -65,6 +65,8 @@ import {
   teamNop,
   teamShield,
   shieldDecide,
+  canShieldFor,
+  teamAllOffline,
   teamsOf,
   teamLabel,
   optionTargets,
@@ -135,7 +137,7 @@ const KIND_DESC = {
   nhaeng: '랜덤 키워드가 나오면 글자 수만큼 n행시를 짓고 다 같이 마셔요. 키워드는 바꿀 수 있어요.',
   back: '말이 4칸 뒤로 가요 (업힌 말도 같이). 도착한 칸 미션도 하고, 상대 말이 있으면 잡아요. 팀 놉카드로 거부할 수 있어요.',
   allOptions: '판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)이 전부 상대 팀에 3분씩 걸려요.',
-  shield: '도착한 팀 방패 +1. 우리 말이 잡힐 때 방패를 쓸지 골라요. 쓰면 안 잡히고(잡으려던 사람도 한 번 더 없음) 방패가 1개 줄어요. 15초 안에 안 고르면 자동으로 써요.',
+  shield: '도착한 팀 방패 +1. 우리 말이 잡힐 때 방패를 쓸지 골라요 (시간 제한 없음). 쓰면 안 잡히고(잡으려던 사람도 한 번 더 없음) 방패가 1개 줄어요.',
   subway: '3, 2, 1 → 서울 지하철 1~9호선 중 하나가 나와요. 그 호선 역 이름을 돌아가며 말하고, 막히거나 틀리거나 나온 역을 또 말하면 마셔요.',
 }
 // 상대 팀 사람들 (같이 짠 칸)
@@ -495,13 +497,8 @@ function SubwayPanel({ room, pending: p, iAct, code, keyId }) {
   )
 }
 
-// 방패: 잡히려는 팀이 방패를 쓸지 고름 (그 팀 사람 누구나). 시간 안에 안 고르면 자동으로 씀
-function ShieldAskPanel({ room, pending: p, me, code, ctl }) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => tick((x) => x + 1), 250)
-    return () => clearInterval(t)
-  }, [])
+// 방패: 잡히려는 팀이 방패를 쓸지 고름 (그 팀 사람 누구나, 시간 제한 없음). 그 팀이 모두 연결이 끊겼으면 방장·던진 사람이 대신
+function ShieldAskPanel({ room, pending: p, me, code }) {
   const asks = p.asks || {}
   const askTeams = Object.keys(asks)
     .map((k) => Number(k.slice(1)))
@@ -511,7 +508,6 @@ function ShieldAskPanel({ room, pending: p, me, code, ctl }) {
   const actor = room.players[p.playerId]
   const myT = teamOf(room, me)
   const mineWaiting = askTeams.some((t) => (SOLO || myT === t) && asks[`t${t}`] === 'wait')
-  const left = Math.max(0, (p.deadline || 0) - serverNow())
   // 잡힐 팀 폰: 진동
   useEffect(() => {
     if (!mineWaiting || SOLO) return
@@ -519,13 +515,6 @@ function ShieldAskPanel({ room, pending: p, me, code, ctl }) {
       navigator.vibrate?.([120, 60, 120])
     } catch {}
   }, [p.startedAt])
-  // 시간이 지나면 도착한 사람·방장 화면이 자동으로 방패를 씀. 그 둘이 자리에 없으면 다른 화면이 2.5초 뒤에 (안 넘어가면 1.5초마다 다시)
-  const autoRef = useRef(0)
-  useEffect(() => {
-    if (serverNow() < (p.deadline || 0) + (ctl ? 0 : 2600) || Date.now() - autoRef.current < 1500) return
-    autoRef.current = Date.now()
-    shieldDecide(code, room, null, true, true)
-  })
   return (
     <div className="modal-backdrop">
       <div className="modal shield-modal">
@@ -539,7 +528,8 @@ function ShieldAskPanel({ room, pending: p, me, code, ctl }) {
             const info = TEAM_INFO[t]
             const v = victims.find((x) => x.team === t)
             const st = asks[`t${t}`]
-            const mine = SOLO || myT === t
+            const mine = canShieldFor(room, t)
+            const proxy = mine && !SOLO && myT !== t // 그 팀이 모두 연결 끊김 → 대신 고르기
             return (
               <div key={t} className={`shield-row ${st}`} style={{ '--tc': info.color }}>
                 <div className="shield-head">
@@ -549,6 +539,8 @@ function ShieldAskPanel({ room, pending: p, me, code, ctl }) {
                 </div>
                 {st === 'wait' ? (
                   mine ? (
+                    <>
+                    {proxy && <div className="shield-proxy">{info.name}이 모두 연결이 끊겨서 대신 골라요</div>}
                     <div className="shield-btns">
                       <button className="btn btn-primary" onClick={() => shieldDecide(code, room, t, true)}>
                         🛡️ 방패 쓰기
@@ -557,8 +549,9 @@ function ShieldAskPanel({ room, pending: p, me, code, ctl }) {
                         그냥 잡힐게요 · {v?.count || 1}잔씩
                       </button>
                     </div>
+                    </>
                   ) : (
-                    <div className="waiting">{info.name}이 고르는 중…</div>
+                    <div className="waiting">{info.name}이 고르는 중…{teamAllOffline(room, t) ? ' (모두 연결 끊김 — 방장·던진 사람이 대신 고를 수 있어요)' : ''}</div>
                   )
                 ) : (
                   <div className="shield-done">{st === 'use' ? '🛡️ 방패 씀' : '안 씀 → 잡혀요'}</div>
@@ -567,7 +560,6 @@ function ShieldAskPanel({ room, pending: p, me, code, ctl }) {
             )
           })}
         </div>
-        <div className="shield-time">⏳ {Math.ceil(left / 1000)}초 · 안 고르면 방패를 자동으로 써요</div>
       </div>
     </div>
   )
@@ -2719,7 +2711,7 @@ export default function App() {
         })()}
 
       {/* ---------- 방패: 잡히려는 팀이 쓸지 고름 ---------- */}
-      {room && showPending && pending.kind === 'shieldAsk' && <ShieldAskPanel room={room} pending={pending} me={me} code={code} ctl={ctlTeam} />}
+      {room && showPending && pending.kind === 'shieldAsk' && <ShieldAskPanel room={room} pending={pending} me={me} code={code} />}
 
       {/* ---------- 승리 ---------- */}
       {room && showPending && pending.kind === 'win' && <WinOverlay room={room} pending={pending} isHost={isHost || SOLO} onDone={() => resolvePending(code, room, 'done')} />}
