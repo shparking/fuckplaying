@@ -75,7 +75,7 @@ import {
   practiceStart,
   liveTeams,
 } from './room'
-import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel, CirclePanel, PricePanel, TimeSumPanel, MapPinPanel } from './components/TeamGames'
+import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel, CirclePanel, PricePanel, TimeSumPanel, MapPinPanel, WorldPinPanel } from './components/TeamGames'
 import { BALANCE_TOPICS } from './game/balance'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
@@ -100,6 +100,7 @@ const KIND_LABEL = {
   liar: '라이어 게임',
   hunmin: '훈민정음 게임',
   subway: '지하철 게임',
+  wordSong: '단어 노래',
   shield: '방패 +1',
   shieldAsk: '방패',
   vote: '다수결 지목',
@@ -121,6 +122,7 @@ const KIND_LABEL = {
   priceGuess: '얼마게요',
   timeSum: '팀 시간 합치기',
   mapPin: '지도 찍기',
+  worldPin: '세계 지도 찍기',
   allOptions: '모든 옵션 On',
   sojuAdd: '소주 +1 적립',
   sojuBank: '소주 보관소',
@@ -139,6 +141,13 @@ const KIND_DESC = {
   allOptions: '판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)이 전부 상대 팀에 3분씩 걸려요.',
   shield: '도착한 팀 방패 +1. 우리 말이 잡힐 때 방패를 쓸지 골라요 (시간 제한 없음). 쓰면 안 잡히고(잡으려던 사람도 한 번 더 없음) 방패가 1개 줄어요.',
   subway: '3, 2, 1 → 서울 지하철 1~9호선 중 하나가 나와요. 그 호선 역 이름을 돌아가며 말하고, 막히거나 틀리거나 나온 역을 또 말하면 마셔요.',
+  wordSong: '3, 2, 1 → 단어가 하나 나와요. 그 단어가 들어간 노래를 돌아가며 한 소절씩 부르고, 막히거나 이미 나온 노래를 부르면 마셔요.',
+  worldPin: '팀 대결: 세계 지도에 도시·명소 핀 꽂기 (두 손가락으로 확대). 5문제, 가까울수록 점수, 팀 점수 낮은 팀이 마셔요.',
+}
+// 받침이 있으면 a, 없으면 b (사랑이 / 비가)
+const josa = (word, a, b) => {
+  const c = String(word || '').charCodeAt(String(word || '').length - 1)
+  return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? a : b
 }
 // 상대 팀 사람들 (같이 짠 칸)
 const rivalsOf = (room, pid) => Object.keys(room.players || {}).filter((x) => room.players[x]?.name && teamOf(room, x) !== teamOf(room, pid))
@@ -483,6 +492,41 @@ function SubwayPanel({ room, pending: p, iAct, code, keyId }) {
         </div>
         {iAct ? (
           <div className="actions">
+            <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
+              수행 완료
+            </button>
+          </div>
+        ) : (
+          <div className="actions">
+            <div className="waiting">{actor?.name}이(가) 진행 중…</div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// 단어 노래: 3, 2, 1 → 단어 제시 → 그 단어가 들어간 노래를 돌아가며 한 소절씩 (오프라인)
+function SongPanel({ room, pending: p, iAct, code, keyId }) {
+  const step = useCountdown(keyId)
+  if (step > 0) return <CountOverlay step={step} emoji="🎶" sub="단어를 뽑고 있어요…" />
+  const actor = room.players[p.playerId]
+  return (
+    <div className="modal-backdrop">
+      <div className="modal">
+        <div className="kicker">🎶 단어 노래</div>
+        <h2>{p.title || '단어 노래 부르기'}</h2>
+        <div className="song-word" key={p.word}>
+          {p.word}
+        </div>
+        <div className="muted">
+          <b style={{ color: actor?.color }}>{actor?.name}</b>부터 돌아가며 「{p.word}」{josa(p.word, '이', '가')} 들어간 노래를 한 소절씩 불러요. 막히거나, 이미 나온 노래를 부르면 마셔요!
+        </div>
+        {iAct ? (
+          <div className="actions">
+            <button className="btn btn-ghost" onClick={() => resolvePending(code, room, 'reroll')}>
+              🔄 다른 단어
+            </button>
             <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
               수행 완료
             </button>
@@ -2759,6 +2803,7 @@ export default function App() {
       {room && showPending && pending.kind === 'priceGuess' && <PricePanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
       {room && showPending && pending.kind === 'timeSum' && <TimeSumPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
       {room && showPending && pending.kind === 'mapPin' && <MapPinPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'worldPin' && <WorldPinPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
 
       {/* ---------- 소주 보관소 (가운데 40번) ---------- */}
       {room && showPending && pending.kind === 'sojuBank' && <SojuBankPanel room={room} pending={pending} iAct={iAct} code={code} />}
@@ -2766,6 +2811,11 @@ export default function App() {
       {/* ---------- 훈민정음 ---------- */}
       {room && showPending && pending.kind === 'hunmin' && (
         <HunminPanel room={room} pending={pending} iAct={iAct} code={code} keyId={`${room.lastMove?.id}-${pending.pos}-${pending.title || ''}`} />
+      )}
+
+      {/* ---------- 단어 노래 ---------- */}
+      {room && showPending && pending.kind === 'wordSong' && (
+        <SongPanel room={room} pending={pending} iAct={iAct} code={code} keyId={`${room.lastMove?.id}-${pending.pos}-${pending.title || ''}`} />
       )}
 
       {/* ---------- 지하철 게임 ---------- */}
@@ -2776,7 +2826,7 @@ export default function App() {
       {/* ---------- 도착 칸 모달 ---------- */}
       {room &&
         showPending &&
-        !['aiPick', 'vote', 'hunmin', 'subway', 'shieldAsk', 'shuffle', 'balance', 'bomb', 'reaction', 'gamble', 'caught', 'win', 'sojuBank'].includes(pending.kind) &&
+        !['aiPick', 'vote', 'hunmin', 'subway', 'wordSong', 'shieldAsk', 'shuffle', 'balance', 'bomb', 'reaction', 'gamble', 'caught', 'win', 'sojuBank'].includes(pending.kind) &&
         !TEAM_GAMES.has(pending.kind) &&
         !(pending.kind === 'liar' && pending.stage !== 'category') &&
         !(pending.kind === 'pick' && pending.stage === 'result') &&
@@ -2812,6 +2862,7 @@ export default function App() {
                     ['priceGuess', '💰', '얼마게요'],
                     ['timeSum', '🕰️', '팀 시간 합치기'],
                     ['mapPin', '🗺️', '지도 찍기'],
+                    ['worldPin', '🌍', '세계 지도 찍기'],
                     ['subway', '🚇', '지하철 게임'],
                   ].map(([k, e, n]) => (
                     <button key={k} className="cat-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', k)}>

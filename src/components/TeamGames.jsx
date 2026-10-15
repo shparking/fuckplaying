@@ -1,4 +1,4 @@
-// 팀 대결 미니게임 화면: 팀 이구동성 · 연타 줄다리기 · 팀 반응속도 · 폭탄 돌리기 팀전 · 색깔 함정 · 완벽한 원 · 얼마게요 · 팀 시간 합치기 · 지도 찍기
+// 팀 대결 미니게임 화면: 팀 이구동성 · 연타 줄다리기 · 팀 반응속도 · 폭탄 돌리기 팀전 · 색깔 함정 · 완벽한 원 · 얼마게요 · 팀 시간 합치기 · 지도 찍기 · 세계 지도 찍기
 // 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심. 동점이면 룰렛.
 // 시간은 서버 시각(serverNow) 기준이라 모든 폰이 같은 순간에 같은 화면을 봄
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -62,7 +62,15 @@ import {
   mapResult,
   MP_ROUNDS,
   MP_ANSWER_MS,
+  worldPhase,
+  worldAnswer,
+  worldAnswerOf,
+  worldResult,
+  WP_ROUNDS,
+  WP_ANSWER_MS,
 } from '../room'
+import { WORLD_PLACES } from '../game/worldplaces'
+import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
 
 // 서버 시각으로 다시 그리기 (active 일 때만 ms 간격)
 function useNow(active, ms = 100) {
@@ -1674,6 +1682,336 @@ export function MapPinPanel({ room, pending: p, me, ctl, code }) {
               <div key={q} className="pg-best-row">
                 <span>📍 {PLACES[idx]?.name}</span>
                 <em>{b ? `🎯 ${name(b.pid)} ${Math.round(b.km)}km` : '아무도 안 찍음'}</em>
+              </div>
+            )
+          })}
+        </div>
+      }
+      note={r.byAvg ? '팀 인원이 달라서 1인 평균으로 비교해요' : r.mvp ? `🏅 MVP ${name(r.mvp.pid)} ${r.mvp.total.toLocaleString('ko-KR')}점` : ''}
+    />
+  )
+}
+
+// ---------- 세계 지도 찍기 ----------
+// 5문제 × 15초, 세계 지도에 도시·명소 핀 꽂기. 두 손가락으로 확대 · 끌어서 이동 · 그냥 누르면 핀 (다시 누르면 옮김) · 지도 아래 ＋ － 전체 버튼
+// 가까울수록 점수 (500km = 500점), 팀 점수 낮은 팀이 마심. 지도 그림(worldmap.js, 약 110KB)은 이 게임이 처음 뜰 때 따로 불러옴
+const WM_MAX_ZOOM = 8
+const WM_FULL = { x: 0, y: 0, w: WORLD_W }
+const wmH = (w) => (w * WORLD_H) / WORLD_W
+function wmClamp(v) {
+  const w = Math.max(WORLD_W / WM_MAX_ZOOM, Math.min(WORLD_W, v.w))
+  return { w, x: Math.max(0, Math.min(WORLD_W - w, v.x)), y: Math.max(0, Math.min(WORLD_H - wmH(w), v.y)) }
+}
+// 점들이 다 보이게 (정답 공개 때: 정답 + 내 핀)
+function wmFit(points, minW = 150) {
+  const xs = points.map((q) => q[0])
+  const ys = points.map((q) => q[1])
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), ((Math.max(...ys) - Math.min(...ys)) * WORLD_W) / WORLD_H)
+  const w = Math.min(WORLD_W, Math.max(minW, span * 1.7))
+  return wmClamp({ x: cx - w / 2, y: cy - wmH(w) / 2, w })
+}
+function useWorldMapData() {
+  const [data, setData] = useState(null)
+  useEffect(() => {
+    let alive = true
+    import('../game/worldmap').then((m) => alive && setData({ land: m.WORLD_LAND, dots: m.WORLD_DOTS }))
+    return () => {
+      alive = false
+    }
+  }, [])
+  return data
+}
+function WorldMap({ data, view, setView: setViewProp, onTap, children }) {
+  const ref = useRef(null)
+  const ptrs = useRef(new Map())
+  const g = useRef(null)
+  // 지금 보기: 손가락 이벤트가 화면이 다시 그려지기 전에 연달아 와도 최신 값으로 (props 가 바뀔 때만 맞춤)
+  const vRef = useRef(view)
+  const lastProp = useRef(view)
+  if (lastProp.current !== view) {
+    lastProp.current = view
+    vRef.current = view
+  }
+  const setView = (v) => {
+    vRef.current = v
+    setViewProp(v)
+  }
+  const toMap = (cx, cy) => {
+    const r = ref.current.getBoundingClientRect()
+    const v = vRef.current
+    return [v.x + ((cx - r.left) / r.width) * v.w, v.y + ((cy - r.top) / r.height) * wmH(v.w)]
+  }
+  const two = () => [...ptrs.current.values()].slice(0, 2)
+  const down = (e) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {}
+    ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (ptrs.current.size === 1) g.current = { mode: 'pan', sx: e.clientX, sy: e.clientY, v0: vRef.current, moved: false }
+    else {
+      const [a, b] = two()
+      g.current = { mode: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, m0: toMap((a.x + b.x) / 2, (a.y + b.y) / 2), v0: vRef.current }
+    }
+  }
+  const move = (e) => {
+    if (!ptrs.current.has(e.pointerId)) return
+    ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const st = g.current
+    if (!st || !ref.current) return
+    const r = ref.current.getBoundingClientRect()
+    if (st.mode === 'pan' && ptrs.current.size === 1) {
+      const dx = e.clientX - st.sx
+      const dy = e.clientY - st.sy
+      if (!st.moved && Math.hypot(dx, dy) < 8) return // 손가락이 조금 떨린 건 누르기로
+      st.moved = true
+      const k = st.v0.w / r.width
+      setView(wmClamp({ ...st.v0, x: st.v0.x - dx * k, y: st.v0.y - dy * k }))
+    } else if (st.mode === 'pinch' && ptrs.current.size >= 2) {
+      const [a, b] = two()
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1
+      const w = Math.max(WORLD_W / WM_MAX_ZOOM, Math.min(WORLD_W, (st.v0.w * st.d0) / d))
+      const mx = ((a.x + b.x) / 2 - r.left) / r.width
+      const my = ((a.y + b.y) / 2 - r.top) / r.height
+      setView(wmClamp({ w, x: st.m0[0] - mx * w, y: st.m0[1] - my * wmH(w) }))
+    }
+  }
+  const up = (e) => {
+    const st = g.current
+    const tap = !!st && st.mode === 'pan' && !st.moved && ptrs.current.size === 1 && ptrs.current.has(e.pointerId)
+    ptrs.current.delete(e.pointerId)
+    if (tap && onTap && e.type === 'pointerup') onTap(...toMap(e.clientX, e.clientY))
+    if (ptrs.current.size === 1) {
+      const [a] = [...ptrs.current.values()]
+      g.current = { mode: 'pan', sx: a.x, sy: a.y, v0: vRef.current, moved: true } // 두 손가락 뒤에 남은 손가락은 이동만 (핀 안 꽂음)
+    } else if (!ptrs.current.size) g.current = null
+  }
+  const wheel = (e) => {
+    const v = vRef.current
+    const [mx, my] = toMap(e.clientX, e.clientY)
+    const w = Math.max(WORLD_W / WM_MAX_ZOOM, Math.min(WORLD_W, v.w * Math.exp(e.deltaY * 0.0015)))
+    const f = w / v.w
+    setView(wmClamp({ w, x: mx - (mx - v.x) * f, y: my - (my - v.y) * f }))
+  }
+  const zoomBy = (f) => {
+    const v = vRef.current
+    const cx = v.x + v.w / 2
+    const cy = v.y + wmH(v.w) / 2
+    const w = Math.max(WORLD_W / WM_MAX_ZOOM, Math.min(WORLD_W, v.w / f))
+    setView(wmClamp({ w, x: cx - w / 2, y: cy - wmH(w) / 2 }))
+  }
+  const k = view.w / WORLD_W // 확대해도 핀·별·점은 같은 크기로 보이게
+  return (
+    <div className="wmap-wrap">
+      <svg
+        ref={ref}
+        className={`wmap ${onTap ? 'tap' : ''}`}
+        viewBox={`${view.x} ${view.y} ${view.w} ${wmH(view.w)}`}
+        data-view={`${view.x.toFixed(2)} ${view.y.toFixed(2)} ${view.w.toFixed(2)}`}
+        onPointerDown={down}
+        onPointerMove={move}
+        onPointerUp={up}
+        onPointerCancel={up}
+        onWheel={wheel}
+      >
+        <rect x="-20" y="-20" width={WORLD_W + 40} height={WORLD_H + 40} className="kmap-sea" />
+        {data ? (
+          <>
+            <path d={data.land} className="wmap-land" />
+            {data.dots.map(([x, y], i) => (
+              <circle key={i} cx={x} cy={y} r={Math.max(0.9, 3.2 * k)} className="wmap-land" />
+            ))}
+          </>
+        ) : (
+          <text x={WORLD_W / 2} y={WORLD_H / 2} textAnchor="middle" className="wmap-loading">
+            지도 불러오는 중…
+          </text>
+        )}
+        {children?.(k)}
+      </svg>
+      <div className="wmap-btns">
+        <button type="button" className="wmap-zin" onClick={() => zoomBy(2)} aria-label="확대">
+          ＋
+        </button>
+        <button type="button" className="wmap-zout" onClick={() => zoomBy(0.5)} aria-label="축소">
+          －
+        </button>
+        <button type="button" className="wmap-zfull" onClick={() => setView(WM_FULL)} aria-label="전체 보기">
+          ⤢ 전체
+        </button>
+      </div>
+    </div>
+  )
+}
+const WorldPin = ({ x, y, color, k }) => (
+  <g transform={`translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${(k * 0.85).toFixed(4)})`} className="kmap-pin">
+    <path d="M0,0 C-11,-19 -19,-29 -19,-40 A19,19 0 1 1 19,-40 C19,-29 11,-19 0,0Z" fill={color} />
+    <circle cx="0" cy="-40" r="7" fill="#fff" />
+  </g>
+)
+const WorldStar = ({ x, y, label, k, left }) => (
+  <g className="kmap-star wmap-star" transform={`translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${(k * 0.85).toFixed(4)})`}>
+    <circle r="12" />
+    <text x={left ? -20 : 20} y="11" textAnchor={left ? 'end' : 'start'}>
+      {label}
+    </text>
+  </g>
+)
+const kmText = (km) => `${Math.round(km).toLocaleString('ko-KR')}km`
+export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
+  const live = p.stage === 'play'
+  const now = useNow(live, 100)
+  const ph = worldPhase(p, now)
+  const title = p.title || '세계 지도 찍기'
+  const rounds = arr(p.rounds)
+  const data = useWorldMapData()
+  const [local, setLocal] = useState({}) // 문제별 내 핀 (서버 반영 전에도 바로)
+  const [view, setViewRaw] = useState(WM_FULL)
+  const viewRef = useRef(view)
+  const anim = useRef(0)
+  const setView = (v) => {
+    cancelAnimationFrame(anim.current)
+    viewRef.current = v
+    setViewRaw(v)
+  }
+  // 부드럽게 옮기기 (정답 공개 때)
+  const flyTo = (to) => {
+    cancelAnimationFrame(anim.current)
+    const from = viewRef.current
+    const t0 = performance.now()
+    const step = (t) => {
+      const a = Math.min(1, (t - t0) / 500)
+      const e = 1 - (1 - a) ** 3
+      const v = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, w: from.w + (to.w - from.w) * e }
+      viewRef.current = v
+      setViewRaw(v)
+      if (a < 1) anim.current = requestAnimationFrame(step)
+    }
+    anim.current = requestAnimationFrame(step)
+  }
+  useEffect(() => () => cancelAnimationFrame(anim.current), [])
+  // 문제마다 전체 지도에서 시작 (앞 문제 확대가 힌트가 안 되게), 정답 공개 때는 정답과 내 핀이 다 보이게
+  const qRef = useRef(null)
+  useEffect(() => {
+    if (ph.phase === 'q') {
+      if (qRef.current !== ph.q) {
+        qRef.current = ph.q
+        buzz(50)
+      }
+      setView(WM_FULL)
+    }
+    if (ph.phase === 'gap') {
+      const place = WORLD_PLACES[rounds[ph.q]]
+      if (!place) return
+      const mine = worldAnswerOf(p, ph.q, me) || local[ph.q]
+      const t = toWorldXY(place.lat, place.lon)
+      flyTo(wmFit(mine ? [t, [mine.x, mine.y]] : [t]))
+    }
+  }, [`${ph.phase}-${ph.q}`])
+  if (p.stage === 'ready')
+    return (
+      <ReadyModal
+        room={room}
+        p={p}
+        ctl={ctl}
+        code={code}
+        emoji="🌍"
+        title={title}
+        headline="여기가 어디게? 세계 지도에 콕!"
+        startLabel="🌍 시작"
+        extra={
+          <div className="pg-scale">
+            {[
+              ['100km', 962],
+              ['500km', 500],
+              ['1,000km', 200],
+            ].map(([k, v]) => (
+              <span key={k}>
+                {k} <b>{v}</b>
+              </span>
+            ))}
+          </div>
+        }
+        rules={
+          <>
+            도시·명소 이름이 나오면 세계 지도에 <b>핀을 꽂아요</b>. <b>두 손가락으로 확대</b>, 끌어서 이동, 그냥 누르면 핀 (다시 누르면 옮겨져요, ＋ － 버튼도 있어요). 모두 {WP_ROUNDS}문제, 문제마다 {WP_ANSWER_MS / 1000}초, 점점 어려워져요. 실제 위치와 <b>가까울수록 점수가 커요</b> (딱 맞히면 1000점, 500km 차이 500점). 끝나면 팀 점수가 낮은 팀이 다 같이 마셔요.
+          </>
+        }
+      />
+    )
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🌍" title={title} />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🌍" sub="여기가 어디게? 세계 지도에 콕!" />
+  const color = TEAM_INFO[teamOf(room, me)]?.color || '#ff4d6d'
+  if (ph.phase === 'q' || ph.phase === 'gap') {
+    const q = ph.q
+    const place = WORLD_PLACES[rounds[q]] || WORLD_PLACES[0]
+    const asking = ph.phase === 'q'
+    const server = worldAnswerOf(p, q, me)
+    const lp = local[q]
+    const pin = asking ? lp || server : server || lp
+    const scored = !asking && pin ? worldAnswerOf({ ...p, answers: { ...(p.answers || {}), [`r${q}`]: { ...(p.answers?.[`r${q}`] || {}), [me]: { x: pin.x, y: pin.y } } } }, q, me) : null
+    const shownQ = asking ? q : q + 1
+    const myTotal = Array.from({ length: shownQ }, (_, i) => (i === q && scored ? scored.pts : worldAnswerOf(p, i, me)?.pts || 0)).reduce((a, b) => a + b, 0)
+    const mates = teamMembers(room, teamOf(room, me))
+    const done = mates.filter((pid) => answeredNow(p, q, pid, ph.at, now) || (pid === me && pin)).length
+    const [tx, ty] = toWorldXY(place.lat, place.lon)
+    const onTap = asking
+      ? (x, y) => {
+          setLocal((m) => ({ ...m, [q]: { x, y } }))
+          worldAnswer(code, room, q, x, y)
+          buzz(20)
+        }
+      : null
+    return (
+      <div className="ai-overlay tg mappin worldpin">
+        <div className="tg-box">
+          <div className="tg-head">
+            <span>
+              🌍 {q + 1}/{WP_ROUNDS}
+            </span>
+            <span className="tg-score">내 점수 {myTotal.toLocaleString('ko-KR')}</span>
+          </div>
+          <div className={`tg-timer ${asking ? '' : 'done'}`}>{asking && <i style={{ width: `${Math.max(0, (ph.left / WP_ANSWER_MS) * 100)}%` }} />}</div>
+          <div className="mp-q">📍 {place.name}</div>
+          <WorldMap data={data} view={view} setView={setView} onTap={onTap}>
+            {(k) => (
+              <>
+                {!asking && pin && <line x1={pin.x} y1={pin.y} x2={tx} y2={ty} className="wmap-line" />}
+                {!asking && <WorldStar x={tx} y={ty} label={place.name} k={k} left={tx > view.x + view.w * 0.6} />}
+                {pin && <WorldPin x={pin.x} y={pin.y} color={color} k={k} />}
+              </>
+            )}
+          </WorldMap>
+          <div className={`ct-fb ${asking ? '' : scored ? 'ok' : 'no'}`}>
+            {asking ? (pin ? '다시 누르면 옮겨져요 · 두 손가락으로 확대' : '두 손가락으로 확대 · 누르면 핀!') : scored ? `${kmText(scored.km)} 차이 · +${scored.pts}점` : '안 찍었어요! 0점'}
+          </div>
+          <div className="ai-sub">{asking ? `${Math.ceil(ph.left / 1000)}초 · 우리 팀 ${done}/${mates.length}명 찍었어요` : q + 1 < WP_ROUNDS ? '다음 문제…' : '결과 공개!'}</div>
+        </div>
+      </div>
+    )
+  }
+  const r = worldResult(room, p)
+  const name = (pid) => room.players[pid]?.name || ''
+  return (
+    <TeamResult
+      room={room}
+      p={p}
+      ctl={ctl}
+      code={code}
+      emoji="🌍"
+      title={title}
+      losers={r.losers}
+      tie={r.tie}
+      rows={pointRows(room, r)}
+      extra={
+        <div className="pg-best">
+          {rounds.map((idx, q) => {
+            const b = r.best[q]
+            return (
+              <div key={q} className="pg-best-row">
+                <span>📍 {WORLD_PLACES[idx]?.name}</span>
+                <em>{b ? `🎯 ${name(b.pid)} ${kmText(b.km)}` : '아무도 안 찍음'}</em>
               </div>
             )
           })}

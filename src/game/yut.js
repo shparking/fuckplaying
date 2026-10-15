@@ -83,7 +83,7 @@ export function nodeName(id) {
 
 // ---------- 칸 내용 (기본값) ----------
 // type 은 미니게임/기능. drink: 'self' | 'team' | 'all' 이면 수행 완료 시 잔 수 자동 +1
-// (10/15 사용자 리스트 + 10/16 방패·지하철. 남은 빈칸 43·44·50·51은 일단 소주 +1 적립 — 새 아이디어가 나오면 채움)
+// (10/15 사용자 리스트 + 10/16 방패·지하철·단어 노래·세계 지도. 남은 빈칸 44·51은 일단 소주 +1 적립 — 새 아이디어가 나오면 채움)
 const NOP = { emoji: '🎫', text: '놉카드 +1', type: 'nop' }
 const HUNMIN = { emoji: '📝', text: '훈민정음\n게임', type: 'hunmin' }
 const ALL = { emoji: '🍻', text: '다 같이\n마셔!', drink: 'all' }
@@ -117,6 +117,7 @@ const CIRCLE = { emoji: '⭕', text: '완벽한 원\n그리기', type: 'circle' 
 const PRICE = { emoji: '💰', text: '편의점\n얼마게요', type: 'priceGuess' }
 const TIMESUM = { emoji: '🕰️', text: '팀 시간\n합치기', type: 'timeSum' }
 const MAPPIN = { emoji: '🗺️', text: '지도\n찍기', type: 'mapPin' }
+const WORLDPIN = { emoji: '🌍', text: '세계 지도\n찍기', type: 'worldPin' }
 // 이름 칸: 이름에 '상혁'이 들어간 사람만 / 빼고 (연대책임 없음)
 const ONLY_SH = { emoji: '🫵', text: '박상혁만\n마셔!', drink: 'only', who: '상혁' }
 const EXCEPT_SH = { emoji: '🙅', text: '박상혁 빼고\n다 마셔!', drink: 'except', who: '상혁' }
@@ -126,6 +127,8 @@ const ALLOPT = { emoji: '🚨', text: '모든 옵션\nOn', type: 'allOptions', m
 const SHIELD = { emoji: '🛡️', text: '방패 +1', type: 'shield' }
 // 지하철 게임: 3·2·1 → 서울 지하철 1~9호선 중 하나 → 그 호선 역 이름을 돌아가며 (오프라인, 훈민정음처럼)
 const SUBWAY = { emoji: '🚇', text: '지하철\n게임', type: 'subway' }
+// 단어 노래: 3·2·1 → 단어 → 그 단어가 들어간 노래를 돌아가며 한 소절씩 (오프라인, 막히면 마셔)
+const SONG = { emoji: '🎶', text: '단어 노래\n부르기', type: 'wordSong' }
 // 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
 const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
 const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
@@ -161,10 +164,10 @@ export const DEFAULT_YUT_CELLS = {
   // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래) 36~39 · 41~44
   a1: STEAL, a2: NOENG, a3: RELEASE, a4: CHOOSE,
   C: SOJU_BANK, // 40 가운데: 소주 보관소 (고정)
-  a5: ONLY_SH, a6: SHIELD, a7: SOJU_ADD, a8: SOJU_ADD, // 42 방패 · 43·44 아직 빈칸 (소주 +1)
+  a5: ONLY_SH, a6: SHIELD, a7: SONG, a8: SOJU_ADD, // 42 방패 · 43 단어 노래 · 44 아직 빈칸 (소주 +1)
   // 대각선 B (왼쪽 위 → 가운데 → 골인) 45~52
   b1: SUBWAY, b2: SHIELD, b3: EXCEPT_SH, b4: TWOTOUCH, // 45 지하철 게임 · 46 방패
-  b5: CHOOSE, b6: SOJU_ADD, b7: SOJU_ADD, b8: ALLOPT, // 50·51 아직 빈칸 (소주 +1)
+  b5: CHOOSE, b6: WORLDPIN, b7: SOJU_ADD, b8: ALLOPT, // 50 세계 지도 찍기 · 51 아직 빈칸 (소주 +1)
 }
 
 // ---------- 윷 던지기 ----------

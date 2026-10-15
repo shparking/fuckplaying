@@ -18,6 +18,9 @@ import { fakeCircle } from './game/circle'
 import { PRICE_ITEMS, pricePoints, pickPriceRounds } from './game/prices'
 import { PLACES, mapPoints, pickMapRounds } from './game/places'
 import { toXY, toLatLon, distKm, MAP_W, MAP_H } from './game/mapdata'
+import { WORLD_PLACES, worldPoints, pickWorldRounds } from './game/worldplaces'
+import { WORLD_W, WORLD_H, WORLD_LAT, toWorldXY, worldToLatLon } from './game/worldgeo'
+import { pickSongWord } from './game/songwords'
 import { BALANCE_TOPICS } from './game/balance'
 import { pickLiarWords } from './game/liar'
 import { pickBombTopic } from './game/bomb'
@@ -484,6 +487,7 @@ function makePending(room, playerId, pos, kind, title) {
   if (kind === 'liar') p.stage = 'category' // category → reveal → vote → result
   if (kind === 'hunmin') p.chosung = pickChosung()
   if (kind === 'subway') p.line = pickSubwayLine(room.lastLine) // 지하철 게임: 1~9호선 (직전 호선 빼고)
+  if (kind === 'wordSong') p.word = pickSongWord(arr(room.songUsed)) // 단어 노래: 최근에 나온 단어 빼고
   if (kind === 'vote') p.stage = 'vote' // vote → result
   if (kind === 'shuffle') {
     // 의리주: 방에 있는 사람들 순서를 무작위로
@@ -502,7 +506,7 @@ function makePending(room, playerId, pos, kind, title) {
     p.stage = 'ready'
     p.qs = pickSyncQuestions(room)
   }
-  if (['tapWar', 'teamReact', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin'].includes(kind)) p.stage = 'ready'
+  if (['tapWar', 'teamReact', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin', 'worldPin'].includes(kind)) p.stage = 'ready'
   if (kind === 'teamBomb') {
     p.stage = 'ready'
     p.topic = pickBombTopic()
@@ -1163,7 +1167,7 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'choose': {
       // 게임 선택권: 'choose' + target(balance|liar|hunmin) → 그 게임으로 전환
-      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', subway: '지하철 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
+      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', worldPin: '세계 지도 찍기', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', subway: '지하철 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
       if (action === 'choose' && titles[target]) {
         const np = makePending(room, id, p.pos, target, titles[target])
         await roomUpdate(code, withTopicUpdates(room, np, { pending: np, event: { id: newId(), text: `${me.name} 🎁 ${titles[target]} 선택!` } }))
@@ -1257,6 +1261,20 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'hunmin': {
       await roomUpdate(code, { ...nextTurnUpdates(room), event: { id: newId(), text: `${me.name} 훈민정음 (${p.chosung}) 수행 ✅` } })
+      return
+    }
+    case 'wordSong': {
+      // 단어 노래: 단어 바꾸기 / 다 하면 수행 완료 (노래는 오프라인으로, 막힌 사람이 마심)
+      if (action === 'reroll') {
+        await roomUpdate(code, { 'pending/word': pickSongWord([...arr(room.songUsed), p.word]) })
+        return
+      }
+      if (action !== 'done') return
+      await roomUpdate(code, {
+        ...nextTurnUpdates(room),
+        songUsed: [...arr(room.songUsed), p.word].filter(Boolean).slice(-20),
+        event: { id: newId(), text: `🎶 ${me.name} 단어 노래 「${p.word}」 수행 ✅` },
+      })
       return
     }
     case 'subway': {
@@ -1638,7 +1656,7 @@ export function reactionRanking(room, p) {
 // ---------- 팀 대결 미니게임 ----------
 // 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심. 동점이면 룰렛으로 마실 팀을 정함.
 // 진행(시작·룰렛·확인)은 도착한 사람 또는 방장. 시간은 모두 서버 시각(serverNow) 기준이라 폰끼리 화면이 맞음
-export const TEAM_GAMES = new Set(['teamSync', 'tapWar', 'teamReact', 'teamBomb', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin'])
+export const TEAM_GAMES = new Set(['teamSync', 'tapWar', 'teamReact', 'teamBomb', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin', 'worldPin'])
 export const TEAM_LEAD_MS = 3500 // 시작 버튼 → 3·2·1 → 시작
 export const SYNC_QN = 4 // 이구동성 질문 수
 export const SYNC_ANSWER_MS = 5000 // 질문당 고르는 시간
@@ -1673,8 +1691,12 @@ export const MP_ROUNDS = 5
 export const MP_ANSWER_MS = 10000
 export const MP_GAP_MS = 3500
 
-const TEAM_TITLE = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기' }
-const TEAM_EMOJI = { teamSync: '👯', tapWar: '🦦', teamReact: '⚡', teamBomb: '💣', colorTrap: '🎨', circle: '⭕', priceGuess: '💰', timeSum: '🕰️', mapPin: '🗺️' }
+export const WP_ROUNDS = 5 // 세계 지도 찍기: 확대·이동할 시간이 있게 15초
+export const WP_ANSWER_MS = 15000
+export const WP_GAP_MS = 4000
+
+const TEAM_TITLE = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', worldPin: '세계 지도 찍기' }
+const TEAM_EMOJI = { teamSync: '👯', tapWar: '🦦', teamReact: '⚡', teamBomb: '💣', colorTrap: '🎨', circle: '⭕', priceGuess: '💰', timeSum: '🕰️', mapPin: '🗺️', worldPin: '🌍' }
 
 // 이구동성 질문 4개 (최근에 나온 질문은 피함)
 export function pickSyncQuestions(room) {
@@ -2131,6 +2153,54 @@ function fakeMapAnswers(room, rounds) {
   return out
 }
 
+// --- 세계 지도 찍기: 세계 지도에 도시·명소 핀 꽂기 (확대·이동). 가까울수록 점수 (500km = 500점), 팀 점수 낮은 팀이 마심 ---
+// 답: pending/answers/r{문제}/{pid} = { x, y, ms } (세계 지도 그림 좌표 0.1 단위, 다시 찍으면 바뀜)
+export const worldPhase = (p, nowMs) => roundPhase(p, nowMs, WP_ROUNDS, WP_ANSWER_MS, WP_GAP_MS)
+export const worldEndAt = (p) => (p?.startAt || 0) + WP_ROUNDS * (WP_ANSWER_MS + WP_GAP_MS)
+export function worldAnswerOf(p, q, pid) {
+  const a = p?.answers?.[`r${q}`]?.[pid]
+  if (!a || !Number.isFinite(Number(a.x)) || !Number.isFinite(Number(a.y))) return null
+  const place = WORLD_PLACES[arr(p.rounds)[q]]
+  if (!place) return null
+  const [lat, lon] = worldToLatLon(Number(a.x), Number(a.y))
+  const km = distKm(lat, lon, place.lat, place.lon)
+  return { x: Number(a.x), y: Number(a.y), ms: a.ms, km, pts: worldPoints(km) }
+}
+export const worldResult = (room, p) => roundsResult(room, p, WP_ROUNDS, worldAnswerOf)
+export async function worldAnswer(code, room, q, x, y) {
+  const p = room.pending
+  if (!p || p.kind !== 'worldPin') return
+  const nowMs = serverNow()
+  const ph = worldPhase(p, nowMs)
+  if (ph.phase !== 'q' || ph.q !== q) return
+  const id = myId()
+  if (!SOLO && !room.players?.[id]?.name) return
+  const r1 = (v) => Math.round(v * 10) / 10
+  const cx = Math.max(0, Math.min(WORLD_W, r1(Number(x))))
+  const cy = Math.max(0, Math.min(WORLD_H, r1(Number(y))))
+  await roomUpdate(code, { [`pending/answers/r${q}/${id}`]: { x: cx, y: cy, ms: Math.max(0, Math.round(nowMs - ph.at)) } })
+}
+// 가짜 참가자 핀: 쉬운 곳은 정답에서 30~600km, 어려운 곳일수록 멀리 (가까운 쪽이 많게)
+function fakeWorldAnswers(room, rounds) {
+  const me = myId()
+  const out = {}
+  rounds.forEach((idx, q) => {
+    const pl = WORLD_PLACES[idx]
+    Object.keys(room.players || {}).forEach((pid) => {
+      if (pid === me || !room.players[pid]?.name || !pl) return
+      const d = 30 + Math.random() ** 2 * (pl.lv === 1 ? 570 : pl.lv === 2 ? 1200 : 2400)
+      const th = Math.random() * Math.PI * 2
+      const lat = Math.max(WORLD_LAT[0], Math.min(WORLD_LAT[1], pl.lat + (d * Math.cos(th)) / 111))
+      let lon = pl.lon + (d * Math.sin(th)) / (111 * Math.max(0.2, Math.cos((pl.lat * Math.PI) / 180)))
+      lon = ((((lon + 180) % 360) + 360) % 360) - 180
+      const [x, y] = toWorldXY(lat, lon)
+      out[`r${q}`] = out[`r${q}`] || {}
+      out[`r${q}`][pid] = { x: Math.round(Math.max(0, Math.min(WORLD_W, x)) * 10) / 10, y: Math.round(Math.max(0, Math.min(WORLD_H, y)) * 10) / 10, ms: 3000 + Math.floor(Math.random() * 10000) }
+    })
+  })
+  return out
+}
+
 // ---------- 혼자 연습 게임 (홈 → 연습 게임, ?practice=) ----------
 // 연습 방은 이 기기 메모리에만 있음 (가짜 참가자 3명: 우리 팀 1명 + 상대 팀 2명). 게임 선택권처럼 팀 게임을 골라 바로 시작
 export const PRACTICE_GAMES = [
@@ -2143,6 +2213,7 @@ export const PRACTICE_GAMES = [
   ['priceGuess', '💰', '얼마게요', '편의점 물건 가격 맞히기'],
   ['timeSum', '🕰️', '팀 시간 합치기', '팀원 누른 시간 합이 30초에 가깝게'],
   ['mapPin', '🗺️', '지도 찍기', '한국 지도에 장소 핀 꽂기'],
+  ['worldPin', '🌍', '세계 지도 찍기', '세계 지도에 도시·명소 핀 꽂기'],
 ]
 function fakeRate(pid) {
   let h = 7
@@ -2177,6 +2248,7 @@ export function teamGameResult(room, p, nowMs = serverNow()) {
   if (p.kind === 'circle') return circleDone(room, p, nowMs + 300) ? circleResult(room, p) : null
   if (p.kind === 'priceGuess') return p.stage === 'play' && nowMs >= priceEndAt(p) - 300 ? priceResult(room, p) : null
   if (p.kind === 'mapPin') return p.stage === 'play' && nowMs >= mapEndAt(p) - 300 ? mapResult(room, p) : null
+  if (p.kind === 'worldPin') return p.stage === 'play' && nowMs >= worldEndAt(p) - 300 ? worldResult(room, p) : null
   if (p.kind === 'timeSum') return timeSumDone(room, p, nowMs + 300) ? timeSumResult(room, p) : null
   if (p.kind === 'teamBomb') {
     if (!bombExploded(p, nowMs) || p.loser == null || !TEAM_INFO[p.loser]) return null
@@ -2192,7 +2264,7 @@ function teamScoreText(room, p, r) {
   if (p.kind === 'teamReact') return r.rows.map((x) => `${e(x.team)}${(x.avg / 1000).toFixed(3)}초`).join(' : ')
   if (p.kind === 'colorTrap') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
   if (p.kind === 'circle') return r.rows.map((x) => `${e(x.team)}평균 ${x.avg.toFixed(1)}점`).join(' : ')
-  if (p.kind === 'priceGuess' || p.kind === 'mapPin') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
+  if (p.kind === 'priceGuess' || p.kind === 'mapPin' || p.kind === 'worldPin') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
   if (p.kind === 'timeSum') return r.rows.map((x) => `${e(x.team)}${(x.sum / 1000).toFixed(1)}초`).join(' : ')
   if (p.kind === 'teamBomb') return `주제: ${p.topic}`
   return ''
@@ -2226,6 +2298,11 @@ async function resolveTeamGame(code, room, p, action, target) {
       const rounds = pickMapRounds(arr(room.usedPlaces))
       Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': rounds, 'pending/answers': SOLO ? fakeMapAnswers(room, rounds) : null })
       upd.usedPlaces = [...arr(room.usedPlaces), ...rounds].slice(-25)
+    }
+    if (p.kind === 'worldPin') {
+      const rounds = pickWorldRounds(arr(room.usedWorld))
+      Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': rounds, 'pending/answers': SOLO ? fakeWorldAnswers(room, rounds) : null })
+      upd.usedWorld = [...arr(room.usedWorld), ...rounds].slice(-30)
     }
     upd.event = { id: newId(), text: `${emo} ${title} 시작!` }
     await roomUpdate(code, upd)

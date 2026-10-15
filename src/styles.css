@@ -4077,3 +4077,94 @@ textarea {
   line-height: 1;
   color: var(--text);
 }
+
+/* ---------- 세계 지도 찍기 (50번) ---------- */
+.wmap-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+}
+.wmap {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1000 / 497;
+  border-radius: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  background: #0e1430;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.wmap.tap {
+  cursor: crosshair;
+}
+.wmap-land {
+  fill: #2b3a7a;
+  stroke: #8fa3ff;
+  stroke-width: 0.6px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.wmap-line {
+  stroke: #fff;
+  stroke-width: 2px;
+  stroke-dasharray: 6 5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+.wmap-loading {
+  fill: var(--text-2);
+  font-size: 30px;
+}
+.wmap-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+.wmap-btns button {
+  min-width: 40px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(14, 20, 48, 0.85);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 0 10px;
+}
+.wmap-btns .wmap-zfull {
+  font-size: 13px;
+}
+.wmap-btns button:active {
+  transform: scale(0.94);
+}
+
+/* ---------- 단어 노래 (43번) ---------- */
+.song-word {
+  font-family: var(--font-display);
+  margin: 14px 0 10px;
+  padding: 22px 16px;
+  border-radius: 20px;
+  background: var(--pink-soft);
+  border: 2px solid var(--pink);
+  text-align: center;
+  font-size: 56px;
+  line-height: 1.1;
+  color: var(--text);
+  word-break: keep-all;
+  animation: songPop 0.35s ease-out;
+}
+@keyframes songPop {
+  from {
+    transform: scale(0.85);
+    opacity: 0.3;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
