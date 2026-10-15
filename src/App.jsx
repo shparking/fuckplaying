@@ -152,7 +152,7 @@ const josa = (word, a, b) => {
   const c = String(word || '').charCodeAt(String(word || '').length - 1)
   return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? a : b
 }
-// 게임 선택권: 판에 있는 게임 전부 (팀 대결 + 다 같이 하는 오프라인 게임)
+// 게임 선택권: 판에 있는 게임 전부 (팀 대결 + 다 같이 하는 오프라인 게임). 랜덤 n행시는 게임이 아니라 뺌
 const CHOOSE_TEAM = [
   ['teamSync', '👯', '팀 이구동성'],
   ['tapWar', '🦦', '연타 줄다리기'],
@@ -170,7 +170,6 @@ const CHOOSE_OFFLINE = [
   ['subway', '🚇', '지하철 게임'],
   ['wordSong', '🎶', '단어 노래'],
   ['bunny', '🐰', '바니바니 게임'],
-  ['nhaeng', '🎤', '랜덤 n행시'],
 ]
 // 상대 팀 사람들 (같이 짠 칸)
 const rivalsOf = (room, pid) => Object.keys(room.players || {}).filter((x) => room.players[x]?.name && teamOf(room, x) !== teamOf(room, pid))
