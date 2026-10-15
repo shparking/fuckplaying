@@ -4,7 +4,7 @@
 //   teamCount: 2~4, players/{pid}: { name, color, team, drinks, online },
 //   teamNop/{team}: 놉카드 수 (팀 단위로 모으고 씀), teamShield/{team}: 방패 수 (잡힐 때 쓸지 고름), sojuBank: 소주 보관소에 모인 잔 수,
 //   order: [pid...] (팀 안에서 던지는 순서), teamTurn, memberIdx/{team}, turnNo, throwNo,
-//   pieceCount: 2~4 (팀당 말 수, 방장이 대기실에서 고름), pieces/{team}: [{ n: 'home'|'goal'|노드, p?: 직전 노드 } x pieceCount],
+//   pieceCount: 2~4 (팀당 말 수, 방장이 대기실에서 고름), missionOff: true 면 돌발 미션 안 나옴 (방장이 대기실에서 끔), pieces/{team}: [{ n: 'home'|'goal'|노드, p?: 직전 노드 } x pieceCount],
 //   yut: { stage: 'throw'|'move'|'done', results: [값...], extra: 보너스 던지기 수 },
 //   lastThrow: { id, playerId, value, sticks }, lastMove: { id, team, from, path, count, dest, caught },
 //   pending: { kind, playerId, pos(노드) } | null, winner, event, log, options/{칸_팀}: 상대 팀에 건 옵션 타이머, mission, cells/{노드}: 텍스트
@@ -328,6 +328,11 @@ export async function setTeamCount(code, room, n) {
 export async function setPieceCount(code, room, n) {
   if (room.hostId !== myId() || room.status !== 'lobby') return
   await roomUpdate(code, { pieceCount: Math.min(4, Math.max(2, n)) })
+}
+// 방장: 돌발 미션 켜기·끄기 (대기실, 게임 시작 전에)
+export async function setMissionOff(code, room, off) {
+  if (room.hostId !== myId() || room.status !== 'lobby') return
+  await roomUpdate(code, { missionOff: !!off })
 }
 // 방장: 참가자 팀 바꾸기 (대기실, 다음 팀으로 순환)
 export async function setPlayerTeam(code, room, pid, t) {
@@ -905,6 +910,7 @@ async function backMove(code, room, p) {
 
 // 돌발 미션: 진행 중인 미션이 없을 때 10% 확률로 한 명에게 몰래 전달 (데모: ?mission=초 로 강제)
 function maybeMission(room, updates) {
+  if (room.missionOff) return // 대기실에서 돌발 미션을 끔
   // 직전 미션이 끝난 뒤 굴린 횟수 (미션이 없을 때만 셈)
   const since = room.mission ? room.rollsSinceMission || 0 : (room.rollsSinceMission || 0) + 1
   updates.rollsSinceMission = since
@@ -1167,7 +1173,7 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'choose': {
       // 게임 선택권: 'choose' + target(balance|liar|hunmin) → 그 게임으로 전환
-      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', worldPin: '세계 지도 찍기', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', subway: '지하철 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
+      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', worldPin: '세계 지도 찍기', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', subway: '지하철 게임', wordSong: '단어 노래', bunny: '바니바니 게임', nhaeng: '랜덤 n행시', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
       if (action === 'choose' && titles[target]) {
         const np = makePending(room, id, p.pos, target, titles[target])
         await roomUpdate(code, withTopicUpdates(room, np, { pending: np, event: { id: newId(), text: `${me.name} 🎁 ${titles[target]} 선택!` } }))
@@ -1275,6 +1281,11 @@ export async function resolvePending(code, room, action, target) {
         songUsed: [...arr(room.songUsed), p.word].filter(Boolean).slice(-20),
         event: { id: newId(), text: `🎶 ${me.name} 단어 노래 「${p.word}」 수행 ✅` },
       })
+      return
+    }
+    case 'bunny': {
+      // 바니바니 게임: 오프라인으로 하고 수행 완료 (걸린 사람이 마심)
+      await roomUpdate(code, { ...nextTurnUpdates(room), event: { id: newId(), text: `🐰 ${me.name} 바니바니 게임 수행 ✅` } })
       return
     }
     case 'subway': {

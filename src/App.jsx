@@ -23,6 +23,7 @@ import {
   optionKey,
   setTeamCount,
   setPieceCount,
+  setMissionOff,
   setPlayerTeam,
   shuffleTeams,
   moveInTeam,
@@ -101,6 +102,7 @@ const KIND_LABEL = {
   hunmin: '훈민정음 게임',
   subway: '지하철 게임',
   wordSong: '단어 노래',
+  bunny: '바니바니 게임',
   shield: '방패 +1',
   shieldAsk: '방패',
   vote: '다수결 지목',
@@ -141,6 +143,7 @@ const KIND_DESC = {
   allOptions: '판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)이 전부 상대 팀에 3분씩 걸려요.',
   shield: '도착한 팀 방패 +1. 우리 말이 잡힐 때 방패를 쓸지 골라요 (시간 제한 없음). 쓰면 안 잡히고(잡으려던 사람도 한 번 더 없음) 방패가 1개 줄어요.',
   subway: '3, 2, 1 → 서울 지하철 1~9호선 중 하나가 나와요. 그 호선 역 이름을 돌아가며 말하고, 막히거나 틀리거나 나온 역을 또 말하면 마셔요.',
+  bunny: '오프라인 게임: 바니바니 게임을 하고, 걸린 사람이 마셔요. 끝나면 던진 사람이 수행 완료. 게임 선택권에서도 고를 수 있어요.',
   wordSong: '3, 2, 1 → 단어가 하나 나와요. 그 단어가 들어간 노래를 돌아가며 한 소절씩 부르고, 막히거나 이미 나온 노래를 부르면 마셔요.',
   worldPin: '팀 대결: 세계 지도에 도시·명소 핀 꽂기 (두 손가락으로 확대). 5문제, 가까울수록 점수, 팀 점수 낮은 팀이 마셔요.',
 }
@@ -149,6 +152,26 @@ const josa = (word, a, b) => {
   const c = String(word || '').charCodeAt(String(word || '').length - 1)
   return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? a : b
 }
+// 게임 선택권: 판에 있는 게임 전부 (팀 대결 + 다 같이 하는 오프라인 게임)
+const CHOOSE_TEAM = [
+  ['teamSync', '👯', '팀 이구동성'],
+  ['tapWar', '🦦', '연타 줄다리기'],
+  ['teamReact', '⚡', '팀 반응속도'],
+  ['teamBomb', '💣', '폭탄 돌리기 팀전'],
+  ['colorTrap', '🎨', '색깔 함정'],
+  ['circle', '⭕', '완벽한 원'],
+  ['priceGuess', '💰', '얼마게요'],
+  ['timeSum', '🕰️', '팀 시간 합치기'],
+  ['mapPin', '🗺️', '지도 찍기'],
+  ['worldPin', '🌍', '세계 지도 찍기'],
+]
+const CHOOSE_OFFLINE = [
+  ['hunmin', '📝', '훈민정음 게임'],
+  ['subway', '🚇', '지하철 게임'],
+  ['wordSong', '🎶', '단어 노래'],
+  ['bunny', '🐰', '바니바니 게임'],
+  ['nhaeng', '🎤', '랜덤 n행시'],
+]
 // 상대 팀 사람들 (같이 짠 칸)
 const rivalsOf = (room, pid) => Object.keys(room.players || {}).filter((x) => room.players[x]?.name && teamOf(room, x) !== teamOf(room, pid))
 // 갈림길 선택지 화살표: 첫 걸음 방향 (y 는 아래로)
@@ -2453,6 +2476,25 @@ export default function App() {
                 </div>
               )}
             </div>
+            <div className="row mission-row">
+              <div className="label" style={{ marginBottom: 0 }}>
+                🎯 돌발 미션 {room.missionOff ? 'Off' : 'On'}
+              </div>
+              <div className="spacer" />
+              {isHost && (
+                <div className="seg" role="group" aria-label="돌발 미션">
+                  {[
+                    [false, 'On'],
+                    [true, 'Off'],
+                  ].map(([off, label]) => (
+                    <button key={label} className={!!room.missionOff === off ? 'on' : ''} onClick={() => setMissionOff(code, room, off)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="muted mission-note">{room.missionOff ? '이번 게임에는 돌발 미션이 안 나와요.' : '윷을 던질 때 가끔 한 명에게 몰래 미션이 와요 (끝나면 누군지 맞히기).'}</div>
             {Array.from({ length: tc }, (_, t) => {
               const info = TEAM_INFO[t]
               const mem = teamMembers(room, t)
@@ -2850,34 +2892,30 @@ export default function App() {
                   </span>
                 </div>
               )}
-              {pending.kind === 'choose' && (
-                <div className="cat-grid">
-                  {[
-                    ['teamSync', '👯', '팀 이구동성'],
-                    ['tapWar', '🦦', '연타 줄다리기'],
-                    ['teamReact', '⚡', '팀 반응속도'],
-                    ['teamBomb', '💣', '폭탄 돌리기 팀전'],
-                    ['colorTrap', '🎨', '색깔 함정'],
-                    ['circle', '⭕', '완벽한 원'],
-                    ['priceGuess', '💰', '얼마게요'],
-                    ['timeSum', '🕰️', '팀 시간 합치기'],
-                    ['mapPin', '🗺️', '지도 찍기'],
-                    ['worldPin', '🌍', '세계 지도 찍기'],
-                    ['subway', '🚇', '지하철 게임'],
-                  ].map(([k, e, n]) => (
-                    <button key={k} className="cat-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', k)}>
-                      <span className="cat-emo">{e}</span>
-                      <span>{n}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              {pending.kind === 'choose' &&
+                [
+                  ['⚔️ 팀 대결 · 폰으로 다 같이', CHOOSE_TEAM],
+                  ['🗣️ 말로 하는 게임 · 오프라인', CHOOSE_OFFLINE],
+                ].map(([label, list]) => (
+                  <div key={label} className="cat-section">
+                    <div className="cat-group">{label}</div>
+                    <div className="cat-grid">
+                      {list.map(([k, e, n]) => (
+                        <button key={k} className="cat-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', k)}>
+                          <span className="cat-emo">{e}</span>
+                          <span>{n}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               <div className="muted">
                 <b style={{ color: room.players[pending.playerId]?.color }}>{room.players[pending.playerId]?.name}</b>
                 {pending.kind === 'nop' && ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 놉카드 +1! (지금 ${pending.teamNop ?? teamNop(room, teamOf(room, pending.playerId))}장 · 팀 누구나 쓸 수 있어요)`}
                 {pending.kind === 'shield' &&
                   ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 방패 +1! (지금 ${pending.teamShield ?? teamShield(room, teamOf(room, pending.playerId))}개) 우리 말이 잡힐 때 방패를 쓸지 고를 수 있어요. 쓰면 안 잡혀요 🛡️`}
                 {pending.kind === 'normal' && (iAct ? ' — 수행하고 완료를 눌러주세요.' : ' — 수행 중이에요.')}
+                {pending.kind === 'bunny' && ' — 오프라인으로 바니바니 게임을 하고, 걸린 사람이 마셔요. 끝나면 수행 완료!'}
                 {pending.kind === 'normal' &&
                   pendingCell.drink &&
                   (pendingCell.drink === 'all'
@@ -3034,7 +3072,7 @@ export default function App() {
                     !(pending.kind === 'pickTeam' && pending.stage === 'choose' && liveTeams(room).some((t) => t !== teamOf(room, pending.playerId))) &&
                     !(pending.kind === 'toast' && rivalsOf(room, pending.playerId).length) && (
                       <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
-                        {pending.kind === 'normal'
+                        {pending.kind === 'normal' || pending.kind === 'bunny'
                           ? '수행 완료'
                           : pending.kind === 'option'
                             ? `⏱ 상대 팀에 ${pendingCell.minutes || 5}분 걸기`

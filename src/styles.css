@@ -4185,3 +4185,19 @@ textarea {
     opacity: 1;
   }
 }
+
+/* ---------- 게임 선택권: 팀 대결 / 말로 하는 게임 ---------- */
+.cat-section + .cat-section {
+  margin-top: 10px;
+}
+.cat-group {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-2);
+  margin: 4px 0 6px;
+}
+/* 대기실: 돌발 미션 On/Off */
+.mission-note {
+  font-size: 12px;
+  margin-top: -6px;
+}

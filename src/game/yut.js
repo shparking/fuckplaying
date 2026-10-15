@@ -91,7 +91,7 @@ const AI = { emoji: '🤖', text: 'AI 지목\n마셔!', type: 'aiPick' }
 const STEAL = { emoji: '😈', text: '놉카드\n내놔!', type: 'steal' }
 const CHOOSE = { emoji: '🎁', text: '게임\n선택권', type: 'choose' }
 const NOENG = { emoji: '🔤', text: '영어금지', type: 'option', minutes: 5 }
-const BUNNY = { emoji: '🐰', text: '바니바니\n게임' }
+const BUNNY = { emoji: '🐰', text: '바니바니\n게임', type: 'bunny' } // 오프라인 게임 (수행 완료만), 게임 선택권에서도 고름
 const AGAIN = { emoji: '🎲', text: '한 번 더\n던지기!', type: 'again' }
 const TEAM = { emoji: '🤝', text: '우리 팀\n다 같이 마셔!', drink: 'team' }
 // 너희 팀 다 같이 마셔: 2팀이면 상대 팀 자동, 3팀 이상이면 도착한 사람이 팀을 고름
