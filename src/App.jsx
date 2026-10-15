@@ -4,6 +4,7 @@ import { ThrowOverlay, Sticks, preloadThrow3D } from './components/YutSticks'
 import { SOLO, LOBBY_TTL_MS, PRACTICE } from './db'
 import {
   myId,
+  ini,
   createRoom,
   joinRoom,
   leaveRoom,
@@ -70,7 +71,7 @@ import {
   practiceStart,
   liveTeams,
 } from './room'
-import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel } from './components/TeamGames'
+import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel, CirclePanel, PricePanel, TimeSumPanel, MapPinPanel } from './components/TeamGames'
 import { BALANCE_TOPICS } from './game/balance'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
@@ -108,6 +109,10 @@ const KIND_LABEL = {
   teamReact: '팀 반응속도',
   teamBomb: '폭탄 돌리기 팀전',
   colorTrap: '색깔 함정',
+  circle: '완벽한 원',
+  priceGuess: '얼마게요',
+  timeSum: '팀 시간 합치기',
+  mapPin: '지도 찍기',
   sojuAdd: '소주 +1 적립',
   sojuBank: '소주 보관소',
   pickTeam: '너희 팀 마셔 (지목)',
@@ -258,7 +263,7 @@ function CongratsOverlay({ room, targets, actorId, iAct, canNop, onDone, onTarge
         <div className="ai-avatars">
           {targets.map((t) => (
             <div key={t} className="ai-avatar" style={{ background: room.players[t]?.color }}>
-              {room.players[t]?.name?.slice(0, 1)}
+              {ini(room.players[t]?.name)}
             </div>
           ))}
         </div>
@@ -338,7 +343,7 @@ function DrinksModal({ room, me, onClose }) {
             <div className="player-row" key={r.pid}>
               <span className="order">{i + 1}</span>
               <span className="avatar" style={{ background: r.color }}>
-                {r.name.slice(0, 1)}
+                {ini(r?.name)}
               </span>
               <span className="player-name">
                 {r.name} {r.pid === me && <span className="me-tag">나</span>}
@@ -394,7 +399,7 @@ function VotePanel({ room, pending: p, me, iAct, code }) {
             return (
               <button key={pid} className={`steal-btn ${myVote === pid ? 'picked' : ''}`} onClick={() => castVote(code, room, pid)}>
                 <span className="avatar sm" style={{ background: pl.color }}>
-                  {pl.name.slice(0, 1)}
+                  {ini(pl?.name)}
                 </span>
                 <span className="pname">{pl.name}</span>
                 {myVote === pid && <span className="me-tag">내 표</span>}
@@ -843,7 +848,7 @@ function ReactionPanel({ room, pending: p, me, iAct, code }) {
               <div key={r.pid} className={`shuffle-row ${r.pid === loser?.pid ? 'loser' : ''}`}>
                 <span className="order">{i + 1}</span>
                 <span className="avatar sm" style={{ background: room.players[r.pid]?.color }}>
-                  {room.players[r.pid]?.name?.slice(0, 1)}
+                  {ini(room.players[r.pid]?.name)}
                 </span>
                 <span className="pname">{room.players[r.pid]?.name}</span>
                 <span className="tag tag-gray">{r.label}</span>
@@ -903,7 +908,7 @@ function ShufflePanel({ room, pending: p, iAct, code }) {
             <div key={pid} className="shuffle-row">
               <span className="order">{i + 1}</span>
               <span className="avatar sm" style={{ background: room.players[pid].color }}>
-                {room.players[pid].name.slice(0, 1)}
+                {ini(room.players[pid]?.name)}
               </span>
               <span className="pname">{room.players[pid].name}</span>
               {i === 0 && <span className="tag">첫 잔</span>}
@@ -1009,7 +1014,7 @@ function LiarPanel({ room, pending: p, me, iAct, code }) {
                     return (
                   <button key={pid} className={`steal-btn ${myVote === pid ? 'picked' : ''}`} disabled={!SOLO && !p.words?.[me]} onClick={() => liarVote(code, room, pid)}>
                     <span className="avatar sm" style={{ background: pl.color }}>
-                      {pl.name.slice(0, 1)}
+                      {ini(pl?.name)}
                     </span>
                     <span className="pname">{pl.name}</span>
                         {myVote === pid && <span className="me-tag">내 표</span>}
@@ -1034,7 +1039,7 @@ function LiarPanel({ room, pending: p, me, iAct, code }) {
             <div className="liar-reveal">
               <div className="liar-row">
                 <span className="avatar" style={{ background: room.players[p.liar]?.color }}>
-                  {room.players[p.liar]?.name?.slice(0, 1)}
+                  {ini(room.players[p.liar]?.name)}
                 </span>
                 <div>
                   <div className="muted">다른 키워드를 받은 사람</div>
@@ -1053,7 +1058,7 @@ function LiarPanel({ room, pending: p, me, iAct, code }) {
                       <div key={pid} className={`tally-item ${open ? 'open' : ''}`}>
                         <button type="button" className={`tally-row ${pid === p.liar ? 'liar' : ''}`} onClick={() => setOpenTally(open ? null : pid)}>
                           <span className="avatar sm" style={{ background: room.players[pid]?.color }}>
-                            {room.players[pid]?.name?.slice(0, 1)}
+                            {ini(room.players[pid]?.name)}
                           </span>
                           <span className="pname">{room.players[pid]?.name}</span>
                           <span className="tally-bar">
@@ -1068,7 +1073,7 @@ function LiarPanel({ room, pending: p, me, iAct, code }) {
                             {voters.map((v) => (
                               <span key={v} className={`voter-chip ${pid === p.liar ? 'right' : 'wrong'}`}>
                                 <span className="avatar xs" style={{ background: room.players[v]?.color }}>
-                                  {room.players[v]?.name?.slice(0, 1)}
+                                  {ini(room.players[v]?.name)}
                                 </span>
                                 {room.players[v]?.name}
                                 <em>{pid === p.liar ? '✅ 맞힘' : '🍶 마셔'}</em>
@@ -1198,7 +1203,7 @@ function MissionQuiz({ room, me, code }) {
               return (
                 <div key={pid} className={`steal-btn ${v == null ? 'none' : ok ? 'picked' : 'wrong'}`}>
                   <span className="avatar sm" style={{ background: room.players[pid].color }}>
-                    {room.players[pid].name.slice(0, 1)}
+                    {ini(room.players[pid]?.name)}
                   </span>
                   <span className="pname">{room.players[pid].name}</span>
                   <span className={`tag ${ok ? '' : 'tag-gray'}`}>{v == null ? '미투표' : ok ? '정답 ✓' : m.choices[v]}</span>
@@ -1290,7 +1295,7 @@ function SojuBankPanel({ room, pending: p, iAct, code }) {
                 <div key={pid} className={`shuffle-row ${i === order.length - 1 ? 'loser' : ''}`}>
                   <span className="order">{i + 1}</span>
                   <span className="avatar sm" style={{ background: room.players[pid].color }}>
-                    {room.players[pid].name.slice(0, 1)}
+                    {ini(room.players[pid]?.name)}
                   </span>
                   <span className="pname">{room.players[pid].name}</span>
                   {i === order.length - 1 && <span className="tag">마지막 🥃</span>}
@@ -1461,7 +1466,7 @@ function SummaryCard({ summary, me, onClose }) {
           <div className="player-row" key={r.pid}>
             <span className="order">{i + 1}</span>
             <span className="avatar" style={{ background: r.color }}>
-              {r.name.slice(0, 1)}
+              {ini(r?.name)}
             </span>
             <span className="player-name">
               {r.name} {r.pid === me && <span className="me-tag">나</span>}
@@ -1493,7 +1498,7 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
         <div className="ai-avatars">
           {mem.map((t) => (
             <div key={t} className="ai-avatar" style={{ background: room.players[t]?.color }}>
-              {room.players[t]?.name?.slice(0, 1)}
+              {ini(room.players[t]?.name)}
             </div>
           ))}
         </div>
@@ -2307,7 +2312,7 @@ export default function App() {
                         <div className="player-row" key={pid}>
                           <span className="order">{i + 1}</span>
                           <span className="avatar" style={{ background: p.color }}>
-                            {p.name.slice(0, 1)}
+                            {ini(p?.name)}
                           </span>
                           <span className="player-name">{p.name}</span>
                           {pid === me && <span className="me-tag">나</span>}
@@ -2536,7 +2541,7 @@ export default function App() {
                       return (
                         <div className={`mchip ${pid === curId ? 'turn' : ''} ${mine ? 'me' : ''} ${p.online === false ? 'offline' : ''}`} key={pid} title={p.online === false ? '연결 끊김' : ''}>
                           <span className="avatar xs" style={{ background: p.color }}>
-                            {p.name.slice(0, 1)}
+                            {ini(p?.name)}
                           </span>
                           <span className="pname">{p.name}</span>
                         </div>
@@ -2618,6 +2623,10 @@ export default function App() {
       {room && showPending && pending.kind === 'teamReact' && <TeamReactPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
       {room && showPending && pending.kind === 'teamBomb' && <TeamBombPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
       {room && showPending && pending.kind === 'colorTrap' && <ColorTrapPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'circle' && <CirclePanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'priceGuess' && <PricePanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'timeSum' && <TimeSumPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && pending.kind === 'mapPin' && <MapPinPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
 
       {/* ---------- 소주 보관소 (가운데 40번) ---------- */}
       {room && showPending && pending.kind === 'sojuBank' && <SojuBankPanel room={room} pending={pending} iAct={iAct} code={code} />}
@@ -2644,13 +2653,13 @@ export default function App() {
               {pending.kind === 'option' && pendingCell.pair && pending.partner && (
                 <div className="pair-card">
                   <span className="avatar" style={{ background: room.players[pending.playerId]?.color }}>
-                    {room.players[pending.playerId]?.name?.slice(0, 1)}
+                    {ini(room.players[pending.playerId]?.name)}
                   </span>
                   <b>{room.players[pending.playerId]?.name}</b>
                   <span className="heart">❤️</span>
                   <b>{room.players[pending.partner]?.name}</b>
                   <span className="avatar" style={{ background: room.players[pending.partner]?.color }}>
-                    {room.players[pending.partner]?.name?.slice(0, 1)}
+                    {ini(room.players[pending.partner]?.name)}
                   </span>
                 </div>
               )}
@@ -2662,6 +2671,10 @@ export default function App() {
                     ['teamReact', '⚡', '팀 반응속도'],
                     ['teamBomb', '💣', '폭탄 돌리기 팀전'],
                     ['colorTrap', '🎨', '색깔 함정'],
+                    ['circle', '⭕', '완벽한 원'],
+                    ['priceGuess', '💰', '얼마게요'],
+                    ['timeSum', '🕰️', '팀 시간 합치기'],
+                    ['mapPin', '🗺️', '지도 찍기'],
                   ].map(([k, e, n]) => (
                     <button key={k} className="cat-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', k)}>
                       <span className="cat-emo">{e}</span>
@@ -2737,7 +2750,7 @@ export default function App() {
                     return (
                       <button key={pid} className="steal-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', pid)}>
                         <span className="avatar sm" style={{ background: pl.color }}>
-                          {pl.name.slice(0, 1)}
+                          {ini(pl?.name)}
                         </span>
                         <span className="pname">{pl.name}</span>
                         <span className="team-chip" style={{ '--tc': TEAM_INFO[teamOf(room, pid)]?.color }}>
@@ -2765,7 +2778,7 @@ export default function App() {
                     .map(([pid, pl]) => (
                       <button key={pid} className="steal-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', pid)}>
                         <span className="avatar sm" style={{ background: pl.color }}>
-                          {pl.name.slice(0, 1)}
+                          {ini(pl?.name)}
                         </span>
                         <span className="pname">{pl.name}</span>
                         <span className="team-chip" style={{ '--tc': TEAM_INFO[teamOf(room, pid)]?.color }}>

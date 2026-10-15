@@ -13,6 +13,10 @@ import { dbGet, dbSet, dbUpdate, dbRemove, dbOn, dbOnConnected, dbPresence, now,
 import './firebase'
 import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf, backPath, prevNode } from './game/yut'
 import { pickNhaengWord } from './game/words'
+import { fakeCircle } from './game/circle'
+import { PRICE_ITEMS, pricePoints, pickPriceRounds } from './game/prices'
+import { PLACES, mapPoints, pickMapRounds } from './game/places'
+import { toXY, toLatLon, distKm, MAP_W, MAP_H } from './game/mapdata'
 import { BALANCE_TOPICS } from './game/balance'
 import { pickLiarWords } from './game/liar'
 import { pickBombTopic } from './game/bomb'
@@ -23,6 +27,13 @@ import { autoEmoji } from './game/emoji'
 export const COLORS = ['#ff5a36', '#3d7bfa', '#14b06a', '#e89a00', '#8b5cf6', '#ec4899', '#0ea5e9', '#65a30d', '#14b8a6', '#d946ef']
 
 // ---------- 내 아이디 (기기별 고정) ----------
+// 아바타 글자: 이름 첫 글자 (연습봇1 → '1')
+export function ini(name) {
+  const n = String(name || '')
+  const bot = n.match(/^연습봇\s*(\d+)$/)
+  if (bot) return bot[1]
+  return Array.from(n)[0] || ''
+}
 export function myId() {
   // 테스트용: ?pid=abc 로 열면 그 탭은 별도 플레이어로 취급 (같은 브라우저에서 2인 테스트)
   const q = new URLSearchParams(window.location.search).get('pid')
@@ -108,7 +119,8 @@ export async function createRoom(name, password = '') {
     players: { [id]: { name, color: COLORS[0], team: 0, joinedAt: now() } },
   })
   if (DEMO) {
-    demoSeed(code, ['관희', '윤정', '민수'], COLORS)
+    // 혼자 연습: 가짜 참가자는 연습봇1(우리 팀)·연습봇2·연습봇3(상대 팀). 테스트용 데모는 사람 이름
+    demoSeed(code, PRACTICE ? ['연습봇2', '연습봇1', '연습봇3'] : ['관희', '윤정', '민수'], COLORS)
   }
   return code
 }
@@ -461,7 +473,7 @@ function makePending(room, playerId, pos, kind, title) {
     p.stage = 'ready'
     p.qs = pickSyncQuestions(room)
   }
-  if (kind === 'tapWar' || kind === 'teamReact' || kind === 'colorTrap') p.stage = 'ready'
+  if (['tapWar', 'teamReact', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin'].includes(kind)) p.stage = 'ready'
   if (kind === 'teamBomb') {
     p.stage = 'ready'
     p.topic = pickBombTopic()
@@ -1017,7 +1029,7 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'choose': {
       // 게임 선택권: 'choose' + target(balance|liar|hunmin) → 그 게임으로 전환
-      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
+      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
       if (action === 'choose' && titles[target]) {
         const np = makePending(room, id, p.pos, target, titles[target])
         await roomUpdate(code, withTopicUpdates(room, np, { pending: np, event: { id: newId(), text: `${me.name} 🎁 ${titles[target]} 선택!` } }))
@@ -1464,7 +1476,7 @@ export function reactionRanking(room, p) {
 // ---------- 팀 대결 미니게임 ----------
 // 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심. 동점이면 룰렛으로 마실 팀을 정함.
 // 진행(시작·룰렛·확인)은 도착한 사람 또는 방장. 시간은 모두 서버 시각(serverNow) 기준이라 폰끼리 화면이 맞음
-export const TEAM_GAMES = new Set(['teamSync', 'tapWar', 'teamReact', 'teamBomb', 'colorTrap'])
+export const TEAM_GAMES = new Set(['teamSync', 'tapWar', 'teamReact', 'teamBomb', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin'])
 export const TEAM_LEAD_MS = 3500 // 시작 버튼 → 3·2·1 → 시작
 export const SYNC_QN = 4 // 이구동성 질문 수
 export const SYNC_ANSWER_MS = 5000 // 질문당 고르는 시간
@@ -1483,9 +1495,24 @@ export const CT_GAP_MS = 1600 // 라운드 사이: 정답과 내 점수
 export const CT_MAX = 1000
 export const CT_MIN = 100
 export const CT_WRONG = -300
+// 완벽한 원: 15초 안에 손가락으로 원 한 번 (0~100점), 팀 평균이 낮은 팀이 마심
+export const CIRCLE_MS = 15000
+export const CIRCLE_SETTLE_MS = 1200 // 시간이 끝나고 마지막 기록이 다 모일 때까지
+// 얼마게요: 편의점 가격 5문제 × 15초 (숫자 키패드), 정답 공개 3.5초
+export const PG_ROUNDS = 5
+export const PG_ANSWER_MS = 15000
+export const PG_GAP_MS = 3500
+// 팀 시간 합치기: 각자 한 번 꾹, 팀 합계가 30초에 가장 가까운 팀 승 (45초 안에)
+export const TS_TARGET_MS = 30000
+export const TS_LIMIT_MS = 45000
+export const TS_SETTLE_MS = 1200
+// 지도 찍기: 5문제 × 10초, 정답 공개 3.5초
+export const MP_ROUNDS = 5
+export const MP_ANSWER_MS = 10000
+export const MP_GAP_MS = 3500
 
-const TEAM_TITLE = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정' }
-const TEAM_EMOJI = { teamSync: '👯', tapWar: '🦦', teamReact: '⚡', teamBomb: '💣', colorTrap: '🎨' }
+const TEAM_TITLE = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기' }
+const TEAM_EMOJI = { teamSync: '👯', tapWar: '🦦', teamReact: '⚡', teamBomb: '💣', colorTrap: '🎨', circle: '⭕', priceGuess: '💰', timeSum: '🕰️', mapPin: '🗺️' }
 
 // 이구동성 질문 4개 (최근에 나온 질문은 피함)
 export function pickSyncQuestions(room) {
@@ -1708,6 +1735,240 @@ export async function colorAnswer(code, room, q, c) {
   await roomUpdate(code, upd)
 }
 
+// --- 완벽한 원: 15초 안에 한 번에 원 그리기, 동그란 정도 0~100점. 팀 평균이 낮은 팀이 마심 ---
+// 기록: pending/results/{pid} = { s: 점수, pts: [x0,y0,...](0~1000, 64점), c: [cx, cy, r], at: 낸 시각 }
+// 지금 단계: count(3·2·1) → draw(그리기) → final(결과)
+export function circlePhase(room, p, nowMs) {
+  if (!p || p.stage !== 'play' || !p.startAt) return { phase: p?.stage || 'ready' }
+  if (nowMs < p.startAt) return { phase: 'count', left: p.startAt - nowMs }
+  if (circleDone(room, p, nowMs)) return { phase: 'final' }
+  return { phase: 'draw', left: Math.max(0, p.endAt - nowMs) }
+}
+const circleIn = (p, pid, nowMs) => {
+  const r = p?.results?.[pid]
+  return !!r && (r.at || 0) <= nowMs
+}
+// 모두 그렸거나(접속 중인 사람 기준) 시간이 끝나면 결과
+export function circleDone(room, p, nowMs) {
+  if (!p || p.kind !== 'circle' || p.stage !== 'play' || !p.startAt) return false
+  if (nowMs >= p.endAt + CIRCLE_SETTLE_MS) return true
+  if (nowMs < p.startAt) return false
+  return liveTeams(room).every((t) => teamMembers(room, t).every((pid) => circleIn(p, pid, nowMs) || room.players[pid]?.online === false))
+}
+export function circleResult(room, p) {
+  const res = p.results || {}
+  const rows = liveTeams(room).map((t) => {
+    const members = activeMembers(room, t, (pid) => !!res[pid])
+    const per = members.map((pid) => ({ pid, s: res[pid] ? Math.max(0, Math.min(100, Number(res[pid].s) || 0)) : 0, none: !res[pid], r: res[pid] || null }))
+    const avg = per.length ? Math.round((per.reduce((a, x) => a + x.s, 0) / per.length) * 10) / 10 : 0
+    return { team: t, members, per, avg }
+  })
+  const mvp = rows.flatMap((r) => r.per).filter((x) => !x.none).sort((a, b) => b.s - a.s)[0] || null
+  return { rows, mvp, ...losersBy(rows, 'avg', 'min') }
+}
+// 내 원 내기 (한 번만, 그리는 시간 안에서). 점수는 그린 폰이 계산 (circle.js scoreCircle)
+export async function circleSubmit(code, room, res) {
+  const p = room.pending
+  if (!p || p.kind !== 'circle' || p.stage !== 'play' || !res) return
+  const nowMs = serverNow()
+  if (nowMs < p.startAt || nowMs > p.endAt + 800) return
+  const id = myId()
+  if (!SOLO && !room.players?.[id]?.name) return
+  if (p.results?.[id]) return
+  const int = (v) => Math.max(0, Math.min(1000, Math.round(Number(v) || 0)))
+  const pts = arr(res.pts).slice(0, 160).map(int)
+  const c = arr(res.c).slice(0, 3).map(int)
+  const s = Math.max(0, Math.min(100, Math.round((Number(res.s) || 0) * 10) / 10))
+  await roomUpdate(code, { [`pending/results/${id}`]: { s, pts, c, at: nowMs } })
+}
+// 혼자 연습·혼자 보는 데모: 가짜 참가자 원 (그리는 시간 중 아무 때나 낸 걸로)
+function fakeCircleResults(room, startAt) {
+  const me = myId()
+  const out = {}
+  Object.keys(room.players || {}).forEach((pid) => {
+    if (pid === me || !room.players[pid]?.name) return
+    const f = fakeCircle()
+    out[pid] = { s: f.s, pts: f.pts, c: f.c, at: startAt + 2500 + Math.floor(Math.random() * (CIRCLE_MS - 5000)) }
+  })
+  return out
+}
+
+// --- 문제 여러 개짜리 게임 공통 (얼마게요·지도 찍기): count(3·2·1) → q(문제, 남은 시간) → gap(정답 공개) → … → final ---
+export function roundPhase(p, nowMs, n, ansMs, gapMs) {
+  if (!p || p.stage !== 'play' || !p.startAt) return { phase: p?.stage || 'ready' }
+  if (nowMs < p.startAt) return { phase: 'count', left: p.startAt - nowMs }
+  const step = ansMs + gapMs
+  const k = Math.floor((nowMs - p.startAt) / step)
+  if (k >= n) return { phase: 'final' }
+  const at = p.startAt + k * step
+  const t = nowMs - at
+  if (t < ansMs) return { phase: 'q', q: k, at, left: ansMs - t }
+  return { phase: 'gap', q: k, at, left: step - t }
+}
+// 문제마다 낸 답 { ms } 가 지금 보이는지 (혼자 연습 가짜 참가자는 미리 채워 두고 ms 가 지나야 보임)
+const shownAt = (a, at, nowMs) => !!a && (a.ms == null || at + a.ms <= nowMs)
+// 팀 결과 공통: 사람별 문제 점수 합 → 팀 합계 (팀 인원이 다르면 1인 평균), MVP, 문제마다 가장 잘한 사람
+function roundsResult(room, p, n, answerOf) {
+  const ans = p.answers || {}
+  const answered = (pid) => Object.values(ans).some((a) => a && a[pid])
+  const rows = liveTeams(room).map((t) => {
+    const members = activeMembers(room, t, answered)
+    const per = members.map((pid) => {
+      const rs = Array.from({ length: n }, (_, q) => answerOf(p, q, pid))
+      return { pid, rounds: rs, total: rs.reduce((x, a) => x + (a ? a.pts : 0), 0) }
+    })
+    const sum = per.reduce((x, m) => x + m.total, 0)
+    return { team: t, members, per, sum, avg: members.length ? sum / members.length : 0 }
+  })
+  const byAvg = new Set(rows.map((r) => r.members.length)).size > 1
+  const all = rows.flatMap((r) => r.per)
+  const mvp = [...all].sort((a, b) => b.total - a.total)[0] || null
+  const best = Array.from({ length: n }, (_, q) => {
+    const top = all.filter((m) => m.rounds[q]).sort((a, b) => b.rounds[q].pts - a.rounds[q].pts)[0]
+    return top ? { pid: top.pid, ...top.rounds[q] } : null
+  })
+  return { rows, byAvg, mvp, best, ...losersBy(rows, byAvg ? 'avg' : 'sum', 'min') }
+}
+
+// --- 얼마게요: 편의점 가격 맞히기. 가까울수록 점수 (20% 차이 = 500점), 팀 점수 낮은 팀이 마심 ---
+// 답: pending/answers/r{문제}/{pid} = { v: 가격, ms: 낸 시각(문제 시작부터) } 한 번만
+export const pricePhase = (p, nowMs) => roundPhase(p, nowMs, PG_ROUNDS, PG_ANSWER_MS, PG_GAP_MS)
+export const priceEndAt = (p) => (p?.startAt || 0) + PG_ROUNDS * (PG_ANSWER_MS + PG_GAP_MS)
+export function priceAnswerOf(p, q, pid) {
+  const a = p?.answers?.[`r${q}`]?.[pid]
+  if (!a || !(Number(a.v) > 0)) return null
+  const item = PRICE_ITEMS[arr(p.rounds)[q]]
+  return { v: Number(a.v), ms: a.ms, pts: item?.price ? pricePoints(a.v, item.price) : 0 }
+}
+export const priceResult = (room, p) => roundsResult(room, p, PG_ROUNDS, priceAnswerOf)
+export async function priceAnswer(code, room, q, v) {
+  const p = room.pending
+  const val = Math.round(Number(v))
+  if (!p || p.kind !== 'priceGuess' || !(val > 0) || val > 9999999) return
+  const nowMs = serverNow()
+  const ph = pricePhase(p, nowMs)
+  // 시간 끝나는 순간 입력해 둔 값도 받음 (0.8초 여유)
+  const late = ph.phase === 'gap' && ph.q === q && nowMs - ph.at < PG_ANSWER_MS + 800
+  if (!((ph.phase === 'q' && ph.q === q) || late)) return
+  const id = myId()
+  if (!SOLO && !room.players?.[id]?.name) return
+  if (p.answers?.[`r${q}`]?.[id]) return
+  await roomUpdate(code, { [`pending/answers/r${q}/${id}`]: { v: val, ms: Math.min(PG_ANSWER_MS, Math.max(0, Math.round(nowMs - ph.at))) } })
+}
+// 가짜 참가자 답 (혼자 연습·혼자 보는 데모): 정답 ± 25% 쯤, 100원 단위
+function fakePriceAnswers(room, rounds) {
+  const me = myId()
+  const out = {}
+  rounds.forEach((idx, q) => {
+    const price = PRICE_ITEMS[idx]?.price || 1000
+    Object.keys(room.players || {}).forEach((pid) => {
+      if (pid === me || !room.players[pid]?.name) return
+      const f = 1 + (Math.random() + Math.random() + Math.random() - 1.5) * 0.45
+      out[`r${q}`] = out[`r${q}`] || {}
+      out[`r${q}`][pid] = { v: Math.max(100, Math.round((price * f) / 100) * 100), ms: 3000 + Math.floor(Math.random() * 10000) }
+    })
+  })
+  return out
+}
+
+// --- 팀 시간 합치기: 각자 한 번 꾹 눌렀다 뗌 (시간 안 보임). 팀 합계가 30초에서 가장 먼 팀이 마심 ---
+// 기록: pending/holds/{pid} = { ms: 누른 시간(폰에서 잼), at: 뗀 시각 }
+export function timeSumPhase(room, p, nowMs) {
+  if (!p || p.stage !== 'play' || !p.startAt) return { phase: p?.stage || 'ready' }
+  if (nowMs < p.startAt) return { phase: 'count', left: p.startAt - nowMs }
+  if (timeSumDone(room, p, nowMs)) return { phase: 'final' }
+  return { phase: 'play', left: Math.max(0, p.endAt - nowMs) }
+}
+const holdIn = (p, pid, nowMs) => {
+  const h = p?.holds?.[pid]
+  return !!h && (h.at || 0) <= nowMs
+}
+export function timeSumDone(room, p, nowMs) {
+  if (!p || p.kind !== 'timeSum' || p.stage !== 'play' || !p.startAt) return false
+  if (nowMs >= p.endAt + TS_SETTLE_MS) return true
+  if (nowMs < p.startAt) return false
+  return liveTeams(room).every((t) => teamMembers(room, t).every((pid) => holdIn(p, pid, nowMs) || room.players[pid]?.online === false))
+}
+export function timeSumResult(room, p) {
+  const hs = p.holds || {}
+  const rows = liveTeams(room).map((t) => {
+    const members = activeMembers(room, t, (pid) => !!hs[pid])
+    const per = members.map((pid) => ({ pid, ms: hs[pid] ? Math.max(0, Math.min(TS_LIMIT_MS, Number(hs[pid].ms) || 0)) : 0, none: !hs[pid] }))
+    const sum = per.reduce((a, x) => a + x.ms, 0)
+    return { team: t, members, per, sum, diff: Math.abs(sum - TS_TARGET_MS) }
+  })
+  return { rows, ...losersBy(rows, 'diff', 'max') }
+}
+export async function holdSubmit(code, room, ms) {
+  const p = room.pending
+  if (!p || p.kind !== 'timeSum' || p.stage !== 'play') return
+  const nowMs = serverNow()
+  if (nowMs < p.startAt || nowMs > p.endAt + 1500) return
+  const id = myId()
+  if (!SOLO && !room.players?.[id]?.name) return
+  if (p.holds?.[id]) return
+  const v = Math.max(0, Math.min(TS_LIMIT_MS, Math.round(Number(ms) || 0)))
+  await roomUpdate(code, { [`pending/holds/${id}`]: { ms: v, at: nowMs } })
+}
+// 가짜 참가자: 30초 ÷ 팀 인원 ± 30%
+function fakeHolds(room, startAt) {
+  const me = myId()
+  const out = {}
+  Object.keys(room.players || {}).forEach((pid) => {
+    if (pid === me || !room.players[pid]?.name) return
+    const n = Math.max(1, teamMembers(room, teamOf(room, pid)).length)
+    const ms = Math.round((TS_TARGET_MS / n) * (0.7 + Math.random() * 0.6))
+    out[pid] = { ms, at: Math.min(startAt + TS_LIMIT_MS, startAt + 400 + Math.floor(Math.random() * 1500) + ms) }
+  })
+  return out
+}
+
+// --- 지도 찍기: 한국 지도에 장소 핀 꽂기. 가까울수록 점수 (40km = 500점), 팀 점수 낮은 팀이 마심 ---
+// 답: pending/answers/r{문제}/{pid} = { x, y, ms } (지도 그림 좌표, 다시 찍으면 바뀜)
+export const mapPhase = (p, nowMs) => roundPhase(p, nowMs, MP_ROUNDS, MP_ANSWER_MS, MP_GAP_MS)
+export const mapEndAt = (p) => (p?.startAt || 0) + MP_ROUNDS * (MP_ANSWER_MS + MP_GAP_MS)
+export function mapAnswerOf(p, q, pid) {
+  const a = p?.answers?.[`r${q}`]?.[pid]
+  if (!a || !Number.isFinite(Number(a.x)) || !Number.isFinite(Number(a.y))) return null
+  const place = PLACES[arr(p.rounds)[q]]
+  if (!place) return null
+  const [lat, lon] = toLatLon(Number(a.x), Number(a.y))
+  const km = distKm(lat, lon, place.lat, place.lon)
+  return { x: Number(a.x), y: Number(a.y), ms: a.ms, km, pts: mapPoints(km) }
+}
+export const mapResult = (room, p) => roundsResult(room, p, MP_ROUNDS, mapAnswerOf)
+export async function mapAnswer(code, room, q, x, y) {
+  const p = room.pending
+  if (!p || p.kind !== 'mapPin') return
+  const nowMs = serverNow()
+  const ph = mapPhase(p, nowMs)
+  if (ph.phase !== 'q' || ph.q !== q) return
+  const id = myId()
+  if (!SOLO && !room.players?.[id]?.name) return
+  const cx = Math.max(0, Math.min(MAP_W, Math.round(Number(x))))
+  const cy = Math.max(0, Math.min(MAP_H, Math.round(Number(y))))
+  await roomUpdate(code, { [`pending/answers/r${q}/${id}`]: { x: cx, y: cy, ms: Math.max(0, Math.round(nowMs - ph.at)) } })
+}
+// 가짜 참가자 핀: 정답에서 5~150km 쯤 (가까운 쪽이 많게)
+function fakeMapAnswers(room, rounds) {
+  const me = myId()
+  const out = {}
+  rounds.forEach((idx, q) => {
+    const pl = PLACES[idx]
+    Object.keys(room.players || {}).forEach((pid) => {
+      if (pid === me || !room.players[pid]?.name || !pl) return
+      const d = 5 + Math.random() ** 2 * 140
+      const th = Math.random() * Math.PI * 2
+      const lat = pl.lat + (d * Math.cos(th)) / 111
+      const lon = pl.lon + (d * Math.sin(th)) / (111 * Math.cos((pl.lat * Math.PI) / 180))
+      const [x, y] = toXY(lat, lon)
+      out[`r${q}`] = out[`r${q}`] || {}
+      out[`r${q}`][pid] = { x: Math.max(0, Math.min(MAP_W, Math.round(x))), y: Math.max(0, Math.min(MAP_H, Math.round(y))), ms: 2000 + Math.floor(Math.random() * 7000) }
+    })
+  })
+  return out
+}
+
 // ---------- 혼자 연습 게임 (홈 → 연습 게임, ?practice=) ----------
 // 연습 방은 이 기기 메모리에만 있음 (가짜 참가자 3명: 우리 팀 1명 + 상대 팀 2명). 게임 선택권처럼 팀 게임을 골라 바로 시작
 export const PRACTICE_GAMES = [
@@ -1716,6 +1977,10 @@ export const PRACTICE_GAMES = [
   ['teamReact', '⚡', '팀 반응속도', '초록불이 되면 바로 탭'],
   ['teamBomb', '💣', '폭탄 돌리기 팀전', '째깍째깍… 언제 터질지 몰라요'],
   ['colorTrap', '🎨', '색깔 함정', '글자 뜻 말고 글자 색깔 고르기'],
+  ['circle', '⭕', '완벽한 원', '손가락으로 원 한 번, 얼마나 동그란지 점수'],
+  ['priceGuess', '💰', '얼마게요', '편의점 물건 가격 맞히기'],
+  ['timeSum', '🕰️', '팀 시간 합치기', '팀원 누른 시간 합이 30초에 가깝게'],
+  ['mapPin', '🗺️', '지도 찍기', '한국 지도에 장소 핀 꽂기'],
 ]
 function fakeRate(pid) {
   let h = 7
@@ -1742,6 +2007,10 @@ export function teamGameResult(room, p, nowMs = serverNow()) {
   if (p.kind === 'tapWar') return p.stage === 'play' && nowMs >= p.endAt + TAP_SETTLE_MS - 300 ? tapResult(room, p) : null
   if (p.kind === 'teamReact') return teamReactDone(room, p, nowMs) ? teamReactResult(room, p) : null
   if (p.kind === 'colorTrap') return p.stage === 'play' && nowMs >= colorEndAt(p) - 300 ? colorResult(room, p) : null
+  if (p.kind === 'circle') return circleDone(room, p, nowMs + 300) ? circleResult(room, p) : null
+  if (p.kind === 'priceGuess') return p.stage === 'play' && nowMs >= priceEndAt(p) - 300 ? priceResult(room, p) : null
+  if (p.kind === 'mapPin') return p.stage === 'play' && nowMs >= mapEndAt(p) - 300 ? mapResult(room, p) : null
+  if (p.kind === 'timeSum') return timeSumDone(room, p, nowMs + 300) ? timeSumResult(room, p) : null
   if (p.kind === 'teamBomb') {
     if (!bombExploded(p, nowMs) || p.loser == null || !TEAM_INFO[p.loser]) return null
     return { rows: [], losers: [Number(p.loser)], tie: false }
@@ -1755,6 +2024,9 @@ function teamScoreText(room, p, r) {
   if (p.kind === 'tapWar') return r.rows.map((x) => `${e(x.team)}평균 ${Math.round(x.avg)}회`).join(' : ')
   if (p.kind === 'teamReact') return r.rows.map((x) => `${e(x.team)}${(x.avg / 1000).toFixed(3)}초`).join(' : ')
   if (p.kind === 'colorTrap') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
+  if (p.kind === 'circle') return r.rows.map((x) => `${e(x.team)}평균 ${x.avg.toFixed(1)}점`).join(' : ')
+  if (p.kind === 'priceGuess' || p.kind === 'mapPin') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
+  if (p.kind === 'timeSum') return r.rows.map((x) => `${e(x.team)}${(x.sum / 1000).toFixed(1)}초`).join(' : ')
   if (p.kind === 'teamBomb') return `주제: ${p.topic}`
   return ''
 }
@@ -1770,6 +2042,24 @@ async function resolveTeamGame(code, room, p, action, target) {
     if (p.kind === 'teamReact') Object.assign(upd, { 'pending/stage': 'armed', 'pending/goAt': nowMs + 2500 + Math.floor(Math.random() * 3500), 'pending/results': null })
     if (p.kind === 'teamBomb') Object.assign(upd, { 'pending/stage': 'ticking', 'pending/startAt': nowMs, 'pending/explodeAt': nowMs + BOMB_MIN_MS + Math.floor(Math.random() * (BOMB_MAX_MS - BOMB_MIN_MS)), 'pending/loser': null })
     if (p.kind === 'colorTrap') Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': makeColorRounds(CT_ROUNDS), 'pending/answers': null })
+    if (p.kind === 'circle') {
+      const startAt = nowMs + TEAM_LEAD_MS
+      Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': startAt, 'pending/endAt': startAt + CIRCLE_MS, 'pending/results': SOLO ? fakeCircleResults(room, startAt) : null })
+    }
+    if (p.kind === 'priceGuess') {
+      const rounds = pickPriceRounds(PG_ROUNDS, arr(room.usedPrices))
+      Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': rounds, 'pending/answers': SOLO ? fakePriceAnswers(room, rounds) : null })
+      upd.usedPrices = [...arr(room.usedPrices), ...rounds].slice(-20)
+    }
+    if (p.kind === 'timeSum') {
+      const startAt = nowMs + TEAM_LEAD_MS
+      Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': startAt, 'pending/endAt': startAt + TS_LIMIT_MS, 'pending/holds': SOLO ? fakeHolds(room, startAt) : null })
+    }
+    if (p.kind === 'mapPin') {
+      const rounds = pickMapRounds(arr(room.usedPlaces))
+      Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': rounds, 'pending/answers': SOLO ? fakeMapAnswers(room, rounds) : null })
+      upd.usedPlaces = [...arr(room.usedPlaces), ...rounds].slice(-25)
+    }
     upd.event = { id: newId(), text: `${emo} ${title} 시작!` }
     await roomUpdate(code, upd)
     return

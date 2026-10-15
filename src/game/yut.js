@@ -113,6 +113,10 @@ const TAPWAR = { emoji: '🦦', text: '줄다리기\n게임', type: 'tapWar' }
 const TREACT = { emoji: '⚡', text: '반응 속도\n게임', type: 'teamReact' }
 const TBOMB = { emoji: '💣', text: '폭탄\n돌리기', type: 'teamBomb' }
 const TRAP = { emoji: '🎨', text: '색깔 함정\n게임', type: 'colorTrap' }
+const CIRCLE = { emoji: '⭕', text: '완벽한 원\n그리기', type: 'circle' }
+const PRICE = { emoji: '💰', text: '편의점\n얼마게요', type: 'priceGuess' }
+const TIMESUM = { emoji: '🕰️', text: '팀 시간\n합치기', type: 'timeSum' }
+const MAPPIN = { emoji: '🗺️', text: '지도\n찍기', type: 'mapPin' }
 // 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
 const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
 const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
@@ -146,12 +150,12 @@ export const DEFAULT_YUT_CELLS = {
   // 아래 변 (→ 골인) 28~35
   o28: CHOOSE, o29: STEAL, o30: RELEASE, o31: SYNC, o32: SOJU_ADD, o33: AGAIN, o34: RIVAL, o35: BACK4,
   // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래) 36~39 · 41~44
-  a1: SOJU_ADD, a2: SOJU_ADD, a3: SOJU_ADD, a4: SOJU_ADD,
+  a1: SOJU_ADD, a2: SOJU_ADD, a3: CIRCLE, a4: SOJU_ADD, // 38 완벽한 원 (대각선 새 칸 1호)
   C: SOJU_BANK, // 40 가운데: 소주 보관소 (고정)
-  a5: SOJU_ADD, a6: SOJU_ADD, a7: SOJU_ADD, a8: SOJU_ADD,
+  a5: SOJU_ADD, a6: SOJU_ADD, a7: MAPPIN, a8: SOJU_ADD, // 43 지도 찍기
   // 대각선 B (왼쪽 위 → 가운데 → 골인) 45~52
-  b1: SOJU_ADD, b2: SOJU_ADD, b3: SOJU_ADD, b4: SOJU_ADD,
-  b5: SOJU_ADD, b6: SOJU_ADD, b7: SOJU_ADD, b8: SOJU_ADD,
+  b1: SOJU_ADD, b2: SOJU_ADD, b3: TIMESUM, b4: SOJU_ADD, // 47 팀 시간 합치기
+  b5: SOJU_ADD, b6: PRICE, b7: SOJU_ADD, b8: SOJU_ADD, // 50 얼마게요
 }
 
 // ---------- 윷 던지기 ----------

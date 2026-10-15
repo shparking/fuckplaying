@@ -3527,3 +3527,418 @@ textarea {
   color: var(--accent);
 }
 
+
+/* ---------- 완벽한 원 ---------- */
+.ai-overlay.circle {
+  background: radial-gradient(120% 90% at 50% 10%, rgba(59, 227, 139, 0.2), rgba(4, 4, 12, 0.95) 70%);
+}
+.circle .tg-score {
+  font-size: 18px;
+  color: #ffd23f;
+}
+.circle-pad {
+  flex: none;
+  display: block;
+  width: min(86vw, 360px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  margin: 2px auto 0;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.06), transparent 70%),
+    rgba(255, 255, 255, 0.05);
+  border: 2px dashed rgba(255, 255, 255, 0.22);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: crosshair;
+}
+.circle-pad.done {
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.14);
+  cursor: default;
+}
+.circle-fb {
+  text-align: center;
+  font-weight: 800;
+  font-size: 17px;
+  min-height: 30px;
+  color: rgba(255, 255, 255, 0.82);
+}
+.circle-fb.ok {
+  color: #3be38b;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 26px;
+}
+.circle-fb.no {
+  color: #ff5468;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 22px;
+}
+.circle-ideal {
+  fill: none;
+  stroke: currentColor;
+  stroke-opacity: 0.4;
+  stroke-width: 1.4;
+  stroke-dasharray: 3.5 3;
+}
+.circle-example {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin: 10px 0 2px;
+  color: var(--text-2);
+}
+.circle-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  color: rgba(255, 255, 255, 0.85);
+}
+.circle-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 64px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.circle-gallery .circle-cell {
+  padding: 6px 6px 5px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid color-mix(in srgb, var(--tc) 55%, transparent);
+}
+.circle-gallery .circle-cell.mvp {
+  border-color: #ffd23f;
+  box-shadow: 0 0 14px rgba(255, 210, 63, 0.45);
+}
+.circle-cell b {
+  font-size: 14px;
+  font-weight: 900;
+}
+.circle-none {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  opacity: 0.5;
+}
+
+/* ---------- 얼마게요 ---------- */
+.ai-overlay.price {
+  background: radial-gradient(120% 90% at 50% 10%, rgba(255, 210, 63, 0.2), rgba(4, 4, 12, 0.95) 70%);
+}
+.price .tg-score,
+.mappin .tg-score,
+.timesum .tg-score {
+  font-size: 16px;
+  color: #ffd23f;
+}
+.pg-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0 0;
+}
+.pg-emo {
+  font-size: 44px;
+  line-height: 1.1;
+}
+.pg-item b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 30px;
+  color: #fff;
+}
+.pg-item em {
+  font-style: normal;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.pg-val {
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 40px;
+  color: #ffd23f;
+  min-height: 52px;
+  letter-spacing: 0.01em;
+}
+.pg-val.empty {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 30px;
+}
+.pg-val.sent {
+  color: #3be38b;
+}
+.pg-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.pg-key {
+  min-height: 52px;
+  border-radius: 16px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  touch-action: manipulation;
+}
+.pg-key:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.16);
+}
+.pg-key:disabled {
+  opacity: 0.4;
+}
+.pg-ok {
+  width: 100%;
+  min-height: 52px;
+  font-size: 18px;
+}
+.pg-answer {
+  text-align: center;
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.85);
+  padding-top: 14px;
+}
+.pg-answer b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 46px;
+  color: #ffd23f;
+  text-shadow: 0 0 18px rgba(255, 210, 63, 0.45);
+}
+.pg-scale {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0 2px;
+}
+.pg-scale span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.pg-scale b {
+  color: var(--text);
+}
+.pg-best {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.pg-best-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+.pg-best-row b {
+  color: #ffd23f;
+  text-align: right;
+}
+.pg-best-row em {
+  grid-column: 1 / -1;
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* ---------- 팀 시간 합치기 ---------- */
+.ai-overlay.timesum {
+  background: radial-gradient(120% 90% at 50% 10%, rgba(179, 136, 255, 0.24), rgba(4, 4, 12, 0.95) 70%);
+}
+.ts-hint {
+  text-align: center;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.8);
+}
+.ts-btn {
+  position: relative;
+  width: min(72vw, 280px);
+  aspect-ratio: 1 / 1;
+  margin: 10px auto;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  background: radial-gradient(circle at 50% 35%, #b388ff, #6b3fd6 70%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 0 36px rgba(179, 136, 255, 0.45);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 0.12s ease;
+}
+.ts-btn b {
+  font-size: 54px;
+  line-height: 1;
+}
+.ts-btn em {
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 22px;
+}
+.ts-btn.on {
+  transform: scale(0.93);
+  background: radial-gradient(circle at 50% 35%, #ff7ab8, #c2185b 70%);
+  box-shadow: 0 0 46px rgba(255, 77, 141, 0.6);
+}
+.ts-btn.on .ts-ring {
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 122, 184, 0.7);
+  animation: tsPulse 1.2s ease-out infinite;
+}
+@keyframes tsPulse {
+  from {
+    transform: scale(0.95);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+.ts-btn.done {
+  background: radial-gradient(circle at 50% 35%, #3be38b, #12875a 70%);
+  box-shadow: 0 0 36px rgba(59, 227, 139, 0.4);
+  opacity: 0.9;
+}
+.ts-btn:disabled {
+  cursor: default;
+}
+.ts-bars {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ts-track {
+  position: relative;
+  height: 26px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  display: flex;
+}
+.ts-track i {
+  display: block;
+  height: 100%;
+  background: var(--tc);
+  border-right: 2px solid rgba(0, 0, 0, 0.35);
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 26px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: center;
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation: tsGrow 0.5s ease-out forwards;
+}
+@keyframes tsGrow {
+  to {
+    transform: scaleX(1);
+  }
+}
+.ts-goal {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 3px dashed #ffd23f;
+}
+.ts-legend {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: right;
+}
+
+/* ---------- 지도 찍기 ---------- */
+.ai-overlay.mappin {
+  background: radial-gradient(120% 90% at 50% 10%, rgba(76, 201, 240, 0.22), rgba(4, 4, 12, 0.96) 70%);
+}
+.mp-q {
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 32px;
+  color: #ffd23f;
+  line-height: 1.15;
+}
+.kmap {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  border-radius: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.kmap.tap {
+  cursor: crosshair;
+}
+.kmap-sea {
+  fill: #0e1430;
+}
+.kmap-other {
+  fill: #1a2145;
+}
+.kmap-kr {
+  fill: #2b3a7a;
+  stroke: #8fa3ff;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+.kmap-pin path {
+  stroke: #fff;
+  stroke-width: 4;
+}
+.kmap-star circle {
+  fill: #ffd23f;
+  stroke: #000;
+  stroke-width: 3;
+}
+.kmap-star text {
+  fill: #ffd23f;
+  font-size: 34px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.7);
+  stroke-width: 6px;
+}
+.kmap-line {
+  stroke: #fff;
+  stroke-width: 4;
+  stroke-dasharray: 10 8;
+  opacity: 0.8;
+}

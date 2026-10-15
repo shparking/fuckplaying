@@ -1,12 +1,17 @@
-// 팀 대결 미니게임 화면: 팀 이구동성 · 연타 줄다리기 · 팀 반응속도 · 폭탄 돌리기 팀전 · 색깔 함정
+// 팀 대결 미니게임 화면: 팀 이구동성 · 연타 줄다리기 · 팀 반응속도 · 폭탄 돌리기 팀전 · 색깔 함정 · 완벽한 원 · 얼마게요 · 팀 시간 합치기 · 지도 찍기
 // 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심. 동점이면 룰렛.
 // 시간은 서버 시각(serverNow) 기준이라 모든 폰이 같은 순간에 같은 화면을 봄
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { SOLO, PRACTICE } from '../db'
 import { TEAM_INFO } from '../game/yut'
 import { SYNC_QUESTIONS, CT_COLORS } from '../game/teamgames'
+import { scoreCircle, circleAccuracy, circleComment, fakeCircle, seeded } from '../game/circle'
+import { PRICE_ITEMS, PRICE_BASE, pricePoints, won } from '../game/prices'
+import { PLACES } from '../game/places'
+import { MAP_W, MAP_H, MAP_KR, MAP_NK, MAP_JP, ISLAND_DOTS, toXY } from '../game/mapdata'
 import {
   arr,
+  ini,
   resolvePending,
   serverNow,
   teamMembers,
@@ -36,6 +41,26 @@ import {
   CT_ROUNDS,
   CT_ANSWER_MS,
   CT_WRONG,
+  circlePhase,
+  circleResult,
+  circleSubmit,
+  CIRCLE_MS,
+  pricePhase,
+  priceAnswer,
+  priceAnswerOf,
+  priceResult,
+  PG_ROUNDS,
+  PG_ANSWER_MS,
+  timeSumPhase,
+  timeSumResult,
+  holdSubmit,
+  TS_TARGET_MS,
+  mapPhase,
+  mapAnswer,
+  mapAnswerOf,
+  mapResult,
+  MP_ROUNDS,
+  MP_ANSWER_MS,
 } from '../room'
 
 // 서버 시각으로 다시 그리기 (active 일 때만 ms 간격)
@@ -68,7 +93,7 @@ function Avatars({ room, ids, dim }) {
     <span className="tg-avatars">
       {ids.map((pid) => (
         <span key={pid} className={`avatar xs ${dim?.(pid) ? 'dim' : ''}`} style={{ background: room.players[pid]?.color }} title={room.players[pid]?.name}>
-          {room.players[pid]?.name?.slice(0, 1)}
+          {ini(room.players[pid]?.name)}
         </span>
       ))}
     </span>
@@ -137,7 +162,7 @@ function ReadyModal({ room, p, ctl, emoji, title, headline, rules, startLabel, c
 }
 
 // 결과 (모든 폰): 팀별 기록 → 진 팀 다 같이 마셔 / 동점이면 룰렛
-function TeamResult({ room, p, ctl, code, emoji, title, rows, losers, tie, note }) {
+function TeamResult({ room, p, ctl, code, emoji, title, rows, losers, tie, note, extra }) {
   const actor = room.players[p.playerId]
   const loser = !tie ? losers[0] : null
   useEffect(() => buzz([80, 40, 80, 40, 200]), [])
@@ -157,6 +182,7 @@ function TeamResult({ room, p, ctl, code, emoji, title, rows, losers, tie, note 
             </div>
           ))}
         </div>
+        {extra}
         {note && <div className="ai-note">{note}</div>}
         {tie ? (
           <div className="ai-name">
@@ -894,6 +920,764 @@ export function ColorTrapPanel({ room, pending: p, me, ctl, code }) {
         sub: row.per.map((x) => `${room.players[x.pid]?.name} ${x.total}`).join(' · ') + (r.byAvg ? ` · 합계 ${row.sum}` : ''),
       }))}
       note={r.byAvg ? '팀 인원이 달라서 1인 평균으로 비교해요' : r.mvp ? `🏅 MVP ${room.players[r.mvp.pid]?.name} ${r.mvp.total}점 (${r.mvp.ok}/${CT_ROUNDS} 정답)` : ''}
+    />
+  )
+}
+
+// ---------- 완벽한 원 ----------
+// 15초 안에 손가락으로 원을 한 번에 (손 떼면 끝). 동그란 정도 0~100점 (그린 폰이 채점 → circle.js), 팀 평균이 낮은 팀이 마심 (동점 → 룰렛)
+// 결과 화면에 모두가 그린 원을 같이 보여 줌
+function CirclePic({ r, color, size = 64 }) {
+  const pts = arr(r?.pts)
+  const xy = []
+  for (let i = 0; i + 1 < pts.length; i += 2) xy.push(`${(pts[i] / 10).toFixed(1)},${(pts[i + 1] / 10).toFixed(1)}`)
+  const c = arr(r?.c)
+  return (
+    <svg className="circle-pic" viewBox="0 0 100 100" width={size} height={size} aria-hidden>
+      {c.length === 3 && <circle className="circle-ideal" cx={c[0] / 10} cy={c[1] / 10} r={c[2] / 10} />}
+      {xy.length > 1 && <polyline points={xy.join(' ')} fill="none" stroke={color} strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  )
+}
+const pairs = (flat) => {
+  const a = arr(flat)
+  const out = []
+  for (let i = 0; i + 1 < a.length; i += 2) out.push([a[i], a[i + 1]])
+  return out
+}
+// 정확도에 따라 선 색: 초록(잘 맞음) → 노랑 → 빨강
+const devColor = (d) => (d < 0.035 ? '#3be38b' : d < 0.08 ? '#ffd166' : '#ff5d6c')
+
+function CircleDraw({ room, p, me, code, left }) {
+  const canvasRef = useRef(null)
+  const ptsRef = useRef([]) // 그리는 중인 점 (0~1000 좌표)
+  const drawingRef = useRef(false)
+  const rafRef = useRef(0)
+  const resRef = useRef(null)
+  const sentRef = useRef(false)
+  const [live, setLive] = useState(null) // 그리는 중 정확도
+  const [msg, setMsg] = useState('')
+  const [mine, setMine] = useState(null)
+  const server = p.results?.[me] || null
+  const result = mine || (server ? { s: server.s, pts: server.pts, c: server.c } : null)
+  resRef.current = result
+  const myTeam = teamOf(room, me)
+  const color = TEAM_INFO[myTeam]?.color || '#ff7a1a'
+  const now = serverNow()
+  const mates = teamMembers(room, myTeam)
+  const done = mates.filter((pid) => (p.results?.[pid] && (p.results[pid].at || 0) <= now) || (pid === me && result)).length
+
+  const redraw = () => {
+    const cv = canvasRef.current
+    if (!cv) return
+    const ctx = cv.getContext('2d')
+    const W = cv.width
+    const k = W / 1000
+    ctx.clearRect(0, 0, W, W)
+    // 가운데 점 (둘러서 그리라는 표시)
+    ctx.fillStyle = 'rgba(255,255,255,0.28)'
+    ctx.beginPath()
+    ctx.arc(500 * k, 500 * k, 9 * k, 0, Math.PI * 2)
+    ctx.fill()
+    const res = resRef.current
+    const pts = res ? pairs(res.pts) : ptsRef.current
+    if (pts.length < 2) return
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.lineWidth = 15 * k
+    if (res) {
+      // 다 그린 원: 가장 잘 맞는 원(점선) 위에 내 원
+      const c = arr(res.c)
+      if (c.length === 3) {
+        ctx.save()
+        ctx.setLineDash([16 * k, 14 * k])
+        ctx.lineWidth = 5 * k
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)'
+        ctx.beginPath()
+        ctx.arc(c[0] * k, c[1] * k, c[2] * k, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
+      ctx.strokeStyle = color
+      ctx.shadowColor = color
+      ctx.shadowBlur = 18 * k
+      ctx.beginPath()
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * k, y * k) : ctx.moveTo(x * k, y * k)))
+      ctx.closePath()
+      ctx.stroke()
+      ctx.shadowBlur = 0
+      return
+    }
+    // 그리는 중: 지금까지 그린 선에 맞는 원 기준으로 구간마다 색
+    const a = circleAccuracy(pts)
+    const c = a?.c
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1]
+      const [x1, y1] = pts[i]
+      ctx.strokeStyle = c ? devColor(Math.abs(Math.hypot(x1 - c.cx, y1 - c.cy) - c.r) / c.r) : '#ffffff'
+      ctx.beginPath()
+      ctx.moveTo(x0 * k, y0 * k)
+      ctx.lineTo(x1 * k, y1 * k)
+      ctx.stroke()
+    }
+    setLive(a ? a.acc : null)
+  }
+  const schedule = () => {
+    if (rafRef.current) return
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0
+      redraw()
+    })
+  }
+  // 그림판 크기 = 화면 크기 × 화소 비율
+  useEffect(() => {
+    const cv = canvasRef.current
+    if (!cv) return
+    const fit = () => {
+      const w = cv.clientWidth || 300
+      const dpr = Math.min(3, window.devicePixelRatio || 1)
+      cv.width = Math.round(w * dpr)
+      cv.height = Math.round(w * dpr)
+      redraw()
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => {
+      window.removeEventListener('resize', fit)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+  useEffect(() => {
+    if (server && !mine) schedule() // 다른 탭(같은 사람)에서 낸 경우
+  }, [!!server])
+
+  const toLocal = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect()
+    return [((e.clientX - rect.left) / rect.width) * 1000, ((e.clientY - rect.top) / rect.height) * 1000]
+  }
+  const finish = () => {
+    if (!drawingRef.current) return
+    drawingRef.current = false
+    const res = scoreCircle(ptsRef.current)
+    if (!res.ok) {
+      setMsg(res.why === 'small' ? '너무 작아요! 크게 다시' : res.why === 'short' ? '원을 그려 주세요!' : '손 떼지 말고 한 바퀴 다 그려요!')
+      ptsRef.current = []
+      setLive(null)
+      buzz(30)
+      schedule()
+      return
+    }
+    resRef.current = res
+    setMine(res)
+    setLive(null)
+    setMsg('')
+    if (!sentRef.current) {
+      sentRef.current = true
+      circleSubmit(code, room, res)
+    }
+    buzz([60, 40, 60])
+    schedule()
+  }
+  // 그리는 중에 시간이 끝나면 그린 데까지 채점
+  useEffect(() => {
+    if (left <= 0 && drawingRef.current) finish()
+  }, [left <= 0])
+  const onDown = (e) => {
+    if (resRef.current || left <= 0) return
+    e.preventDefault()
+    try {
+      canvasRef.current.setPointerCapture(e.pointerId)
+    } catch {}
+    drawingRef.current = true
+    ptsRef.current = [toLocal(e)]
+    setMsg('')
+    schedule()
+  }
+  const onMove = (e) => {
+    if (!drawingRef.current) return
+    const ne = e.nativeEvent
+    const evs = ne.getCoalescedEvents ? ne.getCoalescedEvents() : []
+    ;(evs.length ? evs : [ne]).forEach((ev) => ptsRef.current.push(toLocal(ev)))
+    schedule()
+  }
+  const timeUp = left <= 0 && !result
+  return (
+    <div className="ai-overlay tg circle">
+      <div className="tg-box">
+        <div className="tg-head">
+          <span>⭕ 완벽한 원</span>
+          <span className="tg-score">{result ? `${result.s.toFixed(1)}점` : live != null ? `정확도 ${live.toFixed(1)}%` : `${Math.ceil(left / 1000)}초`}</span>
+        </div>
+        <div className={`tg-timer ${result || timeUp ? 'done' : ''}`}>
+          <i style={{ width: `${Math.max(0, Math.min(100, (left / CIRCLE_MS) * 100))}%` }} />
+        </div>
+        <canvas
+          ref={canvasRef}
+          className={`circle-pad ${result ? 'done' : ''}`}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={finish}
+          onPointerCancel={finish}
+        />
+        <div className={`circle-fb ${result ? 'ok' : msg || timeUp ? 'no' : ''}`}>
+          {result ? `${circleComment(result.s)}` : timeUp ? '시간 초과! 0점' : msg || '가운데 점을 둘러서, 손 떼지 말고 한 바퀴!'}
+        </div>
+        <div className="ai-sub">
+          {result ? '다른 사람을 기다려요 · ' : ''}우리 팀 {done}/{mates.length}명 그렸어요
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function CirclePanel({ room, pending: p, me, ctl, code }) {
+  const live = p.stage === 'play'
+  const now = useNow(live, 100)
+  const title = p.title || '완벽한 원'
+  const ex = useMemo(() => [fakeCircle(seeded(44)), fakeCircle(seeded(121))], [])
+  if (p.stage === 'ready')
+    return (
+      <ReadyModal
+        room={room}
+        p={p}
+        ctl={ctl}
+        code={code}
+        emoji="⭕"
+        title={title}
+        headline="한 번에 동그랗게!"
+        startLabel="⭕ 시작"
+        extra={
+          <div className="circle-example">
+            {ex.map((r, i) => (
+              <div key={i} className="circle-cell">
+                <CirclePic r={r} color={i ? '#ff5d6c' : '#3be38b'} size={72} />
+                <b>{r.s.toFixed(1)}점</b>
+              </div>
+            ))}
+          </div>
+        }
+        rules={
+          <>
+            시작하면 <b>{CIRCLE_MS / 1000}초</b> 안에 손가락으로 원을 <b>한 번에</b> 그려요 (손 떼면 끝). 가장 잘 맞는 원과 비교해서 얼마나 동그란지 <b>0~100점</b>! 한 바퀴를 다 못 돌면 감점, 너무 작거나 반 바퀴도 안 되면 다시 그려요. 팀원 <b>평균 점수</b>가 낮은 팀이 다 같이 마셔요. 동점이면 룰렛!
+          </>
+        }
+      />
+    )
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="⭕" title={title} />
+  const ph = circlePhase(room, p, now)
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="⭕" sub="손가락으로 원 한 번! 손 떼지 말고" />
+  if (ph.phase === 'draw') return <CircleDraw room={room} p={p} me={me} code={code} left={ph.left} />
+  const r = circleResult(room, p)
+  const name = (pid) => room.players[pid]?.name || ''
+  return (
+    <TeamResult
+      room={room}
+      p={p}
+      ctl={ctl}
+      code={code}
+      emoji="⭕"
+      title={title}
+      losers={r.losers}
+      tie={r.tie}
+      rows={r.rows.map((row) => ({
+        team: row.team,
+        main: `평균 ${row.avg.toFixed(1)}점`,
+        sub: row.per.map((x) => `${name(x.pid)} ${x.none ? '미참여' : x.s.toFixed(1)}`).join(' · '),
+      }))}
+      extra={
+        <div className="circle-gallery">
+          {r.rows.flatMap((row) =>
+            row.per.map((x) => (
+              <div key={x.pid} className={`circle-cell ${r.mvp?.pid === x.pid ? 'mvp' : ''}`} style={{ '--tc': TEAM_INFO[row.team]?.color }}>
+                {x.r ? <CirclePic r={x.r} color={TEAM_INFO[row.team]?.color} size={58} /> : <div className="circle-none">✋</div>}
+                <span>{name(x.pid)}</span>
+                <b>{x.none ? '미참여' : x.s.toFixed(1)}</b>
+              </div>
+            )),
+          )}
+        </div>
+      }
+      note={r.mvp ? `🏅 MVP ${name(r.mvp.pid)} ${r.mvp.s.toFixed(1)}점 — ${circleComment(r.mvp.s)}` : ''}
+    />
+  )
+}
+
+// 문제마다 낸 답이 지금 보이는지 (혼자 연습 가짜 참가자 답은 미리 채워 두고 ms 가 지나야 보임)
+const answeredNow = (p, q, pid, at, now) => {
+  const a = p.answers?.[`r${q}`]?.[pid]
+  return !!a && (a.ms == null || at + a.ms <= now)
+}
+// 팀 점수 결과 줄 (얼마게요·지도 찍기)
+const pointRows = (room, r) =>
+  r.rows.map((row) => ({
+    team: row.team,
+    main: r.byAvg ? `평균 ${Math.round(row.avg)}점` : `${row.sum.toLocaleString('ko-KR')}점`,
+    sub: row.per.map((x) => `${room.players[x.pid]?.name} ${x.total.toLocaleString('ko-KR')}`).join(' · ') + (r.byAvg ? ` · 합계 ${row.sum.toLocaleString('ko-KR')}` : ''),
+  }))
+
+// ---------- 얼마게요 (편의점 가격) ----------
+// 5문제 × 15초, 숫자 키패드로 가격 입력 → 확인. 정답과 차이(%)가 작을수록 점수 (20% = 500점), 팀 점수 낮은 팀이 마심
+export function PricePanel({ room, pending: p, me, ctl, code }) {
+  const live = p.stage === 'play'
+  const now = useNow(live, 100)
+  const ph = pricePhase(p, now)
+  const title = p.title || '얼마게요'
+  const rounds = arr(p.rounds)
+  const [typed, setTyped] = useState({}) // 문제별 입력 중인 숫자 (문자열)
+  const [sent, setSent] = useState({}) // 문제별 낸 값 (서버 반영 전에도 바로 보이게)
+  const sentRef = useRef({})
+  const qRef = useRef(null)
+  useEffect(() => {
+    if (ph.phase === 'q' && qRef.current !== ph.q) {
+      qRef.current = ph.q
+      buzz(50)
+    }
+  }, [ph.phase, ph.q])
+  // 시간이 끝났는데 입력만 해 두고 안 냈으면 그 값으로 냄
+  useEffect(() => {
+    if (ph.phase !== 'gap') return
+    const q = ph.q
+    const v = Number(typed[q] || 0)
+    if (v > 0 && !sentRef.current[q] && !p.answers?.[`r${q}`]?.[me]) {
+      sentRef.current[q] = true
+      setSent((x) => ({ ...x, [q]: v }))
+      priceAnswer(code, room, q, v)
+    }
+  }, [ph.phase, ph.q])
+  if (p.stage === 'ready')
+    return (
+      <ReadyModal
+        room={room}
+        p={p}
+        ctl={ctl}
+        code={code}
+        emoji="💰"
+        title={title}
+        headline="편의점 가격, 얼마게요?"
+        startLabel="💰 시작"
+        extra={
+          <div className="pg-scale">
+            {[
+              ['딱!', 1000],
+              ['10%', 800],
+              ['20%', 500],
+              ['50%', 138],
+            ].map(([k, v]) => (
+              <span key={k}>
+                {k} <b>{v}</b>
+              </span>
+            ))}
+          </div>
+        }
+        rules={
+          <>
+            편의점 물건이 나오면 <b>숫자 키패드</b>로 가격을 넣고 확인! 모두 {PG_ROUNDS}문제, 문제마다 {PG_ANSWER_MS / 1000}초. 정답과 <b>가까울수록 점수가 커요</b> (딱 맞히면 1000점, 10% 차이 800점, 20% 차이 500점… 구간 없이 부드럽게). 문제마다 정답과 내 점수가 나오고, 끝나면 팀 점수를 공개해서 낮은 팀이 다 같이 마셔요. 가격은 {PRICE_BASE}.
+          </>
+        }
+      />
+    )
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="💰" title={title} />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="💰" sub="편의점 가격, 얼마게요?" />
+  if (ph.phase === 'q' || ph.phase === 'gap') {
+    const q = ph.q
+    const item = PRICE_ITEMS[rounds[q]] || PRICE_ITEMS[0]
+    const asking = ph.phase === 'q'
+    const server = priceAnswerOf(p, q, me)
+    const mine = server || (sent[q] ? { v: sent[q], pts: pricePoints(sent[q], item.price) } : null)
+    // 내 점수: 정답이 공개된 문제까지만
+    const shownQ = asking ? q : q + 1
+    const myTotal = Array.from({ length: shownQ }, (_, k) => priceAnswerOf(p, k, me)?.pts || (k === q && mine ? mine.pts : 0)).reduce((a, b) => a + b, 0)
+    const myTeam = teamOf(room, me)
+    const mates = teamMembers(room, myTeam)
+    const done = mates.filter((pid) => answeredNow(p, q, pid, ph.at, now) || (pid === me && mine)).length
+    const str = typed[q] || ''
+    const press = (k) => {
+      if (!asking || mine) return
+      setTyped((x) => {
+        const cur = x[q] || ''
+        let next = cur
+        if (k === 'del') next = cur.slice(0, -1)
+        else if (cur.length < 7) next = (cur + k).replace(/^0+/, '')
+        return { ...x, [q]: next.slice(0, 7) }
+      })
+    }
+    const submit = () => {
+      const v = Number(str)
+      if (!asking || !(v > 0) || mine || sentRef.current[q]) return
+      sentRef.current[q] = true
+      setSent((x) => ({ ...x, [q]: v }))
+      priceAnswer(code, room, q, v)
+      buzz(40)
+    }
+    const diff = mine ? Math.round((Math.abs(mine.v - item.price) / item.price) * 100) : null
+    return (
+      <div className="ai-overlay tg price">
+        <div className="tg-box">
+          <div className="tg-head">
+            <span>
+              💰 {q + 1}/{PG_ROUNDS}
+            </span>
+            <span className="tg-score">내 점수 {myTotal.toLocaleString('ko-KR')}</span>
+          </div>
+          <div className={`tg-timer ${asking ? '' : 'done'}`}>{asking && <i style={{ width: `${Math.max(0, (ph.left / PG_ANSWER_MS) * 100)}%` }} />}</div>
+          <div className="pg-item">
+            <span className="pg-emo">{item.emoji}</span>
+            <b>{item.name}</b>
+            <em>{item.unit}</em>
+          </div>
+          {asking ? (
+            <>
+              <div className={`pg-val ${mine ? 'sent' : str ? '' : 'empty'}`}>{mine ? won(mine.v) : str ? won(str) : '얼마일까?'}</div>
+              <div className="pg-pad">
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'del'].map((k) => (
+                  <button key={k} className="pg-key" disabled={!!mine} onClick={() => press(k)}>
+                    {k === 'del' ? '⌫' : k}
+                  </button>
+                ))}
+              </div>
+              <button className="btn btn-primary pg-ok" disabled={!!mine || !(Number(str) > 0)} onClick={submit}>
+                {mine ? `✅ 냈어요 · 우리 팀 ${done}/${mates.length}명` : '확인'}
+              </button>
+              {!mine && <div className="ai-sub">{Math.ceil(ph.left / 1000)}초 · 우리 팀 {done}/{mates.length}명 냈어요</div>}
+            </>
+          ) : (
+            <>
+              <div className="pg-answer">
+                정답 <b>{won(item.price)}</b>
+              </div>
+              <div className={`ct-fb ${mine ? 'ok' : 'no'}`}>{mine ? `${won(mine.v)} · ${diff}% 차이 · +${mine.pts}점` : '시간 초과! 0점'}</div>
+              <div className="ai-sub">{q + 1 < PG_ROUNDS ? '다음 문제…' : '결과 공개!'}</div>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+  const r = priceResult(room, p)
+  const name = (pid) => room.players[pid]?.name || ''
+  return (
+    <TeamResult
+      room={room}
+      p={p}
+      ctl={ctl}
+      code={code}
+      emoji="💰"
+      title={title}
+      losers={r.losers}
+      tie={r.tie}
+      rows={pointRows(room, r)}
+      extra={
+        <div className="pg-best">
+          {rounds.map((idx, q) => {
+            const it = PRICE_ITEMS[idx]
+            const b = r.best[q]
+            return (
+              <div key={q} className="pg-best-row">
+                <span>
+                  {it?.emoji} {it?.name}
+                </span>
+                <b>{won(it?.price)}</b>
+                <em>{b ? `🎯 ${name(b.pid)} ${won(b.v)}` : '아무도 못 냄'}</em>
+              </div>
+            )
+          })}
+        </div>
+      }
+      note={r.byAvg ? '팀 인원이 달라서 1인 평균으로 비교해요' : r.mvp ? `🏅 MVP ${name(r.mvp.pid)} ${r.mvp.total.toLocaleString('ko-KR')}점` : ''}
+    />
+  )
+}
+
+// ---------- 팀 시간 합치기 ----------
+// 각자 한 번 꾹 눌렀다 뗌 (시간은 안 보임, 말하기 금지). 팀원 시간 합이 30초에 가장 가까운 팀 승, 가장 먼 팀이 마심
+const sec = (ms) => (ms / 1000).toFixed(1)
+export function TimeSumPanel({ room, pending: p, me, ctl, code }) {
+  const live = p.stage === 'play'
+  const now = useNow(live, 200)
+  const ph = timeSumPhase(room, p, now)
+  const title = p.title || '팀 시간 합치기'
+  const t0 = useRef(null) // 누른 순간 (performance.now)
+  const pressAt = useRef(null) // 누른 순간 (서버 시각)
+  const sentRef = useRef(false)
+  const [holding, setHolding] = useState(false)
+  const [mine, setMine] = useState(null)
+  const finished = mine != null || !!p.holds?.[me]
+  const release = () => {
+    if (t0.current == null || sentRef.current) return
+    let ms = performance.now() - t0.current
+    if (pressAt.current != null && p.endAt) ms = Math.min(ms, Math.max(0, p.endAt - pressAt.current))
+    t0.current = null
+    sentRef.current = true
+    setHolding(false)
+    setMine(ms)
+    holdSubmit(code, room, ms)
+    buzz([50, 30, 50])
+  }
+  const timeUp = ph.phase === 'play' && ph.left <= 0
+  // 누른 채로 45초가 지나면 거기서 끊음
+  useEffect(() => {
+    if (timeUp && t0.current != null) release()
+  }, [timeUp])
+  if (p.stage === 'ready')
+    return (
+      <ReadyModal
+        room={room}
+        p={p}
+        ctl={ctl}
+        code={code}
+        emoji="🕰️"
+        title={title}
+        headline={`팀 합계 ${TS_TARGET_MS / 1000}초 맞추기!`}
+        startLabel="🕰️ 시작"
+        rules={
+          <>
+            시작하면 각자 큰 버튼을 <b>딱 한 번</b> 꾹 눌렀다 떼요. 화면에 시간은 <b>안 나와요</b> (몇 초 눌렀는지도 결과 때 공개). 팀원들이 누른 시간을 다 더해서 <b>{TS_TARGET_MS / 1000}초</b>에 가장 가까운 팀이 이기고, 가장 먼 팀이 다 같이 마셔요. <b>말하기 금지!</b> {Math.round((p.endAt - p.startAt) / 1000) || 45}초 안에 안 누르면 0초예요.
+          </>
+        }
+      />
+    )
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🕰️" title={title} />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🕰️" sub="말하지 마세요! 각자 한 번 꾹" />
+  if (ph.phase === 'play') {
+    const myTeam = teamOf(room, me)
+    const mates = teamMembers(room, myTeam)
+    const done = mates.filter((pid) => (p.holds?.[pid] && (p.holds[pid].at || 0) <= now) || (pid === me && finished)).length
+    const down = (e) => {
+      if (finished || timeUp || t0.current != null) return
+      e.preventDefault()
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {}
+      t0.current = performance.now()
+      pressAt.current = serverNow()
+      setHolding(true)
+      buzz(30)
+    }
+    return (
+      <div className="ai-overlay tg timesum">
+        <div className="tg-box">
+          <div className="tg-head">
+            <span>🕰️ 팀 시간 합치기</span>
+            <span className="tg-score">목표 {TS_TARGET_MS / 1000}초</span>
+          </div>
+          <div className="ts-hint">우리 팀 시간을 다 더해서 {TS_TARGET_MS / 1000}초! 말하기 금지 🤐</div>
+          <button
+            className={`ts-btn ${holding ? 'on' : ''} ${finished ? 'done' : ''}`}
+            disabled={finished || timeUp}
+            onPointerDown={down}
+            onPointerUp={release}
+            onPointerCancel={release}
+            onLostPointerCapture={release}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <span className="ts-ring" />
+            <b>{finished ? '✅' : holding ? '🤫' : '👇'}</b>
+            <em>{finished ? '기록 끝!' : holding ? '누르는 중… 떼면 끝' : '꾹 누르기'}</em>
+          </button>
+          <div className="ct-fb">{finished ? '몇 초였는지는 결과에서 공개!' : timeUp ? '시간 끝! 0초' : holding ? '시간은 비밀이에요' : '한 번만 누를 수 있어요'}</div>
+          <div className="ai-sub">
+            {!finished && ph.left < 6000 ? '⏳ 곧 끝나요! · ' : ''}우리 팀 {done}/{mates.length}명 끝
+          </div>
+        </div>
+      </div>
+    )
+  }
+  const r = timeSumResult(room, p)
+  const name = (pid) => room.players[pid]?.name || ''
+  const scale = Math.max(TS_TARGET_MS * 1.35, ...r.rows.map((x) => x.sum * 1.05))
+  return (
+    <TeamResult
+      room={room}
+      p={p}
+      ctl={ctl}
+      code={code}
+      emoji="🕰️"
+      title={title}
+      losers={r.losers}
+      tie={r.tie}
+      rows={r.rows.map((row) => ({
+        team: row.team,
+        main: `${sec(row.sum)}초`,
+        sub: `${row.diff < 50 ? '딱 맞음! 🎯' : row.sum > TS_TARGET_MS ? `${sec(row.diff)}초 넘음` : `${sec(row.diff)}초 모자람`} · ${row.per.map((x) => `${name(x.pid)} ${x.none ? '미참여' : `${sec(x.ms)}초`}`).join(' + ')}`,
+      }))}
+      extra={
+        <div className="ts-bars">
+          {r.rows.map((row) => (
+            <div key={row.team} className="ts-bar" style={{ '--tc': TEAM_INFO[row.team]?.color }}>
+              <div className="ts-track">
+                {row.per.map((x, i) => (
+                  <i key={x.pid} style={{ width: `${(x.ms / scale) * 100}%`, animationDelay: `${0.2 + i * 0.45}s`, opacity: 1 - i * 0.18 }}>
+                    {x.ms / scale > 0.12 ? name(x.pid) : ''}
+                  </i>
+                ))}
+                <b className="ts-goal" style={{ left: `${(TS_TARGET_MS / scale) * 100}%` }} />
+              </div>
+            </div>
+          ))}
+          <div className="ts-legend">점선 = {TS_TARGET_MS / 1000}초</div>
+        </div>
+      }
+      note={`팀 합계가 ${TS_TARGET_MS / 1000}초에서 가장 먼 팀이 마셔요`}
+    />
+  )
+}
+
+// ---------- 지도 찍기 ----------
+// 5문제 × 10초, 한국 지도에 장소 핀 꽂기 (다시 누르면 옮김). 가까울수록 점수 (40km = 500점), 팀 점수 낮은 팀이 마심
+function KoreaMap({ onTap, children }) {
+  const ref = useRef(null)
+  const tap = (e) => {
+    if (!onTap || !ref.current) return
+    const r = ref.current.getBoundingClientRect()
+    onTap(((e.clientX - r.left) / r.width) * MAP_W, ((e.clientY - r.top) / r.height) * MAP_H)
+  }
+  return (
+    <svg ref={ref} className={`kmap ${onTap ? 'tap' : ''}`} viewBox={`0 0 ${MAP_W} ${MAP_H}`} onPointerDown={tap}>
+      <rect width={MAP_W} height={MAP_H} className="kmap-sea" />
+      <path d={MAP_JP} className="kmap-other" />
+      <path d={MAP_NK} className="kmap-other" />
+      <path d={MAP_KR} className="kmap-kr" />
+      {ISLAND_DOTS.map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r="5" className="kmap-kr" />
+      ))}
+      {children}
+    </svg>
+  )
+}
+const MapPin = ({ x, y, color }) => (
+  <g transform={`translate(${x.toFixed(1)},${y.toFixed(1)})`} className="kmap-pin">
+    <path d="M0,0 C-11,-19 -19,-29 -19,-40 A19,19 0 1 1 19,-40 C19,-29 11,-19 0,0Z" fill={color} />
+    <circle cx="0" cy="-40" r="7" fill="#fff" />
+  </g>
+)
+const MapStar = ({ x, y, label }) => (
+  <g className="kmap-star">
+    <circle cx={x} cy={y} r="13" />
+    <text x={x + (x > MAP_W * 0.7 ? -20 : 20)} y={y + 10} textAnchor={x > MAP_W * 0.7 ? 'end' : 'start'}>
+      {label}
+    </text>
+  </g>
+)
+export function MapPinPanel({ room, pending: p, me, ctl, code }) {
+  const live = p.stage === 'play'
+  const now = useNow(live, 100)
+  const ph = mapPhase(p, now)
+  const title = p.title || '지도 찍기'
+  const rounds = arr(p.rounds)
+  const [local, setLocal] = useState({}) // 문제별 내 핀 (서버 반영 전에도 바로)
+  const qRef = useRef(null)
+  useEffect(() => {
+    if (ph.phase === 'q' && qRef.current !== ph.q) {
+      qRef.current = ph.q
+      buzz(50)
+    }
+  }, [ph.phase, ph.q])
+  if (p.stage === 'ready')
+    return (
+      <ReadyModal
+        room={room}
+        p={p}
+        ctl={ctl}
+        code={code}
+        emoji="🗺️"
+        title={title}
+        headline="여기가 어디게? 지도에 콕!"
+        startLabel="🗺️ 시작"
+        extra={
+          <div className="pg-scale">
+            {[
+              ['10km', 941],
+              ['40km', 500],
+              ['100km', 138],
+            ].map(([k, v]) => (
+              <span key={k}>
+                {k} <b>{v}</b>
+              </span>
+            ))}
+          </div>
+        }
+        rules={
+          <>
+            장소 이름이 나오면 한국 지도에 손가락으로 <b>핀을 꽂아요</b> (다시 누르면 옮겨져요). 모두 {MP_ROUNDS}문제, 문제마다 {MP_ANSWER_MS / 1000}초, 점점 어려워져요. 실제 위치와 <b>가까울수록 점수가 커요</b> (딱 맞히면 1000점, 40km 차이 500점). 도시는 시청 기준. 끝나면 팀 점수가 낮은 팀이 다 같이 마셔요.
+          </>
+        }
+      />
+    )
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🗺️" title={title} />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🗺️" sub="여기가 어디게? 지도에 콕!" />
+  const color = TEAM_INFO[teamOf(room, me)]?.color || '#ff4d6d'
+  if (ph.phase === 'q' || ph.phase === 'gap') {
+    const q = ph.q
+    const place = PLACES[rounds[q]] || PLACES[0]
+    const asking = ph.phase === 'q'
+    const server = mapAnswerOf(p, q, me)
+    const lp = local[q]
+    const pin = asking ? lp || server : server || lp
+    const scored = !asking && pin ? mapAnswerOf({ ...p, answers: { ...(p.answers || {}), [`r${q}`]: { ...(p.answers?.[`r${q}`] || {}), [me]: { x: pin.x, y: pin.y } } } }, q, me) : null
+    const shownQ = asking ? q : q + 1
+    const myTotal = Array.from({ length: shownQ }, (_, k) => (k === q && scored ? scored.pts : mapAnswerOf(p, k, me)?.pts || 0)).reduce((a, b) => a + b, 0)
+    const myTeam = teamOf(room, me)
+    const mates = teamMembers(room, myTeam)
+    const done = mates.filter((pid) => answeredNow(p, q, pid, ph.at, now) || (pid === me && pin)).length
+    const [tx, ty] = toXY(place.lat, place.lon)
+    const onTap = asking
+      ? (x, y) => {
+          setLocal((m) => ({ ...m, [q]: { x, y } }))
+          mapAnswer(code, room, q, x, y)
+          buzz(20)
+        }
+      : null
+    return (
+      <div className="ai-overlay tg mappin">
+        <div className="tg-box">
+          <div className="tg-head">
+            <span>
+              🗺️ {q + 1}/{MP_ROUNDS}
+            </span>
+            <span className="tg-score">내 점수 {myTotal.toLocaleString('ko-KR')}</span>
+          </div>
+          <div className={`tg-timer ${asking ? '' : 'done'}`}>{asking && <i style={{ width: `${Math.max(0, (ph.left / MP_ANSWER_MS) * 100)}%` }} />}</div>
+          <div className="mp-q">📍 {place.name}</div>
+          <KoreaMap onTap={onTap}>
+            {!asking && pin && <line x1={pin.x} y1={pin.y} x2={tx} y2={ty} className="kmap-line" />}
+            {!asking && <MapStar x={tx} y={ty} label={place.name} />}
+            {pin && <MapPin x={pin.x} y={pin.y} color={color} />}
+          </KoreaMap>
+          <div className={`ct-fb ${asking ? '' : scored ? 'ok' : 'no'}`}>
+            {asking ? (pin ? '다시 누르면 옮겨져요' : '지도를 눌러 핀 꽂기!') : scored ? `${Math.round(scored.km)}km 차이 · +${scored.pts}점` : '안 찍었어요! 0점'}
+          </div>
+          <div className="ai-sub">{asking ? `${Math.ceil(ph.left / 1000)}초 · 우리 팀 ${done}/${mates.length}명 찍었어요` : q + 1 < MP_ROUNDS ? '다음 문제…' : '결과 공개!'}</div>
+        </div>
+      </div>
+    )
+  }
+  const r = mapResult(room, p)
+  const name = (pid) => room.players[pid]?.name || ''
+  return (
+    <TeamResult
+      room={room}
+      p={p}
+      ctl={ctl}
+      code={code}
+      emoji="🗺️"
+      title={title}
+      losers={r.losers}
+      tie={r.tie}
+      rows={pointRows(room, r)}
+      extra={
+        <div className="pg-best">
+          {rounds.map((idx, q) => {
+            const b = r.best[q]
+            return (
+              <div key={q} className="pg-best-row">
+                <span>📍 {PLACES[idx]?.name}</span>
+                <em>{b ? `🎯 ${name(b.pid)} ${Math.round(b.km)}km` : '아무도 안 찍음'}</em>
+              </div>
+            )
+          })}
+        </div>
+      }
+      note={r.byAvg ? '팀 인원이 달라서 1인 평균으로 비교해요' : r.mvp ? `🏅 MVP ${name(r.mvp.pid)} ${r.mvp.total.toLocaleString('ko-KR')}점` : ''}
     />
   )
 }
