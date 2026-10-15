@@ -33,6 +33,7 @@ import {
   bombExploded,
   BOMB_SETTLE_MS,
   practiceEnd,
+  practiceCancel,
   colorPhase,
   colorResult,
   colorAnswer,
@@ -148,6 +149,11 @@ function ReadyModal({ room, p, ctl, emoji, title, headline, rules, startLabel, c
           ))}
         </div>
         <div className="actions">
+          {PRACTICE && (
+            <button className="btn btn-ghost" onClick={() => practiceCancel(code, room)}>
+              ← 다른 게임
+            </button>
+          )}
           {ctl ? (
             <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'start')}>
               {startLabel}
@@ -1438,10 +1444,8 @@ export function TimeSumPanel({ room, pending: p, me, ctl, code }) {
     )
   if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🕰️" title={title} />
   if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🕰️" sub="말하지 마세요! 각자 한 번 꾹" />
-  if (ph.phase === 'play') {
-    const myTeam = teamOf(room, me)
-    const mates = teamMembers(room, myTeam)
-    const done = mates.filter((pid) => (p.holds?.[pid] && (p.holds[pid].at || 0) <= now) || (pid === me && finished)).length
+  if (p.stage === 'play' && ph.phase === 'play') {
+    // 팀원이 몇 명 뗐는지는 안 보여 줌 (언제 뗐는지 알 수 있어서)
     const down = (e) => {
       if (finished || timeUp || t0.current != null) return
       e.preventDefault()
@@ -1475,9 +1479,7 @@ export function TimeSumPanel({ room, pending: p, me, ctl, code }) {
             <em>{finished ? '기록 끝!' : holding ? '누르는 중… 떼면 끝' : '꾹 누르기'}</em>
           </button>
           <div className="ct-fb">{finished ? '몇 초였는지는 결과에서 공개!' : timeUp ? '시간 끝! 0초' : holding ? '시간은 비밀이에요' : '한 번만 누를 수 있어요'}</div>
-          <div className="ai-sub">
-            {!finished && ph.left < 6000 ? '⏳ 곧 끝나요! · ' : ''}우리 팀 {done}/{mates.length}명 끝
-          </div>
+          <div className="ai-sub">{!finished && ph.left < 6000 ? '⏳ 곧 끝나요! 안 누르면 0초' : '누가 몇 초 눌렀는지는 결과에서 공개'}</div>
         </div>
       </div>
     )

@@ -113,6 +113,7 @@ const KIND_LABEL = {
   priceGuess: '얼마게요',
   timeSum: '팀 시간 합치기',
   mapPin: '지도 찍기',
+  allOptions: '모든 옵션 On',
   sojuAdd: '소주 +1 적립',
   sojuBank: '소주 보관소',
   pickTeam: '너희 팀 마셔 (지목)',
@@ -127,6 +128,7 @@ const KIND_DESC = {
   toast: '상대 팀에서 한 명을 골라 둘이 같이 짠! 둘만 마셔요.',
   nhaeng: '랜덤 키워드가 나오면 글자 수만큼 n행시를 짓고 다 같이 마셔요. 키워드는 바꿀 수 있어요.',
   back: '말이 4칸 뒤로 가요 (업힌 말도 같이). 도착한 칸 미션도 하고, 상대 말이 있으면 잡아요. 팀 놉카드로 거부할 수 있어요.',
+  allOptions: '판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)이 전부 상대 팀에 3분씩 걸려요.',
 }
 // 상대 팀 사람들 (같이 짠 칸)
 const rivalsOf = (room, pid) => Object.keys(room.players || {}).filter((x) => room.players[x]?.name && teamOf(room, x) !== teamOf(room, pid))
@@ -2687,7 +2689,20 @@ export default function App() {
                 <b style={{ color: room.players[pending.playerId]?.color }}>{room.players[pending.playerId]?.name}</b>
                 {pending.kind === 'nop' && ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 놉카드 +1! (지금 ${pending.teamNop ?? teamNop(room, teamOf(room, pending.playerId))}장 · 팀 누구나 쓸 수 있어요)`}
                 {pending.kind === 'normal' && (iAct ? ' — 수행하고 완료를 눌러주세요.' : ' — 수행 중이에요.')}
-                {pending.kind === 'normal' && pendingCell.drink && (pendingCell.drink === 'all' ? ' (전원 다 같이 마셔요)' : ` (연대책임! ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 다 같이 마셔요)`)}
+                {pending.kind === 'normal' &&
+                  pendingCell.drink &&
+                  (pendingCell.drink === 'all'
+                    ? ' (전원 다 같이 마셔요)'
+                    : pendingCell.drink === 'only'
+                      ? ` (이름에 '${pendingCell.who}'이 들어간 사람만 마셔요)`
+                      : pendingCell.drink === 'except'
+                        ? ` (이름에 '${pendingCell.who}'이 들어간 사람 빼고 전원 마셔요)`
+                        : ` (연대책임! ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 다 같이 마셔요)`)}
+                {pending.kind === 'allOptions' &&
+                  ` — 상대 팀(${teamLabel(optionTargets(room, pending.playerId))})에 판에 있는 옵션(${Object.values(cells)
+                    .filter((c) => c.type === 'option')
+                    .map((c) => oneLine(c.text))
+                    .join(' · ')})이 전부 ${pendingCell.minutes || 3}분씩 걸려요. 이미 걸려 있으면 시간이 더해져요.`}
                 {pending.kind === 'sojuAdd' && ` — 소주 보관소에 1잔 적립! 지금 ${pending.bank ?? room.sojuBank ?? 0}잔 모였어요. 가운데 40번 보관소에 도착한 팀이 의리주로 다 마셔요 🏺`}
                 {pending.kind === 'again' && ' — 보너스! 이번 차례에 윷을 한 번 더 던져요 🎲'}
                 {pending.kind === 'home' && ' — 빽도로 출발 칸에 들어왔어요. 다음에 이 말을 움직이면 바로 골인!'}
@@ -2834,6 +2849,8 @@ export default function App() {
                           ? '수행 완료'
                           : pending.kind === 'option'
                             ? `⏱ 상대 팀에 ${pendingCell.minutes || 5}분 걸기`
+                            : pending.kind === 'allOptions'
+                              ? `🚨 상대 팀에 ${pendingCell.minutes || 3}분씩 걸기`
                             : pending.kind === 'again'
                               ? '🎲 한 번 더!'
                               : pending.kind === 'pickTeam' && pending.stage === 'confirm' && TEAM_INFO[pending.target]

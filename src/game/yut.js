@@ -117,6 +117,11 @@ const CIRCLE = { emoji: '⭕', text: '완벽한 원\n그리기', type: 'circle' 
 const PRICE = { emoji: '💰', text: '편의점\n얼마게요', type: 'priceGuess' }
 const TIMESUM = { emoji: '🕰️', text: '팀 시간\n합치기', type: 'timeSum' }
 const MAPPIN = { emoji: '🗺️', text: '지도\n찍기', type: 'mapPin' }
+// 이름 칸: 이름에 '상혁'이 들어간 사람만 / 빼고 (연대책임 없음)
+const ONLY_SH = { emoji: '🫵', text: '박상혁만\n마셔!', drink: 'only', who: '상혁' }
+const EXCEPT_SH = { emoji: '🙅', text: '박상혁 빼고\n다 마셔!', drink: 'except', who: '상혁' }
+// 모든 옵션 On: 판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)을 전부 상대 팀에 3분씩
+const ALLOPT = { emoji: '🚨', text: '모든 옵션\nOn', type: 'allOptions', minutes: 3 }
 // 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
 const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
 const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
@@ -139,10 +144,10 @@ export const SPARE_CELLS = {
 export const DEFAULT_YUT_CELLS = {
   o0: { emoji: '🏁', text: '출발·골인', type: 'home', locked: true },
   // 오른쪽 변 (출발 → 위로) 1~8
-  o1: HUNMIN, o2: SOJU_ADD, o3: ALL, o4: TBOMB, o5: TREACT, o6: CHOOSE, o7: STEAL, o8: NOENG,
+  o1: HUNMIN, o2: SOJU_ADD, o3: ALL, o4: TBOMB, o5: TREACT, o6: CHOOSE, o7: PRICE, o8: CIRCLE,
   o9: NOP, // 9 오른쪽 위 모서리
   // 위 변 (→ 왼쪽) 10~17
-  o10: RELEASE, o11: BUNNY, o12: SOJU_ADD, o13: TEAM, o14: THEIRS, o15: GAMBLE, o16: TWOTOUCH, o17: CHOOSE,
+  o10: MAPPIN, o11: BUNNY, o12: SOJU_ADD, o13: TEAM, o14: THEIRS, o15: GAMBLE, o16: TIMESUM, o17: CHOOSE,
   o18: NOP, // 18 왼쪽 위 모서리
   // 왼쪽 변 (→ 아래로) 19~26
   o19: SOJU_ADD, o20: TAPWAR, o21: NHAENG, o22: RIVAL, o23: TRAP, o24: NOWORD, o25: AI, o26: SHUFFLE,
@@ -150,12 +155,12 @@ export const DEFAULT_YUT_CELLS = {
   // 아래 변 (→ 골인) 28~35
   o28: CHOOSE, o29: STEAL, o30: RELEASE, o31: SYNC, o32: SOJU_ADD, o33: AGAIN, o34: RIVAL, o35: BACK4,
   // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래) 36~39 · 41~44
-  a1: SOJU_ADD, a2: SOJU_ADD, a3: CIRCLE, a4: SOJU_ADD, // 38 완벽한 원 (대각선 새 칸 1호)
+  a1: STEAL, a2: NOENG, a3: RELEASE, a4: CHOOSE,
   C: SOJU_BANK, // 40 가운데: 소주 보관소 (고정)
-  a5: SOJU_ADD, a6: SOJU_ADD, a7: MAPPIN, a8: SOJU_ADD, // 43 지도 찍기
+  a5: ONLY_SH, a6: SOJU_ADD, a7: SOJU_ADD, a8: SOJU_ADD, // 42~44 아직 빈칸 (소주 +1)
   // 대각선 B (왼쪽 위 → 가운데 → 골인) 45~52
-  b1: SOJU_ADD, b2: SOJU_ADD, b3: TIMESUM, b4: SOJU_ADD, // 47 팀 시간 합치기
-  b5: SOJU_ADD, b6: PRICE, b7: SOJU_ADD, b8: SOJU_ADD, // 50 얼마게요
+  b1: SOJU_ADD, b2: SOJU_ADD, b3: EXCEPT_SH, b4: TWOTOUCH, // 45·46 아직 빈칸 (소주 +1)
+  b5: CHOOSE, b6: SOJU_ADD, b7: SOJU_ADD, b8: ALLOPT, // 50·51 아직 빈칸 (소주 +1)
 }
 
 // ---------- 윷 던지기 ----------

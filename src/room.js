@@ -971,7 +971,7 @@ export async function resolvePending(code, room, action, target) {
   const cell = roomCells(room)[p.pos] || {}
 
   if (action === 'nop-use') {
-    if (p.kind === 'option' || p.kind === 'release') return // 옵션은 놉카드로 거부 불가
+    if (p.kind === 'option' || p.kind === 'release' || p.kind === 'allOptions') return // 옵션은 놉카드로 거부 불가
     if (p.kind === 'liar' && p.stage !== 'category') return // 라이어 게임은 시작 전에만 거부 가능
     if (p.kind === 'balance' && p.stage !== 'vote') return
     if (p.kind === 'vote' || p.kind === 'choose' || p.kind === 'shuffle' || p.kind === 'gamble' || p.kind === 'caught' || p.kind === 'win' || p.kind === 'again') return
@@ -990,6 +990,22 @@ export async function resolvePending(code, room, action, target) {
   switch (p.kind) {
     case 'option': {
       await roomUpdate(code, optionStartUpdates(room, cell, p.pos, me, id, { ...nextTurnUpdates(room) }))
+      return
+    }
+    case 'allOptions': {
+      // 판에 있는 옵션 칸 전부를 상대 팀에 cell.minutes(3분)씩 (이미 걸려 있으면 시간 추가)
+      const cells = roomCells(room)
+      const opts = Object.entries(cells).filter(([, c]) => c.type === 'option')
+      const upd = { ...nextTurnUpdates(room) }
+      opts.forEach(([pos, c]) => optionStartUpdates(room, { ...c, minutes: cell.minutes || 3 }, pos, me, id, upd))
+      const targets = optionTargets(room, id)
+      upd.event = {
+        id: newId(),
+        text: targets.length && opts.length
+          ? `🚨 ${me.name} → ${teamLabel(targets)}에 모든 옵션 ${cell.minutes || 3}분! (${opts.map(([, c]) => optionLabel(c)).join(' · ')})`
+          : '🚨 모든 옵션 — 걸 상대 팀이나 옵션이 없어요',
+      }
+      await roomUpdate(code, upd)
       return
     }
     case 'steal': {
@@ -1276,8 +1292,30 @@ export async function resolvePending(code, room, action, target) {
     case 'normal': {
       // drink: self·team 이면 연대책임으로 우리 팀 다 같이, all 이면 전원 잔 수 +1
       const all = Object.keys(room.players || {}).filter((x) => room.players[x]?.name)
-      const who = cell.drink === 'all' ? all : cell.drink === 'team' || cell.drink === 'self' ? withTeams(room, [id]) : []
-      const tail = cell.drink === 'all' ? ' · 전원 마셔 🍻' : who.length ? ` · ${teamLabel([teamOf(room, id)])} 다 같이 🍶` : ''
+      // only·except: 이름에 cell.who 가 들어간 사람만 / 빼고 (연대책임 없음)
+      const named = cell.who ? all.filter((x) => String(room.players[x].name).includes(cell.who)) : []
+      const who =
+        cell.drink === 'all'
+          ? all
+          : cell.drink === 'only'
+            ? named
+            : cell.drink === 'except'
+              ? all.filter((x) => !named.includes(x))
+              : cell.drink === 'team' || cell.drink === 'self'
+                ? withTeams(room, [id])
+                : []
+      const tail =
+        cell.drink === 'all'
+          ? ' · 전원 마셔 🍻'
+          : cell.drink === 'only'
+            ? named.length
+              ? ` · ${named.map((x) => room.players[x].name).join(', ')} 마셔 🍶`
+              : ` · ${cell.who}이 없네요 😅`
+            : cell.drink === 'except'
+              ? ` · ${named.length ? named.map((x) => room.players[x].name).join(', ') : cell.who} 빼고 다 마셔 🍻`
+              : who.length
+                ? ` · ${teamLabel([teamOf(room, id)])} 다 같이 🍶`
+                : ''
       await roomUpdate(code, addDrinks(room, {
         ...nextTurnUpdates(room),
         event: { id: newId(), text: `${me.name} "${String(cell.text).replace(/\n/g, ' ')}" 수행 ✅${tail}` },
@@ -1995,6 +2033,11 @@ export async function practiceStart(code, room, kind) {
   await roomUpdate(code, { pending: p, practiceKind: kind })
 }
 // 연습 끝 (폭탄처럼 마실 팀을 고를 필요가 없을 때): 결과만 남기고 정리
+// 연습: 안내 화면에서 다른 게임 고르기 (시작 전 취소)
+export async function practiceCancel(code, room) {
+  if (!PRACTICE || !room?.pending || room.pending.stage !== 'ready') return
+  await roomUpdate(code, { pending: null })
+}
 export async function practiceEnd(code, text) {
   if (!PRACTICE) return
   await roomUpdate(code, { pending: null, event: { id: newId(), text: text || '연습 끝!' } })
