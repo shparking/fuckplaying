@@ -2,7 +2,7 @@
 // yutRooms/{CODE} = {
 //   hostId, hostName, pw?, createdAt, lastActive, status: 'lobby' | 'playing',
 //   teamCount: 2~4, players/{pid}: { name, color, team, drinks, online },
-//   teamNop/{team}: 놉카드 수 (팀 단위로 모으고 씀), sojuBank: 소주 보관소에 모인 잔 수,
+//   teamNop/{team}: 놉카드 수 (팀 단위로 모으고 씀), teamShield/{team}: 방패 수 (잡힐 때 쓸지 고름), sojuBank: 소주 보관소에 모인 잔 수,
 //   order: [pid...] (팀 안에서 던지는 순서), teamTurn, memberIdx/{team}, turnNo, throwNo,
 //   pieceCount: 2~4 (팀당 말 수, 방장이 대기실에서 고름), pieces/{team}: [{ n: 'home'|'goal'|노드, p?: 직전 노드 } x pieceCount],
 //   yut: { stage: 'throw'|'move'|'done', results: [값...], extra: 보너스 던지기 수 },
@@ -13,6 +13,7 @@ import { dbGet, dbSet, dbUpdate, dbRemove, dbOn, dbOnConnected, dbPresence, now,
 import './firebase'
 import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf, backPath, prevNode } from './game/yut'
 import { pickNhaengWord } from './game/words'
+import { pickSubwayLine } from './game/subway'
 import { fakeCircle } from './game/circle'
 import { PRICE_ITEMS, pricePoints, pickPriceRounds } from './game/prices'
 import { PLACES, mapPoints, pickMapRounds } from './game/places'
@@ -246,6 +247,11 @@ export const nopKey = (t) => `t${t}`
 export function teamNop(room, t) {
   return Math.max(0, Number(room?.teamNop?.[nopKey(t)]) || 0)
 }
+// 팀 방패 (방패 칸에서 모음). 우리 말이 잡힐 때 쓸지 고름 → 쓰면 안 잡힘. 키는 놉카드와 같이 t0·t1…
+export function teamShield(room, t) {
+  return Math.max(0, Number(room?.teamShield?.[nopKey(t)]) || 0)
+}
+export const SHIELD_MS = 15000 // 방패 쓸지 고르는 시간 (지나면 자동으로 씀)
 // 연대책임: 마셔야 하는 사람이 있으면 그 사람 팀 전원이 같이 마심
 export function withTeams(room, ids) {
   const teams = new Set((ids || []).filter((pid) => room.players?.[pid]?.name).map((pid) => teamOf(room, pid)))
@@ -413,11 +419,21 @@ export async function startGame(code, room) {
     options: null,
     sojuBank: 0,
     teamNop: null,
+    teamShield: null,
     event: { id: newId(), text: `${teamText} — ${TEAM_INFO[first].name} 먼저!` },
   }
   // 데모: &nop=2 처럼 빨강팀 놉카드 수 지정 (테스트용)
   const demoNop = DEMO ? parseInt(new URLSearchParams(window.location.search).get('nop'), 10) : NaN
   if (demoNop >= 0) upd.teamNop = { t0: demoNop }
+  // 데모: &shield=1:2 처럼 팀별 방패 수 지정 (테스트용)
+  const demoShield = DEMO ? new URLSearchParams(window.location.search).get('shield') : null
+  if (demoShield) {
+    upd.teamShield = {}
+    demoShield.split(',').filter(Boolean).forEach((x) => {
+      const [tt, k] = x.split(':')
+      upd.teamShield[nopKey(+tt)] = Math.max(0, +k || 0)
+    })
+  }
   Object.keys(room.players || {}).forEach((pid) => (upd[`players/${pid}/drinks`] = 0))
   await roomUpdate(code, upd)
 }
@@ -455,6 +471,7 @@ function makePending(room, playerId, pos, kind, title) {
   }
   if (kind === 'liar') p.stage = 'category' // category → reveal → vote → result
   if (kind === 'hunmin') p.chosung = pickChosung()
+  if (kind === 'subway') p.line = pickSubwayLine(room.lastLine) // 지하철 게임: 1~9호선 (직전 호선 빼고)
   if (kind === 'vote') p.stage = 'vote' // vote → result
   if (kind === 'shuffle') {
     // 의리주: 방에 있는 사람들 순서를 무작위로
@@ -668,17 +685,13 @@ export async function moveYut(code, room, ri, from, route) {
   const moving = from === 'home' ? [pieces[t].findIndex((pc) => pc.n === 'home')] : pieces[t].map((pc, i) => (pc.n === from ? i : -1)).filter((i) => i >= 0)
   const stacked = !opt.finished && pieces[t].some((pc) => pc.n === opt.dest)
   moving.forEach((i) => (next[t][i] = opt.finished ? { n: 'goal' } : { n: opt.dest, p: opt.prev }))
-  // 잡기: 도착한 칸에 다른 팀 말이 있으면 전부 집으로
+  // 잡기: 도착한 칸에 다른 팀 말이 있으면 전부 집으로. 그 팀에 방패가 있으면 먼저 쓸지 물어봄 (shieldAsk)
+  const victims = opt.finished ? [] : victimsAt(next, n, t, opt.dest)
+  const asking = victims.filter((v) => teamShield(room, v.team) > 0)
   let caught = null
-  if (!opt.finished) {
-    for (let o = 0; o < n; o++) {
-      if (o === t) continue
-      const idx = next[o].map((pc, i) => (pc.n === opt.dest ? i : -1)).filter((i) => i >= 0)
-      if (idx.length) {
-        idx.forEach((i) => (next[o][i] = { n: 'home' }))
-        caught = { team: o, count: idx.length, node: opt.dest }
-      }
-    }
+  if (victims.length && !asking.length) {
+    sendHome(next, victims.map((v) => v.team), opt.dest)
+    caught = { team: victims[0].team, count: victims[0].count, node: opt.dest }
   }
   const rest = results.filter((_, k) => k !== ri)
   const destName = opt.finished ? '골인 🏁' : nodeName(opt.dest)
@@ -689,7 +702,7 @@ export async function moveYut(code, room, ri, from, route) {
   }
   upd[`log/${newId()}`] = {
     t: Date.now(),
-    text: `${info.emoji} ${me.name} ${yutName(v)}${moving.length > 1 ? ` (말 ${moving.length}개)` : ''}${opt.route ? ` · ${routeLabel(opt)}` : ''} → ${destName}${stacked ? ' · 업기' : ''}${caught ? ` · ${TEAM_INFO[caught.team].name} ${caught.count}개 잡기!` : ''}`,
+    text: `${info.emoji} ${me.name} ${yutName(v)}${moving.length > 1 ? ` (말 ${moving.length}개)` : ''}${opt.route ? ` · ${routeLabel(opt)}` : ''} → ${destName}${stacked ? ' · 업기' : ''}${caught ? ` · ${victimText(victims)} 잡기!` : ''}${asking.length ? ` · ${victimText(victims)} 잡기 전 🛡️ 방패?` : ''}`,
   }
   const after = { ...room, pieces: next, yut: { ...y, results: rest } }
   if (teamDone(next, t)) {
@@ -699,15 +712,103 @@ export async function moveYut(code, room, ri, from, route) {
     upd['yut/stage'] = 'done'
     upd.pending = { kind: 'win', playerId: id, team: t, pos: 'o0', startedAt: Date.now() }
     upd.event = { id: newId(), text: `🏆 ${info.name} 승리! 나머지 팀 다 마셔! 🍻` }
+  } else if (asking.length) {
+    upd.pending = shieldAskPending(id, opt.dest, victims, asking, stacked, 'move')
+    upd.event = { id: newId(), text: `🛡️ ${me.name} → ${victimText(victims)} 잡기 직전! ${teamLabel(asking.map((x) => x.team))} 방패를 쓸까요?` }
   } else if (caught) {
-    upd['yut/extra'] = (y.extra || 0) + 1
-    upd.pending = { kind: 'caught', playerId: id, pos: opt.dest, victim: caught.team, count: caught.count, startedAt: Date.now() }
-    upd.event = { id: newId(), text: `🎯 ${me.name} 잡았다! ${TEAM_INFO[caught.team].name} 말 ${caught.count}개 → 집으로` }
+    caughtUpdates(room, upd, id, opt.dest, victims)
   } else if (opt.finished) {
     upd.event = { id: newId(), text: `🏁 ${info.name} 말 ${moving.length}개 골인!` }
     Object.assign(upd, nextTurnUpdates(after))
   } else arriveUpdates(room, after, upd, id, t, opt.dest, stacked)
   await roomUpdate(code, upd)
+}
+
+// ---------- 잡기 · 방패 ----------
+// dest 칸에 있는 다른 팀 말 (팀별 개수). 방패로 막은 뒤에는 한 칸에 여러 팀 말이 같이 있을 수 있음
+function victimsAt(pieces, n, t, dest) {
+  const out = []
+  for (let o = 0; o < n; o++) {
+    if (o === t) continue
+    const count = (pieces[o] || []).filter((pc) => pc.n === dest).length
+    if (count) out.push({ team: o, count })
+  }
+  return out
+}
+function sendHome(pieces, teams, dest) {
+  teams.forEach((o) => (pieces[o] || []).forEach((pc, i) => pc.n === dest && (pieces[o][i] = { n: 'home' })))
+}
+const victimText = (vs) => vs.map((v) => `${TEAM_INFO[v.team]?.name} 말 ${v.count}개`).join(' · ')
+// 잡힐 말의 팀에 방패가 있으면: 말은 일단 같은 칸에 두고, 그 팀이 방패를 쓸지 고름 (asks: t1 → wait | use | skip)
+function shieldAskPending(id, pos, victims, asking, stacked, via) {
+  const at = serverNow()
+  return {
+    kind: 'shieldAsk',
+    playerId: id,
+    pos,
+    victims,
+    asks: Object.fromEntries(asking.map((v) => [nopKey(v.team), 'wait'])),
+    stacked: !!stacked,
+    via, // move | back (4칸 뒤로)
+    startedAt: at,
+    deadline: at + SHIELD_MS,
+  }
+}
+// 잡기 확정: 잡은 사람은 한 번 더, 잡힌 팀 전원이 잡힌 말 수만큼 마심 (확인할 때 — resolvePending 'caught')
+function caughtUpdates(room, upd, id, pos, victims, back = false) {
+  const me = room.players[id] || {}
+  upd['yut/extra'] = (room.yut?.extra || 0) + 1
+  upd.pending = { kind: 'caught', playerId: id, pos, victim: victims[0].team, count: victims[0].count, ...(victims.length > 1 ? { victims } : {}), startedAt: Date.now() }
+  upd.event = { id: newId(), text: `🎯 ${me.name} ${back ? '뒤로 가서 ' : ''}잡았다! ${victimText(victims)} → 집으로` }
+  return upd
+}
+// 방패 쓸지 고르기: 잡힐 팀 사람 누구나 (혼자 모드는 한 화면에서). use = true 쓰기 / false 안 쓰고 잡히기
+// 시간(SHIELD_MS) 안에 안 고르면 자동으로 방패를 씀 (auto: 도착한 사람·방장 화면이 부르고, 그 둘이 없으면 다른 화면이 조금 뒤에)
+export async function shieldDecide(code, room, team, use, auto = false) {
+  const p = room.pending
+  if (!p || p.kind !== 'shieldAsk') return
+  const asks = { ...(p.asks || {}) }
+  if (auto) {
+    if (serverNow() < (p.deadline || 0)) return
+    // 도착한 사람·방장 화면이 먼저, 둘 다 자리에 없으면 2.5초 뒤 다른 사람 화면이
+    if (!SOLO && myId() !== p.playerId && myId() !== room.hostId && serverNow() < (p.deadline || 0) + 2500) return
+    Object.keys(asks).forEach((k) => asks[k] === 'wait' && (asks[k] = 'use'))
+  } else {
+    const k = nopKey(Number(team))
+    if (asks[k] !== 'wait') return
+    if (!SOLO && (!room.players?.[myId()]?.name || teamOf(room, myId()) !== Number(team))) return
+    asks[k] = use ? 'use' : 'skip'
+  }
+  if (Object.values(asks).some((v) => v === 'wait')) {
+    await roomUpdate(code, { 'pending/asks': asks }) // 아직 고르는 팀이 있음
+    return
+  }
+  await roomUpdate(code, shieldFinalUpdates(room, p, asks, auto))
+}
+// 다 골랐으면: 방패 쓴 팀은 안 잡힘(같은 칸에 같이 있음), 안 쓴 팀은 잡힘. 아무도 안 잡히면 잡은 사람도 한 번 더 없이 도착한 칸 미션
+function shieldFinalUpdates(room, p, asks, auto) {
+  const id = p.playerId
+  const t = teamOf(room, id)
+  const next = JSON.parse(JSON.stringify(roomPieces(room)))
+  const used = Object.keys(asks).filter((k) => asks[k] === 'use').map((k) => Number(k.slice(1)))
+  const skipped = Object.keys(asks).filter((k) => asks[k] === 'skip').map((k) => Number(k.slice(1)))
+  const victims = victimsAt(next, teamCount(room), t, p.pos)
+  const caughtV = victims.filter((v) => !used.includes(v.team))
+  const upd = {}
+  used.forEach((o) => (upd[`teamShield/${nopKey(o)}`] = Math.max(0, teamShield(room, o) - 1)))
+  const usedText = used.length ? `🛡️ ${teamLabel(used)} 방패${auto ? '(자동)' : ''}! 안 잡혀요` : ''
+  const skipText = skipped.length ? `${teamLabel(skipped)} 방패 안 씀` : ''
+  if (skipText) upd[`log/${newId()}`] = { t: Date.now(), text: `🛡️ ${skipText}` } // 쓴 쪽은 이벤트에 나옴
+  if (caughtV.length) {
+    sendHome(next, caughtV.map((v) => v.team), p.pos)
+    upd.pieces = next
+    caughtUpdates(room, upd, id, p.pos, caughtV, p.via === 'back')
+    if (usedText) upd.event.text = `${usedText} · ${upd.event.text}`
+  } else {
+    arriveUpdates(room, { ...room, pieces: next }, upd, id, t, p.pos, p.stacked)
+    upd.event = { id: newId(), text: upd.event ? `${usedText} · ${upd.event.text}` : usedText }
+  }
+  return upd
 }
 
 // 말이 칸에 도착했을 때: 그 칸의 미션(대기 상태) + 놉카드·소주 적립·옵션 해제 같은 바로 적용되는 것
@@ -723,6 +824,13 @@ function arriveUpdates(room, after, upd, id, t, dest, stacked) {
     upd[`teamNop/${nopKey(t)}`] = n
     upd.pending.teamNop = n
     upd.event = { id: newId(), text: `🎫 ${info.name} 놉카드 +1 (지금 ${n}장)` }
+  }
+  if (ctype === 'shield') {
+    // 방패도 팀 단위로 모음
+    const n = teamShield(room, t) + 1
+    upd[`teamShield/${nopKey(t)}`] = n
+    upd.pending.teamShield = n
+    upd.event = { id: newId(), text: `🛡️ ${info.name} 방패 +1 (지금 ${n}개)` }
   }
   if (ctype === 'sojuAdd') {
     // 소주 보관소에 한 잔 적립 (가운데 보관소에 도착한 팀이 의리주로 마심)
@@ -754,29 +862,27 @@ async function backMove(code, room, p) {
   const next = JSON.parse(JSON.stringify(pieces))
   const stacked = pieces[t].some((pc, i) => pc.n === dest && !idx.includes(i))
   idx.forEach((i) => (next[t][i] = { n: dest, p: prevNode(dest) || 'home' }))
-  // 잡기: 뒤로 간 칸에 다른 팀 말이 있으면 전부 집으로 (한 번 더 던짐)
+  // 잡기: 뒤로 간 칸에 다른 팀 말이 있으면 전부 집으로 (한 번 더 던짐). 그 팀에 방패가 있으면 먼저 쓸지 물어봄
+  const victims = victimsAt(next, n, t, dest)
+  const asking = victims.filter((v) => teamShield(room, v.team) > 0)
   let caught = null
-  for (let o = 0; o < n; o++) {
-    if (o === t) continue
-    const ci = next[o].map((pc, i) => (pc.n === dest ? i : -1)).filter((i) => i >= 0)
-    if (ci.length) {
-      ci.forEach((i) => (next[o][i] = { n: 'home' }))
-      caught = { team: o, count: ci.length, node: dest }
-    }
+  if (victims.length && !asking.length) {
+    sendHome(next, victims.map((v) => v.team), dest)
+    caught = { team: victims[0].team, count: victims[0].count, node: dest }
   }
-  const y = room.yut || {}
   const upd = {
     pieces: next,
     lastMove: { id: newId(), team: t, from: p.pos, path, count: idx.length, dest, caught },
   }
   upd[`log/${newId()}`] = {
     t: Date.now(),
-    text: `${info.emoji} ${me.name} ⏪ ${path.length}칸 뒤로${idx.length > 1 ? ` (말 ${idx.length}개)` : ''} → ${nodeName(dest)}${stacked ? ' · 업기' : ''}${caught ? ` · ${TEAM_INFO[caught.team].name} ${caught.count}개 잡기!` : ''}`,
+    text: `${info.emoji} ${me.name} ⏪ ${path.length}칸 뒤로${idx.length > 1 ? ` (말 ${idx.length}개)` : ''} → ${nodeName(dest)}${stacked ? ' · 업기' : ''}${caught ? ` · ${victimText(victims)} 잡기!` : ''}${asking.length ? ` · ${victimText(victims)} 잡기 전 🛡️ 방패?` : ''}`,
   }
-  if (caught) {
-    upd['yut/extra'] = (y.extra || 0) + 1
-    upd.pending = { kind: 'caught', playerId: id, pos: dest, victim: caught.team, count: caught.count, startedAt: Date.now() }
-    upd.event = { id: newId(), text: `🎯 ${me.name} 뒤로 가서 잡았다! ${TEAM_INFO[caught.team].name} 말 ${caught.count}개 → 집으로` }
+  if (asking.length) {
+    upd.pending = shieldAskPending(id, dest, victims, asking, stacked, 'back')
+    upd.event = { id: newId(), text: `🛡️ ${me.name} 뒤로 가서 ${victimText(victims)} 잡기 직전! ${teamLabel(asking.map((x) => x.team))} 방패를 쓸까요?` }
+  } else if (caught) {
+    caughtUpdates(room, upd, id, dest, victims, true)
   } else {
     upd.event = { id: newId(), text: `⏪ ${me.name} ${path.length}칸 뒤로 → ${nodeName(dest)}` }
     arriveUpdates(room, { ...room, pieces: next }, upd, id, t, dest, stacked)
@@ -974,7 +1080,7 @@ export async function resolvePending(code, room, action, target) {
     if (p.kind === 'option' || p.kind === 'release' || p.kind === 'allOptions') return // 옵션은 놉카드로 거부 불가
     if (p.kind === 'liar' && p.stage !== 'category') return // 라이어 게임은 시작 전에만 거부 가능
     if (p.kind === 'balance' && p.stage !== 'vote') return
-    if (p.kind === 'vote' || p.kind === 'choose' || p.kind === 'shuffle' || p.kind === 'gamble' || p.kind === 'caught' || p.kind === 'win' || p.kind === 'again') return
+    if (p.kind === 'vote' || p.kind === 'choose' || p.kind === 'shuffle' || p.kind === 'gamble' || p.kind === 'caught' || p.kind === 'shieldAsk' || p.kind === 'win' || p.kind === 'again') return
     if (TEAM_GAMES.has(p.kind)) return // 팀 대결은 모두 함께 하는 게임이라 한 사람이 거부할 수 없음
     if ((p.kind === 'bomb' || p.kind === 'reaction') && p.stage !== 'ready') return
     const mt = teamOf(room, id)
@@ -1035,17 +1141,20 @@ export async function resolvePending(code, room, action, target) {
       return
     }
     case 'caught': {
-      // 잡기: 잡힌 팀 전원이 잡힌 말 수만큼 마심 (보너스 던지기는 이미 +1)
-      const victims = teamMembers(room, p.victim)
-      await roomUpdate(code, addDrinks(room, {
-        ...nextTurnUpdates(room),
-        event: { id: newId(), text: `🎯 ${TEAM_INFO[p.victim]?.name} ${victims.map((x) => room.players[x]?.name).join(', ')} ${p.count > 1 ? `${p.count}잔씩 ` : ''}마셔! 🍶` },
-      }, victims, p.count || 1))
+      // 잡기: 잡힌 팀 전원이 잡힌 말 수만큼 마심 (보너스 던지기는 이미 +1). 여러 팀이 한 번에 잡힐 수도 있음 (방패로 막은 칸)
+      const vs = arr(p.victims).length ? arr(p.victims) : [{ team: p.victim, count: p.count || 1 }]
+      const upd = { ...nextTurnUpdates(room) }
+      vs.forEach((v) => addDrinks(room, upd, teamMembers(room, v.team), v.count || 1))
+      upd.event = {
+        id: newId(),
+        text: `🎯 ${vs.map((v) => `${TEAM_INFO[v.team]?.name} ${teamMembers(room, v.team).map((x) => room.players[x]?.name).join(', ')} ${v.count > 1 ? `${v.count}잔씩 ` : ''}마셔!`).join(' · ')} 🍶`,
+      }
+      await roomUpdate(code, upd)
       return
     }
     case 'choose': {
       // 게임 선택권: 'choose' + target(balance|liar|hunmin) → 그 게임으로 전환
-      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
+      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', balance: '밸런스 게임', liar: '라이어 게임', hunmin: '훈민정음 게임', subway: '지하철 게임', bomb: '폭탄 돌리기', reaction: '반응속도 게임' }
       if (action === 'choose' && titles[target]) {
         const np = makePending(room, id, p.pos, target, titles[target])
         await roomUpdate(code, withTopicUpdates(room, np, { pending: np, event: { id: newId(), text: `${me.name} 🎁 ${titles[target]} 선택!` } }))
@@ -1139,6 +1248,11 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'hunmin': {
       await roomUpdate(code, { ...nextTurnUpdates(room), event: { id: newId(), text: `${me.name} 훈민정음 (${p.chosung}) 수행 ✅` } })
+      return
+    }
+    case 'subway': {
+      // 지하철 게임: 역 이름은 오프라인으로 (훈민정음처럼 수행 완료만)
+      await roomUpdate(code, { ...nextTurnUpdates(room), lastLine: p.line || null, event: { id: newId(), text: `🚇 ${me.name} 지하철 게임 (${p.line}호선) 수행 ✅` } })
       return
     }
     case 'liar': {
@@ -1399,6 +1513,7 @@ export async function restartGame(code, room) {
     log: null,
     mission: null,
     teamNop: null,
+    teamShield: null,
     sojuBank: null,
     summary: { id: newId(), at: Date.now(), startedAt: room.startedAt || null, rows, ...(room.winner != null ? { winner: room.winner } : {}) },
   }

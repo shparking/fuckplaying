@@ -63,6 +63,8 @@ import {
   missionAck,
   subscribeRoomList,
   teamNop,
+  teamShield,
+  shieldDecide,
   teamsOf,
   teamLabel,
   optionTargets,
@@ -76,6 +78,7 @@ import { BALANCE_TOPICS } from './game/balance'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
 import { LIAR_CATEGORIES, liarCategory } from './game/liar'
+import { subwayLine } from './game/subway'
 import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID } from './game/yut'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -94,6 +97,9 @@ const KIND_LABEL = {
   pick: '너! 마셔! (지목)',
   liar: '라이어 게임',
   hunmin: '훈민정음 게임',
+  subway: '지하철 게임',
+  shield: '방패 +1',
+  shieldAsk: '방패',
   vote: '다수결 지목',
   choose: '게임 선택권',
   shuffle: '의리주 순서',
@@ -129,6 +135,8 @@ const KIND_DESC = {
   nhaeng: '랜덤 키워드가 나오면 글자 수만큼 n행시를 짓고 다 같이 마셔요. 키워드는 바꿀 수 있어요.',
   back: '말이 4칸 뒤로 가요 (업힌 말도 같이). 도착한 칸 미션도 하고, 상대 말이 있으면 잡아요. 팀 놉카드로 거부할 수 있어요.',
   allOptions: '판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)이 전부 상대 팀에 3분씩 걸려요.',
+  shield: '도착한 팀 방패 +1. 우리 말이 잡힐 때 방패를 쓸지 골라요. 쓰면 안 잡히고(잡으려던 사람도 한 번 더 없음) 방패가 1개 줄어요. 15초 안에 안 고르면 자동으로 써요.',
+  subway: '3, 2, 1 → 서울 지하철 1~9호선 중 하나가 나와요. 그 호선 역 이름을 돌아가며 말하고, 막히거나 틀리거나 나온 역을 또 말하면 마셔요.',
 }
 // 상대 팀 사람들 (같이 짠 칸)
 const rivalsOf = (room, pid) => Object.keys(room.players || {}).filter((x) => room.players[x]?.name && teamOf(room, x) !== teamOf(room, pid))
@@ -448,6 +456,118 @@ function HunminPanel({ room, pending: p, iAct, code, keyId }) {
             <div className="waiting">{actor?.name}이(가) 진행 중…</div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// 지하철 게임: 3, 2, 1 → 서울 지하철 n호선 제시 (역 이름은 오프라인으로 돌아가며)
+function SubwayPanel({ room, pending: p, iAct, code, keyId }) {
+  const step = useCountdown(keyId)
+  if (step > 0) return <CountOverlay step={step} emoji="🚇" sub="호선을 뽑고 있어요…" />
+  const actor = room.players[p.playerId]
+  const line = subwayLine(p.line)
+  return (
+    <div className="modal-backdrop">
+      <div className="modal">
+        <div className="kicker">🚇 지하철 게임</div>
+        <h2>{p.title || '지하철 게임'}</h2>
+        <div className="subway-card" style={{ '--sub': line.color }}>
+          <span className="subway-badge">{line.n}</span>
+          <span className="subway-name">{line.n}호선</span>
+        </div>
+        <div className="muted">
+          <b style={{ color: actor?.color }}>{actor?.name}</b>부터 돌아가며 {line.n}호선 역 이름을 말해요. 막히거나, 틀리거나, 나온 역을 또 말하면 마셔요!
+        </div>
+        {iAct ? (
+          <div className="actions">
+            <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
+              수행 완료
+            </button>
+          </div>
+        ) : (
+          <div className="actions">
+            <div className="waiting">{actor?.name}이(가) 진행 중…</div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// 방패: 잡히려는 팀이 방패를 쓸지 고름 (그 팀 사람 누구나). 시간 안에 안 고르면 자동으로 씀
+function ShieldAskPanel({ room, pending: p, me, code, ctl }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => tick((x) => x + 1), 250)
+    return () => clearInterval(t)
+  }, [])
+  const asks = p.asks || {}
+  const askTeams = Object.keys(asks)
+    .map((k) => Number(k.slice(1)))
+    .filter((t) => TEAM_INFO[t])
+    .sort((a, b) => a - b)
+  const victims = arr(p.victims)
+  const actor = room.players[p.playerId]
+  const myT = teamOf(room, me)
+  const mineWaiting = askTeams.some((t) => (SOLO || myT === t) && asks[`t${t}`] === 'wait')
+  const left = Math.max(0, (p.deadline || 0) - serverNow())
+  // 잡힐 팀 폰: 진동
+  useEffect(() => {
+    if (!mineWaiting || SOLO) return
+    try {
+      navigator.vibrate?.([120, 60, 120])
+    } catch {}
+  }, [p.startedAt])
+  // 시간이 지나면 도착한 사람·방장 화면이 자동으로 방패를 씀. 그 둘이 자리에 없으면 다른 화면이 2.5초 뒤에 (안 넘어가면 1.5초마다 다시)
+  const autoRef = useRef(0)
+  useEffect(() => {
+    if (serverNow() < (p.deadline || 0) + (ctl ? 0 : 2600) || Date.now() - autoRef.current < 1500) return
+    autoRef.current = Date.now()
+    shieldDecide(code, room, null, true, true)
+  })
+  return (
+    <div className="modal-backdrop">
+      <div className="modal shield-modal">
+        <div className="kicker">{nodeName(p.pos)} · 🛡️ 방패</div>
+        <h2>🛡️ 방패를 쓸까요?</h2>
+        <div className="muted">
+          <b style={{ color: actor?.color }}>{actor?.name}</b>이(가) {victims.map((v) => `${TEAM_INFO[v.team]?.name} 말 ${v.count}개`).join(' · ')}를 잡으려 해요. 방패를 쓰면 안 잡히고 방패가 1개 줄어요. 안 쓰면 말이 집으로 가고 팀 전원이 마셔요.
+        </div>
+        <div className="shield-list">
+          {askTeams.map((t) => {
+            const info = TEAM_INFO[t]
+            const v = victims.find((x) => x.team === t)
+            const st = asks[`t${t}`]
+            const mine = SOLO || myT === t
+            return (
+              <div key={t} className={`shield-row ${st}`} style={{ '--tc': info.color }}>
+                <div className="shield-head">
+                  <span className="team-dot" />
+                  <b>{info.name}</b>
+                  <span className="shield-have">🛡️ {teamShield(room, t)}개</span>
+                </div>
+                {st === 'wait' ? (
+                  mine ? (
+                    <div className="shield-btns">
+                      <button className="btn btn-primary" onClick={() => shieldDecide(code, room, t, true)}>
+                        🛡️ 방패 쓰기
+                      </button>
+                      <button className="btn btn-ghost shield-skip" onClick={() => shieldDecide(code, room, t, false)}>
+                        그냥 잡힐게요 · {v?.count || 1}잔씩
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="waiting">{info.name}이 고르는 중…</div>
+                  )
+                ) : (
+                  <div className="shield-done">{st === 'use' ? '🛡️ 방패 씀' : '안 씀 → 잡혀요'}</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div className="shield-time">⏳ {Math.ceil(left / 1000)}초 · 안 고르면 방패를 자동으로 써요</div>
       </div>
     </div>
   )
@@ -1388,6 +1508,7 @@ function DebugPanel({ room, code, me, connected }) {
       pieces: room.pieces,
       players: Object.fromEntries(Object.entries(room.players || {}).map(([k, v]) => [k, `${v.name} team=${v.team} drinks=${v.drinks || 0} online=${v.online}`])),
       teamNop: room.teamNop,
+      teamShield: room.teamShield,
       sojuBank: room.sojuBank,
       pending: room.pending,
       lastMove: room.lastMove && { id: room.lastMove.id, team: room.lastMove.team, path: room.lastMove.path, dest: room.lastMove.dest, caught: room.lastMove.caught },
@@ -2024,10 +2145,8 @@ export default function App() {
   }
 
   // 도착 칸에 다른 팀/우리 팀 말이 있는지 (선택지 설명용)
-  const occupant = (node) => {
-    for (let t = 0; t < tc; t++) if ((pieces[t] || []).some((pc) => pc.n === node)) return t
-    return null
-  }
+  // 그 칸에 있는 팀들 (방패로 막은 뒤에는 여러 팀이 한 칸에 있을 수 있음)
+  const occupants = (node) => Array.from({ length: tc }, (_, t) => t).filter((t) => (pieces[t] || []).some((pc) => pc.n === node))
 
   const pendingCell = showPending ? cells[pending.pos] || {} : null
   const statusText = !playing
@@ -2039,7 +2158,9 @@ export default function App() {
         : animating || unplayedMove
           ? '말이 움직이는 중…'
           : pending
-            ? iAct
+            ? pending.kind === 'shieldAsk'
+              ? '🛡️ 방패를 쓸지 고르는 중…'
+              : iAct
               ? '도착! 칸의 내용을 진행하세요'
               : `${room.players[pending.playerId]?.name || ''}이(가) 진행 중…`
             : stage === 'throw'
@@ -2403,6 +2524,11 @@ export default function App() {
                     <span className={`score-nop ${teamNop(room, t) ? '' : 'empty'}`} title={`${info.name} 놉카드 ${teamNop(room, t)}장`}>
                       🎫{teamNop(room, t)}
                     </span>
+                    {teamShield(room, t) > 0 && (
+                      <span className="score-shield" title={`${info.name} 방패 ${teamShield(room, t)}개`}>
+                        🛡️{teamShield(room, t)}
+                      </span>
+                    )}
                     <span className="score-goal" title={`골인 ${goal}/${pcs.length}`}>
                       {goal}
                       <small>/{pcs.length}</small>
@@ -2455,8 +2581,9 @@ export default function App() {
               <>
                 <div className="move-opts">
                   {options.map((o) => {
-                    const occ = o.finished ? null : occupant(o.dest)
-                    const hint = occ == null ? '' : occ === curTeam ? ' · 🤝 업기' : ` · 🎯 ${TEAM_INFO[occ].short} 잡기!`
+                    const occ = o.finished ? [] : occupants(o.dest)
+                    const foes = occ.filter((t) => t !== curTeam)
+                    const hint = `${occ.includes(curTeam) ? ' · 🤝 업기' : ''}${foes.length ? ` · 🎯 ${foes.map((t) => TEAM_INFO[t].short).join('·')} 잡기!${foes.some((t) => teamShield(room, t) > 0) ? ' (🛡️ 방패 있음)' : ''}` : ''}`
                     return (
                       <button key={moveKey(o)} className={`move-opt ${o.route ? `route-${o.route}` : ''}`} onClick={() => moveYut(code, room, selIdx, o.from, o.route)}>
                         <span className="mo-from">{o.from === 'home' ? `🆕 새 말 (${o.homeLeft}개 대기)` : `${o.count > 1 ? `말 ${o.count}개` : '말'} · ${nodeName(o.from)}`}</span>
@@ -2535,6 +2662,7 @@ export default function App() {
                     >
                       <NopIcon /> 팀 놉카드 {n}
                     </button>
+                    {teamShield(room, t) > 0 && <span className="shield-badge">🛡️ 방패 {teamShield(room, t)}</span>}
                   </div>
                   <div className="team-members">
                     {mem.map((pid) => {
@@ -2569,19 +2697,29 @@ export default function App() {
       )}
 
       {/* ---------- 잡기 ---------- */}
-      {room && showPending && pending.kind === 'caught' && (
-        <CongratsOverlay
-          room={room}
-          targets={teamMembers(room, pending.victim)}
-          actorId={pending.playerId}
-          iAct={iAct}
-          canNop={false}
-          title="🎯 잡았다!"
-          teamWide
-          note={`${TEAM_INFO[pending.victim]?.name} 말 ${pending.count}개가 집으로!${pending.count > 1 ? ` · ${pending.count}잔씩` : ''} · ${room.players[pending.playerId]?.name} 한 번 더 던져요`}
-          onDone={() => resolvePending(code, room, 'done')}
-        />
-      )}
+      {room &&
+        showPending &&
+        pending.kind === 'caught' &&
+        (() => {
+          // 여러 팀이 한 번에 잡힐 수도 있음 (방패로 막아서 한 칸에 같이 있던 말)
+          const vs = arr(pending.victims).length ? arr(pending.victims) : [{ team: pending.victim, count: pending.count }]
+          return (
+            <CongratsOverlay
+              room={room}
+              targets={vs.flatMap((v) => teamMembers(room, v.team))}
+              actorId={pending.playerId}
+              iAct={iAct}
+              canNop={false}
+              title="🎯 잡았다!"
+              teamWide
+              note={`${vs.map((v) => `${TEAM_INFO[v.team]?.name} 말 ${v.count}개${v.count > 1 ? `(${v.count}잔씩)` : ''}`).join(' · ')}가 집으로! · ${room.players[pending.playerId]?.name} 한 번 더 던져요`}
+              onDone={() => resolvePending(code, room, 'done')}
+            />
+          )
+        })()}
+
+      {/* ---------- 방패: 잡히려는 팀이 쓸지 고름 ---------- */}
+      {room && showPending && pending.kind === 'shieldAsk' && <ShieldAskPanel room={room} pending={pending} me={me} code={code} ctl={ctlTeam} />}
 
       {/* ---------- 승리 ---------- */}
       {room && showPending && pending.kind === 'win' && <WinOverlay room={room} pending={pending} isHost={isHost || SOLO} onDone={() => resolvePending(code, room, 'done')} />}
@@ -2638,10 +2776,15 @@ export default function App() {
         <HunminPanel room={room} pending={pending} iAct={iAct} code={code} keyId={`${room.lastMove?.id}-${pending.pos}-${pending.title || ''}`} />
       )}
 
+      {/* ---------- 지하철 게임 ---------- */}
+      {room && showPending && pending.kind === 'subway' && (
+        <SubwayPanel room={room} pending={pending} iAct={iAct} code={code} keyId={`${room.lastMove?.id}-${pending.pos}-${pending.title || ''}`} />
+      )}
+
       {/* ---------- 도착 칸 모달 ---------- */}
       {room &&
         showPending &&
-        !['aiPick', 'vote', 'hunmin', 'shuffle', 'balance', 'bomb', 'reaction', 'gamble', 'caught', 'win', 'sojuBank'].includes(pending.kind) &&
+        !['aiPick', 'vote', 'hunmin', 'subway', 'shieldAsk', 'shuffle', 'balance', 'bomb', 'reaction', 'gamble', 'caught', 'win', 'sojuBank'].includes(pending.kind) &&
         !TEAM_GAMES.has(pending.kind) &&
         !(pending.kind === 'liar' && pending.stage !== 'category') &&
         !(pending.kind === 'pick' && pending.stage === 'result') &&
@@ -2677,6 +2820,7 @@ export default function App() {
                     ['priceGuess', '💰', '얼마게요'],
                     ['timeSum', '🕰️', '팀 시간 합치기'],
                     ['mapPin', '🗺️', '지도 찍기'],
+                    ['subway', '🚇', '지하철 게임'],
                   ].map(([k, e, n]) => (
                     <button key={k} className="cat-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', k)}>
                       <span className="cat-emo">{e}</span>
@@ -2688,6 +2832,8 @@ export default function App() {
               <div className="muted">
                 <b style={{ color: room.players[pending.playerId]?.color }}>{room.players[pending.playerId]?.name}</b>
                 {pending.kind === 'nop' && ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 놉카드 +1! (지금 ${pending.teamNop ?? teamNop(room, teamOf(room, pending.playerId))}장 · 팀 누구나 쓸 수 있어요)`}
+                {pending.kind === 'shield' &&
+                  ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 방패 +1! (지금 ${pending.teamShield ?? teamShield(room, teamOf(room, pending.playerId))}개) 우리 말이 잡힐 때 방패를 쓸지 고를 수 있어요. 쓰면 안 잡혀요 🛡️`}
                 {pending.kind === 'normal' && (iAct ? ' — 수행하고 완료를 눌러주세요.' : ' — 수행 중이에요.')}
                 {pending.kind === 'normal' &&
                   pendingCell.drink &&

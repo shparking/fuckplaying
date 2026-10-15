@@ -3942,3 +3942,138 @@ textarea {
   stroke-dasharray: 10 8;
   opacity: 0.8;
 }
+
+/* ---------- 방패 (42·46번) ---------- */
+.score-shield {
+  font-size: 12px;
+  font-weight: 900;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(60, 211, 245, 0.16);
+  color: var(--cyan);
+  white-space: nowrap;
+}
+.shield-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 9px;
+  border-radius: 8px;
+  color: #04222b;
+  background: var(--cyan);
+  box-shadow: 0 0 10px rgba(60, 211, 245, 0.35);
+  flex: none;
+}
+.shield-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 8px;
+}
+.shield-row {
+  border: 2px solid var(--tc);
+  border-radius: 16px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--tc) 12%, transparent);
+}
+.shield-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.shield-head .team-dot {
+  background: var(--tc);
+}
+.shield-have {
+  margin-left: auto;
+  font-weight: 800;
+  color: var(--cyan);
+}
+.shield-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.shield-btns .btn {
+  width: 100%;
+  min-height: 48px;
+}
+.shield-skip {
+  font-size: 13px;
+}
+.shield-done {
+  font-weight: 800;
+  text-align: center;
+  padding: 6px 0;
+}
+.shield-row.use .shield-done {
+  color: var(--cyan);
+}
+.shield-row.skip .shield-done {
+  color: var(--danger);
+}
+.shield-time {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 700;
+}
+/* 한 칸에 여러 팀 말 (방패로 막은 뒤): 두 번째 팀은 칸 왼쪽 위, 세 번째는 오른쪽 아래, 네 번째는 왼쪽 아래 */
+.ytoken.slot1 {
+  transform: translate(-50%, -50%) translate(calc(0.9cqw - var(--half)), calc(0.9cqw - var(--half)));
+}
+.ytoken.slot2 {
+  transform: translate(-50%, -50%) translate(calc(var(--half) - 0.9cqw), calc(var(--half) - 0.9cqw));
+}
+.ytoken.slot3 {
+  transform: translate(-50%, -50%) translate(calc(0.9cqw - var(--half)), calc(var(--half) - 0.9cqw));
+}
+.ytoken.stack.slot1 {
+  transform: translate(-50%, -50%) translate(calc(2.1cqw - var(--half)), calc(1.05cqw - var(--half)));
+}
+.ytoken.stack.slot2 {
+  transform: translate(-50%, -50%) translate(calc(var(--half) - 2.1cqw), calc(var(--half) - 1.05cqw));
+}
+.ytoken.stack.slot3 {
+  transform: translate(-50%, -50%) translate(calc(2.1cqw - var(--half)), calc(var(--half) - 1.05cqw));
+}
+@supports not (width: 1cqw) {
+  .ytoken.slot1 { transform: translate(-50%, -50%) translate(-9px, -9px); }
+  .ytoken.slot2 { transform: translate(-50%, -50%) translate(9px, 9px); }
+  .ytoken.slot3 { transform: translate(-50%, -50%) translate(-9px, 9px); }
+}
+
+/* ---------- 지하철 게임 (45번) ---------- */
+.subway-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 14px 0 10px;
+  padding: 20px 16px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--sub) 16%, transparent);
+  border: 2px solid var(--sub);
+}
+.subway-badge {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--sub);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 40px;
+  line-height: 1;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.9), 0 0 18px var(--sub);
+}
+.subway-name {
+  font-family: var(--font-display);
+  font-size: 48px;
+  line-height: 1;
+  color: var(--text);
+}

@@ -119,8 +119,15 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
   }
   if (ghost) stacks = [...stacks.filter((s) => s.node !== ghost.node), { ...ghost, ghost: true }]
   // 말이 서 있는 칸은 그 팀 색 테두리로 표시 (말 표시는 칸 오른쪽 위 작은 점이라 글자를 안 가림)
+  // 한 칸에 여러 팀 말(방패로 막은 뒤)이면 지금 차례 팀 색, 말은 팀 번호 순으로 자리를 나눔 (오른쪽 위 → 왼쪽 위 → …)
   const occ = {}
-  stacks.forEach((s) => (occ[s.node] = s))
+  const slotOf = {}
+  const byNode = {}
+  stacks.forEach((s) => {
+    if (!occ[s.node] || s.team === movable?.team) occ[s.node] = s
+    ;(byNode[s.node] = byNode[s.node] || []).push(s)
+  })
+  Object.values(byNode).forEach((list) => list.sort((a, b) => a.team - b.team).forEach((s, i) => (slotOf[`${s.team}|${s.node}`] = i)))
   if (mover) stacks = [...stacks, { ...mover, moving: true }]
   return (
     <div className="yut-board">
@@ -172,7 +179,7 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
         return (
           <button
             key={`${s.team}-${s.node}-${s.moving ? 'm' : s.ghost ? 'g' : ''}`}
-            className={`ytoken ${diag ? 'on-diag' : ''} ${s.count > 1 ? 'stack' : ''} ${s.moving ? 'moving' : ''} ${s.ghost ? 'ghost' : ''} ${canMove ? 'can' : ''}`}
+            className={`ytoken ${diag ? 'on-diag' : ''} ${s.count > 1 ? 'stack' : ''} ${s.moving ? 'moving' : ''} ${s.ghost ? 'ghost' : ''} ${canMove ? 'can' : ''} ${!s.moving && slotOf[`${s.team}|${s.node}`] ? `slot${slotOf[`${s.team}|${s.node}`]}` : ''}`}
             style={{ ...pos(n), '--tc': info.color }}
             data-team={s.team}
             onClick={(e) => {

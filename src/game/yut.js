@@ -83,7 +83,7 @@ export function nodeName(id) {
 
 // ---------- 칸 내용 (기본값) ----------
 // type 은 미니게임/기능. drink: 'self' | 'team' | 'all' 이면 수행 완료 시 잔 수 자동 +1
-// (10/12 사용자와 같이 정한 배치. 대각선은 일단 소주 +1 적립 — 새 아이디어가 나오면 채움)
+// (10/15 사용자 리스트 + 10/16 방패·지하철. 남은 빈칸 43·44·50·51은 일단 소주 +1 적립 — 새 아이디어가 나오면 채움)
 const NOP = { emoji: '🎫', text: '놉카드 +1', type: 'nop' }
 const HUNMIN = { emoji: '📝', text: '훈민정음\n게임', type: 'hunmin' }
 const ALL = { emoji: '🍻', text: '다 같이\n마셔!', drink: 'all' }
@@ -122,6 +122,10 @@ const ONLY_SH = { emoji: '🫵', text: '박상혁만\n마셔!', drink: 'only', w
 const EXCEPT_SH = { emoji: '🙅', text: '박상혁 빼고\n다 마셔!', drink: 'except', who: '상혁' }
 // 모든 옵션 On: 판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)을 전부 상대 팀에 3분씩
 const ALLOPT = { emoji: '🚨', text: '모든 옵션\nOn', type: 'allOptions', minutes: 3 }
+// 방패: 도착한 팀 방패 +1 → 우리 말이 잡힐 때 쓸지 고름 (쓰면 안 잡히고 방패 1개 없어짐)
+const SHIELD = { emoji: '🛡️', text: '방패 +1', type: 'shield' }
+// 지하철 게임: 3·2·1 → 서울 지하철 1~9호선 중 하나 → 그 호선 역 이름을 돌아가며 (오프라인, 훈민정음처럼)
+const SUBWAY = { emoji: '🚇', text: '지하철\n게임', type: 'subway' }
 // 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
 const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
 const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
@@ -157,9 +161,9 @@ export const DEFAULT_YUT_CELLS = {
   // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래) 36~39 · 41~44
   a1: STEAL, a2: NOENG, a3: RELEASE, a4: CHOOSE,
   C: SOJU_BANK, // 40 가운데: 소주 보관소 (고정)
-  a5: ONLY_SH, a6: SOJU_ADD, a7: SOJU_ADD, a8: SOJU_ADD, // 42~44 아직 빈칸 (소주 +1)
+  a5: ONLY_SH, a6: SHIELD, a7: SOJU_ADD, a8: SOJU_ADD, // 42 방패 · 43·44 아직 빈칸 (소주 +1)
   // 대각선 B (왼쪽 위 → 가운데 → 골인) 45~52
-  b1: SOJU_ADD, b2: SOJU_ADD, b3: EXCEPT_SH, b4: TWOTOUCH, // 45·46 아직 빈칸 (소주 +1)
+  b1: SUBWAY, b2: SHIELD, b3: EXCEPT_SH, b4: TWOTOUCH, // 45 지하철 게임 · 46 방패
   b5: CHOOSE, b6: SOJU_ADD, b7: SOJU_ADD, b8: ALLOPT, // 50·51 아직 빈칸 (소주 +1)
 }
 
