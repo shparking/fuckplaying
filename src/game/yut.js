@@ -135,27 +135,22 @@ const SONG = { emoji: '🎶', text: '단어 노래\n부르기', type: 'wordSong'
 // 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
 const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
 const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
-// (지금 판에 없는 칸 — 나중에 다시 쓸 수 있게 남겨 둠)
+// (지금 판에 없는 칸 — 나중에 다시 쓸 수 있게 남겨 둠. 10/16 개인전 게임(밸런스·라이어·다수결·지목·개인 반응속도·개인 폭탄)은 코드와 함께 지움)
 export const SPARE_CELLS = {
   WORLD: WORLDPIN, // 10/16 50번에서 자석으로 바뀜 (게임 선택권·혼자 연습에는 있음)
   C1: { emoji: '🍶', text: '한 잔 마셔', drink: 'self' },
   LOVE: { emoji: '🥂', text: '옆 사람과\n러브샷', drink: 'self' },
   SON: { emoji: '🖐️', text: '손병호\n게임' },
   YOUNG: { emoji: '🎂', text: '막내\n마셔!' },
-  PICK: { emoji: '👉', text: '너! 마셔!\n(지목)', type: 'pick' },
   TRUTH: { emoji: '🎯', text: '진실 게임\n(질문 1개)' },
   CHEERS: { emoji: '🥃', text: '건배사 후\n전원 원샷', drink: 'all' },
-  BALANCE: { emoji: '⚖️', text: '밸런스\n게임', type: 'balance' },
-  REACT: { emoji: '⚡', text: '반응속도\n게임', type: 'reaction' },
-  BOMB: { emoji: '💣', text: '폭탄\n돌리기', type: 'bomb' },
-  LIAR: { emoji: '🤥', text: '라이어\n게임', type: 'liar' },
-  VOTE: { emoji: '🗳️', text: '다수결 지목\n너 마셔!', type: 'vote' },
 }
 
 export const DEFAULT_YUT_CELLS = {
   o0: { emoji: '🏁', text: '출발·골인', type: 'home', locked: true },
   // 오른쪽 변 (출발 → 위로) 1~8
-  o1: HUNMIN, o2: SOJU_ADD, o3: ALL, o4: TBOMB, o5: TREACT, o6: CHOOSE, o7: PRICE, o8: CIRCLE,
+  // (10/16) 자주 걸리는 앞쪽에 새 게임: 5 지하철(← 45) · 8 단어 노래(← 43), 반응 속도·완벽한 원은 45·43으로
+  o1: HUNMIN, o2: SOJU_ADD, o3: ALL, o4: TBOMB, o5: SUBWAY, o6: CHOOSE, o7: PRICE, o8: SONG,
   o9: NOP, // 9 오른쪽 위 모서리
   // 위 변 (→ 왼쪽) 10~17
   o10: MAPPIN, o11: BUNNY, o12: SOJU_ADD, o13: TEAM, o14: THEIRS, o15: GAMBLE, o16: TIMESUM, o17: CHOOSE,
@@ -168,9 +163,9 @@ export const DEFAULT_YUT_CELLS = {
   // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래) 36~39 · 41~44
   a1: STEAL, a2: NOENG, a3: RELEASE, a4: CHOOSE,
   C: SOJU_BANK, // 40 가운데: 소주 보관소 (고정)
-  a5: ONLY_SH, a6: MAGNET, a7: SONG, a8: SHIELD, // 42 자석 · 43 단어 노래 · 44 방패
+  a5: ONLY_SH, a6: MAGNET, a7: CIRCLE, a8: SHIELD, // 42 자석 · 43 완벽한 원 · 44 방패
   // 대각선 B (왼쪽 위 → 가운데 → 골인) 45~52
-  b1: SUBWAY, b2: SHIELD, b3: EXCEPT_SH, b4: TWOTOUCH, // 45 지하철 게임 · 46 방패
+  b1: TREACT, b2: SHIELD, b3: EXCEPT_SH, b4: TWOTOUCH, // 45 반응 속도 · 46 방패
   b5: CHOOSE, b6: MAGNET, b7: SHIELD, b8: ALLOPT, // 50 자석 · 51 방패 (세계 지도 찍기는 판에서 빠지고 게임 선택권·혼자 연습에 남음)
 }
 

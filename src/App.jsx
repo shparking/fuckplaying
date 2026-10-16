@@ -34,26 +34,15 @@ import {
   useNopAnytime,
   saveCellText,
   restartGame,
-  rerollTopic,
   clearExpiredOptions,
   hostSkipTurn,
   purgeRooms,
   removeRoom,
   lobbyOrder,
-  liarReveal,
-  liarVote,
-  liarResult,
   roomLog,
   trimLog,
   kickPlayer,
   transferHost,
-  castVote,
-  voteWinners,
-  voteTally,
-  balanceVote,
-  balanceResult,
-  reactionTap,
-  reactionRanking,
   watchServerOffset,
   serverNow,
   missionTick,
@@ -79,10 +68,8 @@ import {
   liveTeams,
 } from './room'
 import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel, CirclePanel, PricePanel, TimeSumPanel, MapPinPanel, WorldPinPanel } from './components/TeamGames'
-import { BALANCE_TOPICS } from './game/balance'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
-import { LIAR_CATEGORIES, liarCategory } from './game/liar'
 import { subwayLine } from './game/subway'
 import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID } from './game/yut'
 
@@ -94,13 +81,10 @@ const SHAKE_WINDOW_MS = 800
 
 const KIND_LABEL = {
   nop: '놉카드 획득',
-  balance: '밸런스 게임',
   option: '옵션 타이머',
   release: '옵션 해제',
   steal: '놉카드 뺏기',
   aiPick: 'AI 지목',
-  pick: '너! 마셔! (지목)',
-  liar: '라이어 게임',
   hunmin: '훈민정음 게임',
   subway: '지하철 게임',
   wordSong: '단어 노래',
@@ -109,11 +93,8 @@ const KIND_LABEL = {
   fate: '운명의 카드',
   shield: '방패 +1',
   shieldAsk: '방패',
-  vote: '다수결 지목',
   choose: '게임 선택권',
   shuffle: '의리주 순서',
-  bomb: '폭탄 돌리기',
-  reaction: '반응속도 게임',
   gamble: '놉카드 도박',
   again: '한 번 더!',
   home: '출발·골인',
@@ -360,14 +341,6 @@ function AiPickOverlay({ room, pending, me, iAct, onDone, onTargetNop }) {
   )
 }
 
-// 너! 마셔! (지목): 지목 → 3, 2, 1 → 축하 화면
-function PickOverlay({ room, pending, me, iAct, onDone, onTargetNop }) {
-  const step = useCountdown(`${pending.target}-${pending.startedAt}`)
-  const who = room.players[pending.playerId]?.name
-  if (step > 0) return <CountOverlay step={step} emoji="👉" sub={`${who}이(가) 지목한 사람은…`} />
-  return <CongratsOverlay room={room} targets={[pending.target]} actorId={pending.playerId} iAct={iAct} canNop={false} onDone={onDone} onTargetNop={onTargetNop} />
-}
-
 // 🍺 오늘의 술고래: 게임 중엔 현재 잔 수 순위, 대기실에선 마지막 게임 결과
 function DrinksModal({ room, me, onClose }) {
   const live = room.status === 'playing' || !room.summary
@@ -405,64 +378,6 @@ function DrinksModal({ room, me, onClose }) {
           <button className="btn btn-ghost" onClick={onClose}>
             닫기
           </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// 다수결 지목: 모두 투표 → 행동자가 결과 공개 → 3, 2, 1 → 축하 화면
-function VotePanel({ room, pending: p, me, iAct, code }) {
-  const ids = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
-  const votes = p.votes || {}
-  const votedCount = ids.filter((pid) => votes[pid]).length
-  const myVote = SOLO ? null : votes[me]
-  const step = useCountdown(p.stage === 'result' ? `r-${p.revealedAt}` : 'vote')
-  if (p.stage === 'result') {
-    if (step > 0) return <CountOverlay step={step} emoji="🗳️" sub="투표 결과를 집계하고 있어요…" />
-    const winners = voteWinners(p)
-    const canNop = (SOLO || winners.includes(me)) && (room.players[SOLO ? winners[0] : me]?.nop || 0) > 0
-    return (
-      <CongratsOverlay
-        room={room}
-        targets={winners}
-        actorId={p.playerId}
-        iAct={iAct}
-        canNop={false}
-        onDone={() => resolvePending(code, room, 'done')}
-        onTargetNop={() => resolvePending(code, room, 'target-nop')}
-        title={winners.length > 1 ? '🎉 동점! Congratulations! 🎉' : '🎉 Congratulations! 🎉'}
-      />
-    )
-  }
-  return (
-    <div className="modal-backdrop">
-      <div className="modal">
-        <div className="kicker">🗳️ 다수결 지목</div>
-        <h2>누가 마실까요?</h2>
-        <div className="muted">각자 한 명을 고르세요. 가장 많은 표를 받은 사람이 마셔요. ({votedCount}/{ids.length} 투표)</div>
-        <div className="steal-list">
-          {ids.map((pid) => {
-            const pl = room.players[pid]
-            return (
-              <button key={pid} className={`steal-btn ${myVote === pid ? 'picked' : ''}`} onClick={() => castVote(code, room, pid)}>
-                <span className="avatar sm" style={{ background: pl.color }}>
-                  {ini(pl?.name)}
-                </span>
-                <span className="pname">{pl.name}</span>
-                {myVote === pid && <span className="me-tag">내 표</span>}
-              </button>
-            )
-          })}
-        </div>
-        <div className="actions">
-          {iAct ? (
-            <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'result')} disabled={!allVoted(room, ids, votes)}>
-              결과 공개 {votedCount < ids.length ? `(${votedCount}/${ids.length})` : ''}
-            </button>
-          ) : (
-            <div className="waiting">모두 투표하면 {room.players[p.playerId]?.name}이(가) 결과를 공개해요</div>
-          )}
         </div>
       </div>
     </div>
@@ -723,121 +638,6 @@ function ShieldAskPanel({ room, pending: p, me, code }) {
   )
 }
 
-// 밸런스 게임: 주제 A vs B → 각자 양자택일 → 결과 (소수 마시기 / 동점 재투표 / 만장일치 룰렛)
-function BalancePanel({ room, pending: p, me, iAct, code }) {
-  const ids = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
-  const [ta, tb] = (BALANCE_TOPICS[p.topic] || ' vs ').split(' vs ')
-  const votes = p.votes || {}
-  const votedCount = ids.filter((pid) => votes[pid]).length
-  const myVote = SOLO ? null : votes[me]
-  const r = balanceResult(p)
-  const step = useCountdown(p.stage === 'vote' ? 'vote' : `${p.stage}-${p.revealedAt}`)
-  const actor = room.players[p.playerId]
-  const title = p.title || '밸런스 게임'
-
-  if (p.stage === 'roulette')
-    return (
-      <RouletteOverlay
-        room={room}
-        actorId={p.playerId}
-        iAct={iAct}
-        revealKey={p.revealedAt}
-        title="🎯 만장일치! 룰렛"
-        note={`${ta} ${r.a} : ${r.b} ${tb}`}
-        options={[
-          { emoji: '🍻', label: '다같이 마셔', color: '#f47725' },
-          { emoji: '😇', label: '아무도 안 마셔', color: '#4cc9f0' },
-        ]}
-        pick={p.roulette === 'drink' ? 0 : 1}
-        resultText={p.roulette === 'drink' ? '다같이 마셔! 🍻' : '아무도 안 마셔! 😇'}
-        onDone={() => resolvePending(code, room, 'done')}
-      />
-    )
-  if (p.stage === 'result') {
-    if (step > 0) return <CountOverlay step={step} emoji="⚖️" sub="투표 결과를 집계하고 있어요…" />
-    const canNop = (SOLO || r.losers.includes(me)) && !p.refused?.[SOLO ? r.losers[0] : me] && (room.players[SOLO ? r.losers[0] : me]?.nop || 0) > 0
-    return (
-      <CongratsOverlay
-        room={room}
-        targets={r.losers}
-        actorId={p.playerId}
-        iAct={iAct}
-        canNop={false}
-        refused={p.refused || {}}
-        note={`${ta} ${r.a} : ${r.b} ${tb} · 소수 의견`}
-        onDone={() => resolvePending(code, room, 'done')}
-        onTargetNop={() => resolvePending(code, room, 'target-nop')}
-      />
-    )
-  }
-  if (p.stage === 'tie' && step > 0) return <CountOverlay step={step} emoji="⚖️" sub="투표 결과를 집계하고 있어요…" />
-  return (
-    <div className="modal-backdrop">
-      <div className="modal">
-        <div className="kicker">⚖️ {title} · {p.round || 1}라운드</div>
-        {p.stage === 'tie' ? (
-          <>
-            <h2>🤝 동점!</h2>
-            <div className="bal-topic result">
-              <div className="opt">
-                {ta}
-                <span className="cnt">{r.a}표</span>
-              </div>
-              <div className="vs">{r.a}:{r.b}</div>
-              <div className="opt">
-                {tb}
-                <span className="cnt">{r.b}표</span>
-              </div>
-            </div>
-            <div className="muted">다수결이 나올 때까지 다른 주제로 다시 투표해요.</div>
-            <div className="actions">
-              {iAct ? (
-                <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'reroll')}>
-                  🔄 다른 주제로 다시 투표
-                </button>
-              ) : (
-                <div className="waiting">{actor?.name}이(가) 다음 주제를 열어요</div>
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            <h2>둘 중 하나만!</h2>
-            <div className="muted">
-              각자 고르세요. 소수 의견이 마셔요. 동점이면 다른 주제로, 만장일치면 룰렛! ({votedCount}/{ids.length} 투표)
-            </div>
-            <div className="bal-topic pick">
-              <button className={`opt ${myVote === 'A' ? 'on' : ''}`} onClick={() => balanceVote(code, room, 'A')}>
-                {ta}
-                {myVote === 'A' && <span className="me-tag">내 선택</span>}
-              </button>
-              <div className="vs">VS</div>
-              <button className={`opt ${myVote === 'B' ? 'on' : ''}`} onClick={() => balanceVote(code, room, 'B')}>
-                {tb}
-                {myVote === 'B' && <span className="me-tag">내 선택</span>}
-              </button>
-            </div>
-            <div className="actions">
-              {iAct ? (
-                <>
-                  <button className="btn btn-ghost" onClick={() => resolvePending(code, room, 'reroll')} title="다른 주제">
-                    🔄 다른 주제
-                  </button>
-                  <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'result')} disabled={!allVoted(room, ids, votes)}>
-                    결과 공개 {votedCount < ids.length ? `(${votedCount}/${ids.length})` : ''}
-                  </button>
-                </>
-              ) : (
-                <div className="waiting">모두 고르면 {actor?.name}이(가) 결과를 공개해요</div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // 만장일치 룰렛: 50/50 다같이 마셔 / 아무도 안 마셔
 function RouletteOverlay({ room, actorId, iAct, onDone, revealKey, title, note, options, pick, resultText }) {
   const [spun, setSpun] = useState(false)
@@ -974,197 +774,6 @@ function GamblePanel({ room, pending: p, iAct, code }) {
   )
 }
 
-// 폭탄 돌리기: 주제에 맞는 단어를 돌아가며 말하다가 랜덤 타이밍에 터짐 → 말하던 사람 마시기
-function BombPanel({ room, pending: p, iAct, code }) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    if (p.stage !== 'ticking') return
-    const t = setInterval(() => tick((x) => x + 1), 100)
-    return () => clearInterval(t)
-  }, [p.stage])
-  const exploded = p.stage === 'ticking' && p.explodeAt && serverNow() >= p.explodeAt
-  const bombRef = useRef(false)
-  useEffect(() => {
-    if (exploded && !bombRef.current) {
-      bombRef.current = true
-      boom()
-      try {
-        navigator.vibrate?.([300, 100, 300, 100, 600])
-      } catch {}
-    }
-    if (!exploded) bombRef.current = false
-  }, [exploded])
-  // 째깍 소리 (1초마다)
-  useEffect(() => {
-    if (p.stage !== 'ticking' || exploded) return
-    const t = setInterval(tickSound, 1000)
-    return () => clearInterval(t)
-  }, [p.stage, exploded])
-  const actor = room.players[p.playerId]
-  if (p.stage === 'ticking') {
-    return (
-      <div className={`ai-overlay bomb ${exploded ? 'boom' : ''}`}>
-        <div className="ai-reveal">
-          {exploded ? (
-            <>
-              <div className="bomb-emo">💥</div>
-              <div className="ai-congrats">터졌다!</div>
-              <div className="ai-name">
-                <b>지금 말하던 사람</b> 마셔! 🍶
-              </div>
-              <div className="ai-actions">
-                {iAct ? (
-                  <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
-                    확인
-                  </button>
-                ) : (
-                  <div className="waiting">{actor?.name}이(가) 확인하면 다음 차례로</div>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="bomb-emo ticking">💣</div>
-              <div className="ai-note">주제</div>
-              <div className="bomb-topic">{p.topic}</div>
-              <div className="ai-sub">{actor?.name}부터 돌아가며 하나씩 말하세요. 언제 터질지 아무도 몰라요!</div>
-            </>
-          )}
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className="modal-backdrop">
-      <div className="modal">
-        <div className="kicker">💣 {p.title || '폭탄 돌리기'}</div>
-        <h2>주제: {p.topic}</h2>
-        <div className="muted">
-          <b style={{ color: actor?.color }}>{actor?.name}</b>부터 시계 방향으로 주제에 맞는 단어를 하나씩 말해요. 폭탄은 15~40초 사이 아무 때나 터지고, 터질 때 말하던(또는 머뭇거리던) 사람이 마셔요. 이미 나온 단어를 말하거나 3초 넘게 뜸 들이면 그 사람이 마셔요.
-        </div>
-        <div className="actions">
-          {iAct ? (
-            <>
-              <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'start')}>
-                💣 폭탄 시작
-              </button>
-            </>
-          ) : (
-            <div className="waiting">{actor?.name}이(가) 폭탄을 켜면 시작돼요</div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// 반응속도 게임: 초록불이 되면 탭! 가장 느린 사람(부정출발 포함)이 마시기
-function ReactionPanel({ room, pending: p, me, iAct, code }) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    if (p.stage !== 'armed') return
-    const t = setInterval(() => tick((x) => x + 1), 50)
-    return () => clearInterval(t)
-  }, [p.stage])
-  const actor = room.players[p.playerId]
-  const ids = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
-  if (p.stage === 'armed') {
-    const go = p.goAt && serverNow() >= p.goAt
-    const mine = SOLO ? null : p.results?.[me]
-    const tapped = mine != null
-    const doneCount = ids.filter((pid) => p.results?.[pid] != null).length
-    return (
-      <div className={`ai-overlay react ${go ? 'go' : 'wait'}`} onClick={() => !tapped && reactionTap(code, room)}>
-        <div className="ai-reveal">
-          {tapped ? (
-            <>
-              <div className="react-big">{mine < 0 ? '🚫' : '✅'}</div>
-              <div className="ai-congrats">{mine < 0 ? '부정출발!' : `${(mine / 1000).toFixed(3)}초`}</div>
-              <div className="ai-sub">
-                {doneCount}/{ids.length} 완료 · 다른 사람을 기다려요
-              </div>
-            </>
-          ) : go ? (
-            <>
-              <div className="react-big">👆</div>
-              <div className="ai-congrats big">탭!</div>
-            </>
-          ) : (
-            <>
-              <div className="react-big">✋</div>
-              <div className="ai-congrats">기다리세요…</div>
-              <div className="ai-sub">화면이 초록색으로 바뀌면 바로 탭! 먼저 누르면 부정출발</div>
-            </>
-          )}
-          {iAct && go && (
-            <div className="ai-actions" onClick={(e) => e.stopPropagation()}>
-              <button className="btn btn-primary" disabled={!allVoted(room, ids, p.results || {})} onClick={() => resolvePending(code, room, 'result')}>
-                결과 공개 {doneCount < ids.length ? `(${doneCount}/${ids.length})` : ''}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-  if (p.stage === 'result') {
-    const rows = reactionRanking(room, p)
-    const loser = rows[rows.length - 1]
-    return (
-      <div className="modal-backdrop">
-        <div className="modal">
-          <div className="kicker">⚡ {p.title || '반응속도 게임'}</div>
-          <h2>결과</h2>
-          <div className="shuffle-list">
-            {rows.map((r, i) => (
-              <div key={r.pid} className={`shuffle-row ${r.pid === loser?.pid ? 'loser' : ''}`}>
-                <span className="order">{i + 1}</span>
-                <span className="avatar sm" style={{ background: room.players[r.pid]?.color }}>
-                  {ini(room.players[r.pid]?.name)}
-                </span>
-                <span className="pname">{room.players[r.pid]?.name}</span>
-                <span className="tag tag-gray">{r.label}</span>
-                {r.pid === loser?.pid && <span className="tag">마셔! 🍶</span>}
-              </div>
-            ))}
-          </div>
-          <div className="actions">
-            {iAct ? (
-              <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
-                확인
-              </button>
-            ) : (
-              <div className="waiting">{actor?.name}이(가) 확인하면 다음 차례로</div>
-            )}
-          </div>
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className="modal-backdrop">
-      <div className="modal">
-        <div className="kicker">⚡ {p.title || '반응속도 게임'}</div>
-        <h2>초록불이 되면 탭!</h2>
-        <div className="muted">
-          시작하면 모든 폰이 빨간 화면으로 바뀌고, 2~6초 뒤 아무 때나 초록색 "탭!"이 떠요. 가장 빨리 탭한 순서로 순위가 나오고 <b>가장 느린 사람이 마셔요.</b> 초록불 전에 누르면 부정출발로 꼴찌!
-        </div>
-        <div className="actions">
-          {iAct ? (
-            <>
-              <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'start')}>
-                ⚡ 시작
-              </button>
-            </>
-          ) : (
-            <div className="waiting">{actor?.name}이(가) 시작하면 준비하세요</div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // 의리주: 3, 2, 1 → 무작위 순서 공개
 function ShufflePanel({ room, pending: p, iAct, code }) {
   const step = useCountdown(`${p.startedAt}`)
@@ -1198,189 +807,6 @@ function ShufflePanel({ room, pending: p, iAct, code }) {
           )}
         </div>
       </div>
-    </div>
-  )
-}
-
-// 라이어 게임(워드 울프): 키워드 확인 → 설명 → 투표 → 결과. 모든 폰에 표시
-function LiarPanel({ room, pending: p, me, iAct, code }) {
-  const [openTally, setOpenTally] = useState(null) // 결과 화면에서 펼친 득표 칸
-  const [show, setShow] = useState(false)
-  useEffect(() => setShow(false), [p.stage])
-  const ids = Object.keys(p.words || {}).filter((pid) => room.players[pid]?.name)
-  const myWord = SOLO ? p.majority : p.words?.[me]
-  const revealedCount = ids.filter((pid) => p.revealed?.[pid]).length
-  const votes = p.votes || {}
-  const votedCount = ids.filter((pid) => votes[pid]).length
-  const myVote = SOLO ? null : votes[me]
-  const cat = liarCategory(p.category)
-  // 설명 순서: 행동 주체부터 차례대로
-  const order = roomOrder(room)
-  const startIdx = Math.max(0, order.indexOf(p.playerId))
-  const speak = [...order.slice(startIdx), ...order.slice(0, startIdx)].filter((pid) => ids.includes(pid))
-  const res = p.stage === 'result' ? liarResult(room, p) : null
-  const step = useCountdown(p.stage === 'result' ? 'result' : 'x')
-  if (p.stage === 'result' && step > 0) return <CountOverlay step={step} emoji="🤥" sub="누가 다른 키워드였을까요…" />
-  return (
-    <div className="modal-backdrop">
-      <div className="modal liar">
-        <div className="kicker">🤥 라이어 게임 · {cat.emoji} {cat.name}</div>
-        {p.stage === 'reveal' && (
-          <>
-            <h2>각자 키워드를 확인하세요!</h2>
-            <div className="muted">한 명만 비슷하지만 다른 키워드를 받았어요. 누가 라이어인지는 본인도 몰라요. 키워드를 직접 말하지 말고 관련 설명만 하세요.</div>
-            {myWord ? (
-              <button
-                className={`word-card ${show ? 'on' : ''}`}
-                onClick={() => {
-                  setShow((v) => !v)
-                  if (!show) liarReveal(code, room)
-                }}
-              >
-                {show ? (
-                  <>
-                    <span className="word-label">내 키워드</span>
-                    <span className="word">{myWord}</span>
-                    <span className="word-hint">다시 탭하면 숨겨요</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="word-label">탭해서 확인</span>
-                    <span className="word">🔒</span>
-                    <span className="word-hint">다른 사람이 보지 않게 조심!</span>
-                  </>
-                )}
-              </button>
-            ) : (
-              <div className="muted" style={{ marginTop: 12 }}>
-                이 게임에 참여하지 않은 참가자예요 (게임 시작 후 입장).
-              </div>
-            )}
-            <div className="section-title">설명 순서 · 확인 {revealedCount}/{ids.length}</div>
-            <div className="speak-list">
-              {speak.map((pid, i) => (
-                <span key={pid} className={`speak ${p.revealed?.[pid] ? 'ok' : ''}`}>
-                  <b>{i + 1}</b> {room.players[pid].name}
-                  {p.revealed?.[pid] ? ' ✓' : ''}
-                </span>
-              ))}
-            </div>
-            <div className="actions">
-              {iAct ? (
-                <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'vote-start')}>
-                  설명 끝 → 투표 시작 {revealedCount < ids.length ? `(확인 ${revealedCount}/${ids.length})` : ''}
-                </button>
-              ) : (
-                <div className="waiting">설명이 끝나면 {room.players[p.playerId]?.name}이(가) 투표를 시작해요</div>
-              )}
-            </div>
-          </>
-        )}
-        {p.stage === 'vote' && (
-          <>
-            <h2>라이어는 누구?</h2>
-            <div className="muted">다른 키워드를 받은 것 같은 사람을 한 명 고르세요. ({votedCount}/{ids.length} 투표)</div>
-            <div className="steal-list">
-              {ids.map((pid) => {
-                const pl = room.players[pid]
-                    return (
-                  <button key={pid} className={`steal-btn ${myVote === pid ? 'picked' : ''}`} disabled={!SOLO && !p.words?.[me]} onClick={() => liarVote(code, room, pid)}>
-                    <span className="avatar sm" style={{ background: pl.color }}>
-                      {ini(pl?.name)}
-                    </span>
-                    <span className="pname">{pl.name}</span>
-                        {myVote === pid && <span className="me-tag">내 표</span>}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="actions">
-              {iAct ? (
-                <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'result')} disabled={!allVoted(room, ids, votes)}>
-                  결과 공개 {votedCount < ids.length ? `(${votedCount}/${ids.length})` : ''}
-                </button>
-              ) : (
-                <div className="waiting">모두 투표하면 {room.players[p.playerId]?.name}이(가) 결과를 공개해요</div>
-              )}
-            </div>
-          </>
-        )}
-        {p.stage === 'result' && res && (
-          <>
-            <h2>결과 공개</h2>
-            <div className="liar-reveal">
-              <div className="liar-row">
-                <span className="avatar" style={{ background: room.players[p.liar]?.color }}>
-                  {ini(room.players[p.liar]?.name)}
-                </span>
-                <div>
-                  <div className="muted">다른 키워드를 받은 사람</div>
-                  <b>{room.players[p.liar]?.name}</b>
-                </div>
-              </div>
-              <div className="muted">득표 칸을 누르면 누가 찍었는지 보여요 · 라이어를 맞힌 사람은 안 마셔요</div>
-              <div className="tally">
-                {ids
-                  .map((pid) => ({ pid, n: res.tally[pid] || 0 }))
-                  .sort((a, b) => b.n - a.n)
-                  .map(({ pid, n }) => {
-                    const voters = ids.filter((v) => p.votes?.[v] === pid)
-                    const open = openTally === pid
-                    return (
-                      <div key={pid} className={`tally-item ${open ? 'open' : ''}`}>
-                        <button type="button" className={`tally-row ${pid === p.liar ? 'liar' : ''}`} onClick={() => setOpenTally(open ? null : pid)}>
-                          <span className="avatar sm" style={{ background: room.players[pid]?.color }}>
-                            {ini(room.players[pid]?.name)}
-                          </span>
-                          <span className="pname">{room.players[pid]?.name}</span>
-                          <span className="tally-bar">
-                            <i style={{ width: `${ids.length ? (n / ids.length) * 100 : 0}%` }} />
-                          </span>
-                          <b>{n}표</b>
-                          <span className="tally-chev">{open ? '▴' : '▾'}</span>
-                        </button>
-                        {open && (
-                          <div className="tally-voters">
-                            {voters.length === 0 && <span className="muted">아무도 안 찍었어요</span>}
-                            {voters.map((v) => (
-                              <span key={v} className={`voter-chip ${pid === p.liar ? 'right' : 'wrong'}`}>
-                                <span className="avatar xs" style={{ background: room.players[v]?.color }}>
-                                  {ini(room.players[v]?.name)}
-                                </span>
-                                {room.players[v]?.name}
-                                <em>{pid === p.liar ? '✅ 맞힘' : '🍶 마셔'}</em>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-              </div>
-            </div>
-            <div className="actions">
-              {iAct ? (
-                <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
-                  확인
-                </button>
-              ) : (
-                <div className="waiting">{room.players[p.playerId]?.name}이(가) 확인하면 다음 차례로</div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function BalanceTopic({ topic }) {
-  const [a, b] = topic.split(' vs ')
-  return (
-    <div className="bal-topic">
-      <div className="opt">{a}</div>
-      <div className="vs">VS</div>
-      <div className="opt">{b}</div>
     </div>
   )
 }
@@ -2900,30 +2326,14 @@ export default function App() {
         <AiPickOverlay room={room} pending={pending} me={me} iAct={iAct} onDone={() => resolvePending(code, room, 'done')} onTargetNop={() => resolvePending(code, room, 'target-nop')} />
       )}
 
-      {/* ---------- 너! 마셔! (지목) ---------- */}
-      {room && showPending && pending.kind === 'pick' && pending.stage === 'result' && (
-        <PickOverlay room={room} pending={pending} me={me} iAct={iAct} onDone={() => resolvePending(code, room, 'done')} onTargetNop={() => resolvePending(code, room, 'target-nop')} />
-      )}
-
-      {/* ---------- 라이어 게임 ---------- */}
-      {room && showPending && pending.kind === 'liar' && pending.stage !== 'category' && <LiarPanel room={room} pending={pending} me={me} iAct={iAct} code={code} />}
-
-      {/* ---------- 다수결 지목 ---------- */}
-      {room && showPending && pending.kind === 'vote' && <VotePanel room={room} pending={pending} me={me} iAct={iAct} code={code} />}
-
       {/* ---------- 돌발 미션 ---------- */}
       {room && playing && room.mission?.stage === 'active' && missionSeen !== room.mission.id && !showPending && !busy && (
         <MissionCard room={room} me={me} code={code} onClose={() => setMissionSeen(room.mission.id)} />
       )}
       {room && playing && !showPending && !busy && <MissionQuiz room={room} me={me} code={code} />}
 
-      {/* ---------- 폭탄 / 반응속도 / 놉카드 도박 ---------- */}
-      {room && showPending && pending.kind === 'bomb' && <BombPanel room={room} pending={pending} iAct={iAct} code={code} />}
-      {room && showPending && pending.kind === 'reaction' && <ReactionPanel room={room} pending={pending} me={me} iAct={iAct} code={code} />}
+      {/* ---------- 놉카드 도박 ---------- */}
       {room && showPending && pending.kind === 'gamble' && <GamblePanel room={room} pending={pending} iAct={iAct} code={code} />}
-
-      {/* ---------- 밸런스 게임 ---------- */}
-      {room && showPending && pending.kind === 'balance' && <BalancePanel room={room} pending={pending} me={me} iAct={iAct} code={code} />}
 
       {/* ---------- 의리주 순서 ---------- */}
       {room && showPending && pending.kind === 'shuffle' && <ShufflePanel room={room} pending={pending} iAct={iAct} code={code} />}
@@ -2965,10 +2375,8 @@ export default function App() {
       {/* ---------- 도착 칸 모달 ---------- */}
       {room &&
         showPending &&
-        !['aiPick', 'vote', 'hunmin', 'subway', 'wordSong', 'shieldAsk', 'magnet', 'fate', 'shuffle', 'balance', 'bomb', 'reaction', 'gamble', 'caught', 'win', 'sojuBank'].includes(pending.kind) &&
+        !['aiPick', 'hunmin', 'subway', 'wordSong', 'shieldAsk', 'magnet', 'fate', 'shuffle', 'gamble', 'caught', 'win', 'sojuBank'].includes(pending.kind) &&
         !TEAM_GAMES.has(pending.kind) &&
-        !(pending.kind === 'liar' && pending.stage !== 'category') &&
-        !(pending.kind === 'pick' && pending.stage === 'result') &&
         pendingCell && (
           <div className="modal-backdrop">
             <div className="modal">
@@ -3047,8 +2455,6 @@ export default function App() {
                       : ' — 어느 팀 놉카드를 가져올지 고르고 있어요.'
                     : ' — 다른 팀에 놉카드가 없어요.')}
                 {pending.kind === 'choose' && (iAct ? ' — 진행할 게임을 하나 고르세요.' : ' — 게임을 고르고 있어요.')}
-                {pending.kind === 'liar' && (iAct ? ' — 키워드 카테고리를 고르면 모두에게 키워드가 배정돼요. 한 명만 비슷하지만 다른 키워드를 받아요.' : ' — 카테고리를 고르고 있어요.')}
-                {pending.kind === 'pick' && (iAct ? ' — 마실 사람 한 명을 고르세요.' : ` — ${room.players[pending.playerId]?.name}이(가) 마실 사람을 고르고 있어요.`)}
                 {pending.kind === 'pickTeam' &&
                   (pending.stage === 'confirm' && TEAM_INFO[pending.target]
                     ? ` — 상대 팀 ${TEAM_INFO[pending.target].emoji} ${TEAM_INFO[pending.target].name} 다 같이 마셔요! 🍻`
@@ -3110,33 +2516,6 @@ export default function App() {
                   <div className="nhaeng-n">{[...pending.word].length}행시</div>
                 </div>
               )}
-              {pending.kind === 'pick' && (
-                <div className="steal-list">
-                  {Object.entries(room.players)
-                    .filter(([pid, pl]) => pid !== pending.playerId && pl.name)
-                    .map(([pid, pl]) => (
-                      <button key={pid} className="steal-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'choose', pid)}>
-                        <span className="avatar sm" style={{ background: pl.color }}>
-                          {ini(pl?.name)}
-                        </span>
-                        <span className="pname">{pl.name}</span>
-                        <span className="team-chip" style={{ '--tc': TEAM_INFO[teamOf(room, pid)]?.color }}>
-                          {TEAM_INFO[teamOf(room, pid)]?.short}
-                        </span>
-                      </button>
-                    ))}
-                </div>
-              )}
-              {pending.kind === 'liar' && (
-                <div className="cat-grid">
-                  {LIAR_CATEGORIES.map((c) => (
-                    <button key={c.key} className="cat-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'category', c.key)}>
-                      <span className="cat-emo">{c.emoji}</span>
-                      <span>{c.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
               {pending.kind === 'steal' && (
                 <div className="steal-list">
                   {liveTeams(room)
@@ -3164,7 +2543,7 @@ export default function App() {
                       🎫 놉카드로 거부
                     </button>
                   )}
-                  {!['liar', 'choose', 'pick'].includes(pending.kind) &&
+                  {pending.kind !== 'choose' &&
                     !(pending.kind === 'steal' && liveTeams(room).some((t) => t !== teamOf(room, pending.playerId) && teamNop(room, t) > 0)) &&
                     !(pending.kind === 'pickTeam' && pending.stage === 'choose' && liveTeams(room).some((t) => t !== teamOf(room, pending.playerId))) &&
                     !(pending.kind === 'toast' && rivalsOf(room, pending.playerId).length) && (

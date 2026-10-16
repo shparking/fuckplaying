@@ -1,4 +1,10 @@
 import { NODES, NODE_BY_ID, BIG_NODES, CORNERS, TEAM_INFO, START, CORNER_TR, CORNER_TL, CORNER_BL, nodeLabel, cellNo } from '../game/yut'
+// 판 말: 3D 수달 모델(src/three/otter.js)을 팀 색 목띠·받침으로 비스듬히 찍은 그림 (tools/make_otters.mjs 로 다시 만듦)
+import otter0 from '../assets/otters/otter-0.webp'
+import otter1 from '../assets/otters/otter-1.webp'
+import otter2 from '../assets/otters/otter-2.webp'
+import otter3 from '../assets/otters/otter-3.webp'
+export const OTTER_IMG = [otter0, otter1, otter2, otter3]
 
 // 윷판: 좌표(0~100)를 판 안쪽 여백(INSET%)을 두고 배치.
 // 칸을 거의 맞닿게 키워서 전체 보기에서도 칸마다 벌칙 글자가 보이게 함 (크기 단위 cqw = 판 너비의 1%)
@@ -189,8 +195,11 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
             }}
             aria-label={`${info.name} 말 ${s.count}개`}
           >
-            {/* 업은 말: 팀 색 알약에 ×2·×3 크게 (한 개는 점) */}
-            <span className="ytoken-dot">{s.count > 1 ? `×${s.count}` : ''}</span>
+            {/* 수달 말 (팀 색 목띠·받침) + 업은 말이면 팀 색 알약 ×2·×3 */}
+            <span className="ytoken-dot">
+              <img className="ytoken-otter" src={OTTER_IMG[s.team] || OTTER_IMG[0]} alt="" draggable="false" />
+            </span>
+            {s.count > 1 && <span className="ytoken-count">×{s.count}</span>}
           </button>
         )
       })}

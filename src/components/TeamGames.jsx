@@ -8,7 +8,7 @@ import { SYNC_QUESTIONS, CT_COLORS } from '../game/teamgames'
 import { scoreCircle, circleAccuracy, circleComment, fakeCircle, seeded } from '../game/circle'
 import { PRICE_ITEMS, PRICE_BASE, pricePoints, won } from '../game/prices'
 import { PLACES } from '../game/places'
-import { MAP_W, MAP_H, MAP_KR, MAP_NK, MAP_JP, ISLAND_DOTS, toXY } from '../game/mapdata'
+import { MAP_W, MAP_H, MAP_KR, MAP_NK, MAP_JP, MAP_DO, ISLAND_DOTS, toXY } from '../game/mapdata'
 import {
   arr,
   ini,
@@ -69,7 +69,7 @@ import {
   WP_ROUNDS,
   WP_ANSWER_MS,
 } from '../room'
-import { WORLD_PLACES } from '../game/worldplaces'
+import { WORLD_PLACES, worldPoints } from '../game/worldplaces'
 import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
 
 // 서버 시각으로 다시 그리기 (active 일 때만 ms 간격)
@@ -688,7 +688,7 @@ export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
         startLabel="💣 폭탄 켜기"
         rules={
           <>
-            폭탄을 켜면 <b style={{ color: starter.color }}>{starter.name}</b>부터 팀끼리 돌아가며 주제에 맞는 단어를 <b>말로</b> 하나씩 말해요 (폰은 그냥 두세요). 폭탄은 <b>20~40초 사이 아무 때나</b> 터지고, 그때 말할 차례였던 팀이 다 같이 마셔요. 이미 나온 단어나 3초 넘게 뜸 들이면 그 팀이 마셔요.
+            폭탄을 켜면 <b style={{ color: starter.color }}>{starter.name}</b>부터 팀끼리 돌아가며 주제에 맞는 단어를 <b>말로</b> 하나씩 말해요 (폰은 그냥 두세요). 폭탄은 <b>20~40초 사이 아무 때나</b> 터지고, 그때 얘기하고 있던 팀이 다 같이 마셔요. 이미 나온 단어나 3초 넘게 뜸 들이면 그 팀이 마셔요.
           </>
         }
       />
@@ -731,7 +731,7 @@ export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
           <div className="bomb-emo">💥</div>
           <div className="ai-congrats">{sec}초 만에 펑!</div>
           <div className="ai-note">주제: {p.topic}</div>
-          <div className="ai-sub">실제 게임에서는 터질 때 말할 차례였던 팀이 다 같이 마셔요 (진행자가 팀을 골라요)</div>
+          <div className="ai-sub">실제 게임에서는 터질 때 얘기하고 있던 팀이 다 같이 마셔요</div>
           <div className="ai-actions">
             <button className="btn btn-primary" onClick={() => practiceEnd(code, `💣 연습: ${sec}초 만에 펑!`)}>
               확인
@@ -741,51 +741,19 @@ export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
       </div>
     )
   }
-  const loser = p.loser == null ? null : Number(p.loser)
-  if (loser == null || !TEAM_INFO[loser])
-    return (
-      <div className="ai-overlay bomb boom">
-        <div className="ai-reveal">
-          <div className="bomb-emo">💥</div>
-          <div className="ai-congrats">터졌다!</div>
-          <div className="ai-note">주제: {p.topic}</div>
-          <div className="ai-name">누구 차례에 터졌어요?</div>
-          <div className="ai-actions bomb-teams">
-            {ctl ? (
-              liveTeams(room).map((t) => (
-                <button key={t} className="btn btn-primary bomb-team" style={{ '--tc': TEAM_INFO[t].color }} onClick={() => resolvePending(code, room, 'bombLoser', t)}>
-                  {TEAM_INFO[t].emoji} {TEAM_INFO[t].name}
-                </button>
-              ))
-            ) : (
-              <div className="waiting">{actor?.name}이(가) 마실 팀을 골라요</div>
-            )}
-          </div>
-        </div>
-      </div>
-    )
+  // 펑 뒤: 마실 팀은 안 고름 — 그때 얘기하고 있던 팀이 오프라인으로 마시고 확인 (잔 수 집계는 안 함)
   return (
     <div className="ai-overlay bomb boom">
       <div className="ai-reveal">
-        <Confetti color={TEAM_INFO[loser].color} />
         <div className="bomb-emo">💥</div>
-        <div className="ai-congrats">
-          {TEAM_INFO[loser].emoji} {TEAM_INFO[loser].short} 차례에 펑!
-        </div>
-        <Avatars room={room} ids={teamMembers(room, loser)} />
-        <div className="ai-name">
-          <b style={{ color: '#fff' }}>{TEAM_INFO[loser].name}</b> 다 같이 마셔! 🍶
-        </div>
+        <div className="ai-congrats">펑! 터졌어요</div>
+        <div className="ai-note">주제: {p.topic}</div>
+        <div className="ai-name bomb-drink">얘기하고 있던 팀이 마셔! 🍶</div>
         <div className="ai-actions">
           {ctl ? (
-            <>
-              <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
-                확인
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => resolvePending(code, room, 'bombLoser', null)}>
-                다시 고르기
-              </button>
-            </>
+            <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'done')}>
+              확인
+            </button>
           ) : (
             <div className="waiting">{actor?.name}이(가) 확인하면 다음 차례로</div>
           )}
@@ -1547,6 +1515,7 @@ function KoreaMap({ onTap, children }) {
       <path d={MAP_JP} className="kmap-other" />
       <path d={MAP_NK} className="kmap-other" />
       <path d={MAP_KR} className="kmap-kr" />
+      <path d={MAP_DO} className="kmap-do" />
       {ISLAND_DOTS.map(([x, y], i) => (
         <circle key={i} cx={x} cy={y} r="5" className="kmap-kr" />
       ))}
@@ -1694,7 +1663,7 @@ export function MapPinPanel({ room, pending: p, me, ctl, code }) {
 
 // ---------- 세계 지도 찍기 ----------
 // 5문제 × 15초, 세계 지도에 도시·명소 핀 꽂기. 두 손가락으로 확대 · 끌어서 이동 · 그냥 누르면 핀 (다시 누르면 옮김) · 지도 아래 ＋ － 전체 버튼
-// 가까울수록 점수 (500km = 500점), 팀 점수 낮은 팀이 마심. 지도 그림(worldmap.js, 약 110KB)은 이 게임이 처음 뜰 때 따로 불러옴
+// 가까울수록 점수 (1,000km = 500점), 팀 점수 낮은 팀이 마심. 지도 그림(worldmap.js, 약 110KB)은 이 게임이 처음 뜰 때 따로 불러옴
 const WM_MAX_ZOOM = 8
 const WM_FULL = { x: 0, y: 0, w: WORLD_W }
 const wmH = (w) => (w * WORLD_H) / WORLD_W
@@ -1922,11 +1891,7 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
         startLabel="🌍 시작"
         extra={
           <div className="pg-scale">
-            {[
-              ['100km', 962],
-              ['500km', 500],
-              ['1,000km', 200],
-            ].map(([k, v]) => (
+            {[500, 1000, 2000].map((km) => [`${km.toLocaleString('ko-KR')}km`, worldPoints(km)]).map(([k, v]) => (
               <span key={k}>
                 {k} <b>{v}</b>
               </span>

@@ -54,9 +54,9 @@ export const WORLD_PLACES = [
   { name: '헬싱키', country: '핀란드', lat: 60.1699, lon: 24.9384, lv: 3 },
 ]
 
-// 거리 → 점수: 가까울수록 크게, 구간 없이 부드럽게 (500km = 500점)
-// 0km 1000 · 100km 962 · 250km 800 · 500km 500 · 1000km 200 · 2000km 59
-export const WORLD_HALF_KM = 500
+// 거리 → 점수: 가까울수록 크게, 구간 없이 부드럽게 (1,000km = 500점 — 10/16 맞히기 어려워서 500km → 1,000km 로 후하게)
+// 0km 1000 · 100km 990 · 250km 941 · 500km 800 · 1000km 500 · 2000km 200 · 3000km 100
+export const WORLD_HALF_KM = 1000
 export const worldPoints = (km) => (km == null || !Number.isFinite(km) ? 0 : Math.round(1000 / (1 + (km / WORLD_HALF_KM) ** 2)))
 
 // 한 판 5문제: 쉬움 1 → 보통 3 → 어려움 1 (점점 어려워짐), 최근에 나온 곳은 피함
