@@ -234,12 +234,15 @@ export function demoSeed(code, names, colors) {
 }
 
 // 방 정리 (방 만들 때 / 앱 열 때 호출) — 인덱스 없이 방 전체를 읽어 판단
-//  - 참가자가 없거나, 모두 접속이 끊긴 채 10분 넘게 활동이 없는 방 삭제
-//  - 대기실(lobby)에서 1시간 넘게 시작 안 한 방 삭제
+//  - 참가자가 없거나, 모두 접속이 끊긴 채 30분 넘게 활동이 없는 방 삭제 (다 같이 폰 내려놓고 쉬는 동안 안 지워지게 10분 → 30분)
+//  - 대기실(lobby)에서 1시간 넘게 시작 안 한 방 삭제 — 게임이 끝나고 대기실로 돌아온 때(lobbyAt)부터 셈
+//    (예전엔 방 만든 때부터 세서, 1시간 넘게 한 판 하고 대기실로 가면 방이 바로 지워졌음)
 //  - 상태와 무관하게 24시간 지난 방 삭제
+//  - keep: 지금 들어가 있는 방은 안 지움 (다시 연결된 직후엔 내 접속 표시가 아직 안 들어가 있을 수 있어서)
 export const LOBBY_TTL_MS = 60 * 60 * 1000
 export const ROOM_TTL_MS = 24 * 60 * 60 * 1000
-export const EMPTY_TTL_MS = 10 * 60 * 1000
+export const EMPTY_TTL_MS = 30 * 60 * 1000
+export const lobbySince = (r) => (typeof r?.lobbyAt === 'number' ? r.lobbyAt : typeof r?.createdAt === 'number' ? r.createdAt : 0)
 export function shouldPurge(r, nowMs) {
   if (!r || typeof r !== 'object') return true
   const created = typeof r.createdAt === 'number' ? r.createdAt : 0
@@ -247,18 +250,18 @@ export function shouldPurge(r, nowMs) {
   const lastActive = typeof r.lastActive === 'number' ? r.lastActive : created
   if (players.length === 0) return true
   if (players.every((p) => p.online === false) && lastActive <= nowMs - EMPTY_TTL_MS) return true
-  if (r.status !== 'playing' && created <= nowMs - LOBBY_TTL_MS) return true
+  if (r.status !== 'playing' && lobbySince(r) <= nowMs - LOBBY_TTL_MS) return true
   if (created <= nowMs - ROOM_TTL_MS) return true
   return false
 }
-export async function dbPurgeOldRooms() {
+export async function dbPurgeOldRooms(keep) {
   if (DEMO) return 0
   const snap = await get(ref(fbDb, ROOMS))
   if (!snap.exists()) return 0
   const nowMs = Date.now()
   const updates = {}
   snap.forEach((child) => {
-    if (shouldPurge(child.val(), nowMs)) updates[child.key] = null
+    if (child.key !== keep && shouldPurge(child.val(), nowMs)) updates[child.key] = null
   })
   if (!Object.keys(updates).length) return 0
   await update(ref(fbDb, ROOMS), updates)

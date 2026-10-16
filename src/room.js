@@ -1,6 +1,6 @@
 // Firebase Realtime Database 방 로직 (주루윷놀이)
 // yutRooms/{CODE} = {
-//   hostId, hostName, pw?, createdAt, lastActive, status: 'lobby' | 'playing',
+//   hostId, hostName, pw?, createdAt, lastActive, lobbyAt?(게임 끝나고 대기실로 돌아온 때), status: 'lobby' | 'playing',
 //   teamCount: 2~4, players/{pid}: { name, color, team, drinks, online },
 //   teamNop/{team}: 놉카드 수 (팀 단위로 모으고 씀), teamShield/{team}: 방패 수 (잡힐 때 쓸지 고름), sojuBank: 소주 보관소에 모인 잔 수,
 //   order: [pid...] (팀 안에서 던지는 순서), teamTurn, memberIdx/{team}, turnNo, throwNo,
@@ -98,8 +98,9 @@ export async function trimLog(code, room) {
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 
 // ---------- 방 만들기 / 입장 ----------
-export function purgeRooms() {
-  return dbPurgeOldRooms().catch(() => 0)
+// keep: 지금 들어가 있는 방 코드 (그 방은 안 지움)
+export function purgeRooms(keep) {
+  return dbPurgeOldRooms(keep).catch(() => 0)
 }
 
 export async function createRoom(name, password = '') {
@@ -997,11 +998,13 @@ function maybeMission(room, updates) {
   updates[`log/${newId()}`] = { t: Date.now(), text: `🎯 누군가에게 돌발 미션이 주어졌습니다! (${m.minutes}분)` }
 }
 
-// 방장: 미션 시간이 끝나면 퀴즈 단계로
+// 방장: 미션 시간이 끝나면 퀴즈 단계로 (방장 폰이 잠겨 있어도 안 멈추게, 수행자 폰이 3초 늦게 대신 넘김)
+export const MISSION_TICK_GRACE_MS = 3000
 export async function missionTick(code, room) {
   const m = room.mission
-  if (!m || m.stage !== 'active' || room.hostId !== myId()) return
-  if (serverNow() < m.endsAt) return
+  if (!m || m.stage !== 'active') return
+  const late = room.hostId === myId() ? 0 : m.playerId === myId() ? MISSION_TICK_GRACE_MS : null
+  if (late == null || serverNow() < m.endsAt + late) return
   await roomUpdate(code, { 'mission/stage': 'quiz', event: { id: newId(), text: `⏰ ${room.players[m.playerId]?.name}의 미션 수행 시간이 끝났습니다!` } })
 }
 // 수행자 외 참가자: 5지선다 투표
@@ -1647,6 +1650,7 @@ export async function restartGame(code, room) {
     .sort((a, b) => b.drinks - a.drinks)
   const updates = {
     status: 'lobby',
+    lobbyAt: now(), // 대기실 1시간 자동 정리는 여기서부터 셈 (방 만든 때가 아니라)
     pending: null,
     lastMove: null,
     lastThrow: null,

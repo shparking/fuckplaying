@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import YutBoard from './components/YutBoard'
 import { ThrowOverlay, Sticks, preloadThrow3D } from './components/YutSticks'
-import { SOLO, LOBBY_TTL_MS, PRACTICE } from './db'
+import { SOLO, LOBBY_TTL_MS, PRACTICE, lobbySince } from './db'
 import {
   myId,
   ini,
@@ -1863,9 +1863,9 @@ export default function App() {
   useEffect(() => subscribeConnection(setConnected), [])
   useEffect(() => watchServerOffset(), [])
 
-  // 앱을 열 때 한 번: 오래된 방 정리
+  // 앱을 열 때(다시 연결될 때도): 오래된 방 정리 — 지금 들어가 있는 방은 빼고
   useEffect(() => {
-    if (connected) purgeRooms()
+    if (connected) purgeRooms(code)
   }, [connected])
 
   // 홈 화면: 열린 방 목록 구독
@@ -1901,11 +1901,12 @@ export default function App() {
     return () => off()
   }, [code])
 
-  // 참가가 확정된 뒤에만 접속 상태 기록
+  // 참가가 확정된 뒤에만 접속 상태 기록. 연결이 끊겼다 다시 붙을 때마다 다시 기록
+  // (끊기면 서버가 online=false 로 바꾸는데, 예전엔 다시 연결돼도 true 로 안 돌아와서 폰 화면을 한 번 껐다 켠 사람은 계속 '끊김'으로 보였음)
   const joined = !!room?.players?.[me]?.name
   useEffect(() => {
-    if (code && joined) setupPresence(code)
-  }, [code, joined])
+    if (code && joined && connected) setupPresence(code)
+  }, [code, joined, connected])
 
   // 링크로 들어왔는데 아직 참가 전이면 자동 참가 시도 (이름이 있을 때)
   const leavingRef = useRef(false)
@@ -2151,16 +2152,17 @@ export default function App() {
     } catch {}
   }, [room?.mission?.id, room?.mission?.stage])
   useEffect(() => {
-    if (!room || room.hostId !== me || room.mission?.stage !== 'active') return
+    // 방장 폰 + 수행자 폰 (수행자는 3초 늦게, 방장 폰이 잠겨 있을 때만 실제로 넘김)
+    if (!room || (room.hostId !== me && room.mission?.playerId !== me) || room.mission?.stage !== 'active') return
     const t = setInterval(() => missionTick(code, room), 1000)
     return () => clearInterval(t)
   }, [room, me, code])
 
-  // 대기실에서 1시간 넘게 시작하지 않은 내 방은 방장 기기가 스스로 닫음
+  // 대기실에서 1시간 넘게 시작하지 않은 내 방은 방장 기기가 스스로 닫음 (게임 끝나고 대기실로 온 때부터 셈)
   useEffect(() => {
     if (!room || room.hostId !== me || room.status !== 'lobby' || typeof room.createdAt !== 'number') return
     const check = () => {
-      if (Date.now() - room.createdAt >= LOBBY_TTL_MS) removeRoom(code)
+      if (Date.now() - lobbySince(room) >= LOBBY_TTL_MS) removeRoom(code)
     }
     check()
     const t = setInterval(check, 30000)
