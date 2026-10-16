@@ -63,6 +63,8 @@ import {
   teamLabel,
   teamName,
   loserTeamsText,
+  loserLeft,
+  nopKey,
   optionTargets,
   TEAM_GAMES,
   PRACTICE_GAMES,
@@ -1225,6 +1227,17 @@ function SummaryCard({ summary, me, onClose }) {
               {rows.some((r) => r.team === summary.winner) ? `(${rows.filter((r) => r.team === summary.winner).map((r) => r.name).join(', ')})` : ''} 승리
             </div>
           )}
+          {summary.left && Object.keys(summary.left).length > 0 && (
+            <div className="muted summary-left">
+              {Object.entries(summary.left)
+                .map(([k, n]) => {
+                  const t = Number(String(k).replace(/^t/, ''))
+                  const names = rows.filter((r) => r.team === t).map((r) => r.name)
+                  return `${TEAM_INFO[t]?.name || ''}${names.length ? `(${names.join(', ')})` : ''} 말 ${n}개 못 들어옴 → ${n}잔씩`
+                })
+                .join(' · ')}
+            </div>
+          )}
           {mins && (
             <div className="muted">
               총 {mins}분 · {rows.reduce((a, r) => a + r.drinks, 0)}잔
@@ -1260,6 +1273,8 @@ function SummaryCard({ summary, me, onClose }) {
 function WinOverlay({ room, pending: p, isHost, onDone }) {
   const info = TEAM_INFO[p.team] || TEAM_INFO[0]
   const mem = teamMembers(room, p.team)
+  // 진 팀마다 못 들어온 말 수 (끝날 때 저장한 값, 없으면 지금 판에서 셈)
+  const ls = p.left ? liveTeams(room).filter((x) => x !== p.team && p.left[nopKey(x)] != null).map((x) => ({ team: x, left: p.left[nopKey(x)] })) : loserLeft(room, p.team)
   const pieces = Array.from({ length: 36 })
   return (
     <div className="ai-overlay">
@@ -1278,8 +1293,20 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
           ))}
         </div>
         <div className="ai-note">{mem.map((t) => room.players[t]?.name).join(', ')} — 말 {pieceCountOf(room)}개 모두 골인!</div>
+        {/* 10/16: 진 팀은 못 들어온 말 수만큼 마심 — 팀마다 몇 개 못 들어왔는지 */}
+        <div className="win-left">
+          {ls.map((x) => (
+            <div key={x.team} className="win-left-row" style={{ '--tc': TEAM_INFO[x.team]?.color }}>
+              <b>{teamName(room, x.team)}</b>
+              <span>
+                말 <strong>{x.left}개</strong> 못 들어옴
+              </span>
+              <em>{x.left}잔씩 🍶</em>
+            </div>
+          ))}
+        </div>
         <div className="ai-name">
-          <b>{loserTeamsText(room, p.team)}</b> 🍻
+          <b>{ls.length === 1 ? `${teamName(room, ls[0].team)} ${ls[0].left}잔씩 마셔!` : '못 들어온 말 수만큼 마셔!'}</b> 🍻
         </div>
         <div className="ai-actions">
           {isHost ? (
@@ -2385,6 +2412,8 @@ export default function App() {
         (() => {
           // 여러 팀이 한 번에 잡힐 수도 있음 (방패로 막아서 한 칸에 같이 있던 말)
           const vs = arr(pending.victims).length ? arr(pending.victims) : [{ team: pending.victim, count: pending.count }]
+          // 10/16: 잡아도 그 칸 벌칙은 그대로 → 확인 누르면 그 칸 벌칙, 끝나면 한 번 더
+          const ct = oneLine(cells[pending.pos]?.text)
           return (
             <CongratsOverlay
               room={room}
@@ -2393,7 +2422,7 @@ export default function App() {
               iAct={iAct}
               title="🎯 잡았다!"
               teamWide
-              note={`${vs.map((v) => `${teamName(room, v.team)} 말 ${v.count}개${v.count > 1 ? `(${v.count}잔씩)` : ''}`).join(' · ')}가 집으로! · ${room.players[pending.playerId]?.name} 한 번 더 던져요`}
+              note={`${vs.map((v) => `${teamName(room, v.team)} 말 ${v.count}개${v.count > 1 ? `(${v.count}잔씩)` : ''}`).join(' · ')}가 집으로! · ${room.players[pending.playerId]?.name}${ct ? ` 이 칸 「${ct}」 하고` : ''} 한 번 더 던져요`}
               onDone={() => resolvePending(code, room, 'done')}
             />
           )

@@ -4102,3 +4102,47 @@ textarea {
   60% { transform: rotate(-4deg); }
   80% { transform: rotate(3deg); }
 }
+
+/* 승리 화면: 진 팀마다 못 들어온 말 수 = 잔 수 (10/16) */
+.win-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, 360px);
+  margin: 4px auto 0;
+}
+.win-left-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid color-mix(in srgb, var(--tc) 65%, transparent);
+  font-size: 15px;
+  text-align: left;
+}
+.win-left-row b {
+  flex: 1;
+  color: var(--tc);
+  font-weight: 800;
+  word-break: keep-all;
+}
+.win-left-row span {
+  text-align: right;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+.win-left-row strong {
+  color: #fff;
+  font-size: 18px;
+}
+.win-left-row em {
+  font-style: normal;
+  font-weight: 800;
+  color: #ffd166;
+  white-space: nowrap;
+}
+.summary-left {
+  font-size: 13px;
+}

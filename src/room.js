@@ -761,18 +761,23 @@ function caughtUpdates(room, upd, id, pos, victims, how = 'move') {
   upd.event = { id: newId(), text: `🎯 ${me.name} ${HOW_TEXT[how] || ''}잡았다! ${victimText(room, victims)} → 집으로` }
   return upd
 }
-// 승리: 진 팀 전원 마심 → 승리 화면. 2팀이면 "파랑팀(관희, 민수) 마셔!", 3팀 이상이면 진 팀들 이름을 다 부름
-export const loserTeamsText = (room, t) => {
-  const ls = liveTeams(room).filter((x) => x !== Number(t))
-  return ls.length === 1 ? `${teamName(room, ls[0])} 마셔!` : ls.length ? `${ls.map((x) => teamName(room, x)).join(' · ')} 다 마셔!` : ''
+// 승리: 진 팀은 **들어오지 못한 말 수만큼** 마심 (10/16 사용자 요청 — 팀원 모두 그 잔 수씩)
+// → 승리 화면·오늘의 결과에 팀마다 말 몇 개 못 들어왔는지 (pending.left / summary.left = { t1: 2, … })
+export function loserLeft(room, t, pieces = roomPieces(room)) {
+  return liveTeams(room)
+    .filter((x) => x !== Number(t))
+    .map((x) => ({ team: x, left: (pieces[x] || []).filter((pc) => pc.n !== 'goal').length }))
 }
+// '파랑팀(관희, 민수) 말 2개 못 들어옴 → 2잔씩 마셔!' (3팀 이상이면 팀마다 이어서)
+export const loserTeamsText = (room, t, ls = loserLeft(room, t)) =>
+  ls.length ? `${ls.map((x) => `${teamName(room, x.team)} 말 ${x.left}개 못 들어옴 → ${x.left}잔씩`).join(' · ')} 마셔!` : ''
 function winUpdates(room, upd, id, t) {
-  const losers = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name && teamOf(room, pid) !== t)
-  addDrinks(room, upd, losers)
+  const ls = loserLeft(room, t, upd.pieces || roomPieces(room))
+  ls.forEach((x) => addDrinks(room, upd, teamMembers(room, x.team), Math.max(1, x.left)))
   upd.winner = t
   upd['yut/stage'] = 'done'
-  upd.pending = { kind: 'win', playerId: id, team: t, pos: 'o0', startedAt: Date.now() }
-  upd.event = { id: newId(), text: `🏆 ${teamName(room, t)} 승리! ${loserTeamsText(room, t)} 🍻` }
+  upd.pending = { kind: 'win', playerId: id, team: t, pos: 'o0', left: Object.fromEntries(ls.map((x) => [nopKey(x.team), x.left])), startedAt: Date.now() }
+  upd.event = { id: newId(), text: `🏆 ${teamName(room, t)} 승리! ${loserTeamsText(room, t, ls)} 🍻` }
   return upd
 }
 // 칸 효과로 말이 움직일 때 (4칸 뒤로 · 자석 · 운명의 카드): from 칸의 우리 말(업힌 말도)이 mv { path, dest, prev, finished } 대로
@@ -1160,13 +1165,15 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'caught': {
       // 잡기: 잡힌 팀 전원이 잡힌 말 수만큼 마심 (보너스 던지기는 이미 +1). 여러 팀이 한 번에 잡힐 수도 있음 (방패로 막은 칸)
+      // 10/16 사용자 요청: 잡아도 그 칸 벌칙·게임은 그대로 함 (놉카드 +1·방패 +1·소주 +1, 4칸 뒤로·자석·운명의 카드도) → 끝나면 보너스 던지기
       const vs = arr(p.victims).length ? arr(p.victims) : [{ team: p.victim, count: p.count || 1 }]
-      const upd = { ...nextTurnUpdates(room) }
+      const upd = {}
       vs.forEach((v) => addDrinks(room, upd, teamMembers(room, v.team), v.count || 1))
-      upd.event = {
-        id: newId(),
-        text: `🎯 ${vs.map((v) => `${teamName(room, v.team)} ${v.count > 1 ? `${v.count}잔씩 ` : ''}마셔!`).join(' · ')} 🍶`,
-      }
+      const text = `🎯 ${vs.map((v) => `${teamName(room, v.team)} ${v.count > 1 ? `${v.count}잔씩 ` : ''}마셔!`).join(' · ')} 🍶`
+      arriveUpdates(room, room, upd, id, teamOf(room, id), p.pos, false)
+      // 칸이 따로 알림을 띄우면(놉카드 +1 등) 마신 건 기록에만
+      if (upd.event) upd[`log/${newId()}`] = { t: Date.now(), text }
+      else upd.event = { id: newId(), text }
       await roomUpdate(code, upd)
       return
     }
@@ -1476,7 +1483,7 @@ export async function restartGame(code, room) {
     usedPlaces: null,
     usedWorld: null,
     sojuBank: null,
-    summary: { id: newId(), at: Date.now(), startedAt: room.startedAt || null, rows, ...(room.winner != null ? { winner: room.winner } : {}) },
+    summary: { id: newId(), at: Date.now(), startedAt: room.startedAt || null, rows, ...(room.winner != null ? { winner: room.winner } : {}), ...(room.pending?.kind === 'win' && room.pending.left ? { left: room.pending.left } : {}) },
   }
   await roomUpdate(code, updates)
 }
