@@ -1,3 +1,5 @@
+import { pickUnique } from './rounds.js'
+
 // 지도 찍기 장소 (위도, 경도). 도시는 시청 기준. lv 1 쉬움 · 2 보통 · 3 어려움 · w 뽑힐 무게 (기본 1)
 // 좌표 확인: 위키백과(마라도·땅끝마을·백령도·독도·울릉도·남이섬), 나머지는 시청·역·정상 좌표
 export const PLACES = [
@@ -12,7 +14,7 @@ export const PLACES = [
   { name: '인천공항', lat: 37.4602, lon: 126.4407, lv: 1 },
   // 보통
   { name: '전주', lat: 35.8242, lon: 127.148, lv: 2 },
-  { name: '청주', lat: 36.6424, lon: 127.489, lv: 2, w: 3 }, // 10/16 사용자 고향이라 3배 (한 판에 약 40%)
+  { name: '청주', lat: 36.6424, lon: 127.489, lv: 2, w: 5 }, // 10/16 사용자 고향이라 더 자주: 지도 게임 한 번에 약 40% (보통 30곳 중 3곳 뽑을 때 무게 5)
   { name: '춘천', lat: 37.8813, lon: 127.7298, lv: 2 },
   { name: '강릉', lat: 37.7519, lon: 128.8761, lv: 2 },
   { name: '속초', lat: 38.207, lon: 128.5918, lv: 2 },
@@ -46,6 +48,19 @@ export const PLACES = [
   { name: '설악산 대청봉', lat: 38.119, lon: 128.4655, lv: 3 },
   { name: '지리산 천왕봉', lat: 35.337, lon: 127.7307, lv: 3 },
   { name: '한라산 백록담', lat: 33.3617, lon: 126.5292, lv: 3 },
+  // 10/16 추가: 보통 18 → 30곳 (한 판에 지도 게임을 여러 번 해도 안 겹치게, 시청 좌표). 문제를 번호로 저장해서 새 장소는 항상 맨 뒤에
+  { name: '세종', lat: 36.4801, lon: 127.289, lv: 2 },
+  { name: '충주', lat: 36.991, lon: 127.9259, lv: 2 },
+  { name: '제천', lat: 37.1326, lon: 128.191, lv: 2 },
+  { name: '공주', lat: 36.4466, lon: 127.119, lv: 2 },
+  { name: '서산', lat: 36.7848, lon: 126.4503, lv: 2 },
+  { name: '평택', lat: 36.9921, lon: 127.1129, lv: 2 },
+  { name: '파주', lat: 37.7599, lon: 126.78, lv: 2 },
+  { name: '구미', lat: 36.1195, lon: 128.3446, lv: 2 },
+  { name: '익산', lat: 35.9483, lon: 126.9577, lv: 2 },
+  { name: '남원', lat: 35.4164, lon: 127.3904, lv: 2 },
+  { name: '거제', lat: 34.8806, lon: 128.6211, lv: 2 },
+  { name: '서귀포', lat: 33.2541, lon: 126.5601, lv: 2 },
 ]
 
 // 거리 → 점수: 가까울수록 크게, 구간 없이 부드럽게 (40km = 500점)
@@ -53,29 +68,8 @@ export const PLACES = [
 export const MAP_HALF_KM = 40
 export const mapPoints = (km) => (km == null || !Number.isFinite(km) ? 0 : Math.round(1000 / (1 + (km / MAP_HALF_KM) ** 2)))
 
-// 한 판 5문제: 쉬움 1 → 보통 3 → 어려움 1 (점점 어려워짐), 이미 나온 곳은 그 방에서 다시 안 나옴 (used, 다 나오면 그 난이도만 다시)
-// 장소마다 무게 w (청주 3, 나머지 1)로 뽑음
-export const MAP_USED_KEEP = PLACES.length - 7 // used 에 남겨 두는 수 (= 거의 한 바퀴 돌 때까지 안 겹침)
+// 한 판 5문제: 쉬움 1 → 보통 3 → 어려움 1 (점점 어려워짐). 장소마다 무게 w (청주만 크게)
+// used = 이번 윷놀이 판에 지도 찍기로 이미 나온 곳 → 그 판이 끝날 때까지 절대 다시 안 나옴 (rounds.js)
 export function pickMapRounds(used = [], rand = Math.random) {
-  const pick = (lv, n, taken) => {
-    let pool = PLACES.map((p, i) => (p.lv === lv && !taken.includes(i) ? i : -1)).filter((i) => i >= 0)
-    const fresh = pool.filter((i) => !used.includes(i))
-    if (fresh.length >= n) pool = fresh
-    const out = []
-    while (out.length < n && pool.length) {
-      const total = pool.reduce((a, i) => a + (PLACES[i].w || 1), 0)
-      let r = rand() * total
-      let k = 0
-      for (; k < pool.length - 1; k++) {
-        r -= PLACES[pool[k]].w || 1
-        if (r < 0) break
-      }
-      out.push(pool.splice(k, 1)[0])
-    }
-    return out
-  }
-  const a = pick(1, 1, [])
-  const b = pick(2, 3, a)
-  const c = pick(3, 1, [...a, ...b])
-  return [...a, ...b, ...c]
+  return pickUnique(PLACES, used, [[1, 1], [2, 3], [3, 1]], rand)
 }

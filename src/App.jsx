@@ -1165,6 +1165,8 @@ function DebugPanel({ room, code, me, connected }) {
       mission: room.mission && { stage: room.mission.stage, playerId: room.mission.playerId, endsIn: Math.round((room.mission.endsAt - Date.now()) / 1000), text: room.mission.text },
       serverOffset: serverNow() - Date.now(),
       rollsSinceMission: room.rollsSinceMission,
+      usedPlaces: room.usedPlaces, // 이번 판에 지도 찍기로 나온 곳 (판마다 비움)
+      usedWorld: room.usedWorld,
       event: room.event?.text,
     },
     errors: errLog.slice(-20),

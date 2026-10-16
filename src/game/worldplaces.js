@@ -1,3 +1,5 @@
+import { pickUnique } from './rounds.js'
+
 // 세계 지도 찍기 장소 (위도, 경도). 도시는 도심, 섬·나라 이름은 그 섬·나라 가운데쯤. lv 1 쉬움 · 2 보통 · 3 어려움
 // country: 문제와 같이 보여 주는 나라 힌트 (나라 이름이 곧 문제인 곳은 null)
 export const WORLD_PLACES = [
@@ -52,6 +54,17 @@ export const WORLD_PLACES = [
   { name: '하바나', country: '쿠바', lat: 23.1136, lon: -82.3666, lv: 3 },
   { name: '오클랜드', country: '뉴질랜드', lat: -36.8485, lon: 174.7633, lv: 3 },
   { name: '헬싱키', country: '핀란드', lat: 60.1699, lon: 24.9384, lv: 3 },
+  // 10/16 추가: 보통 20 → 30곳 (한 판에 세계 지도 게임을 여러 번 해도 안 겹치게). 문제를 번호로 저장해서 새 장소는 항상 맨 뒤에
+  { name: '오사카', country: '일본', lat: 34.6937, lon: 135.5023, lv: 2 },
+  { name: '삿포로', country: '일본', lat: 43.0618, lon: 141.3545, lv: 2 },
+  { name: '다낭', country: '베트남', lat: 16.0544, lon: 108.2022, lv: 2 },
+  { name: '쿠알라룸푸르', country: '말레이시아', lat: 3.139, lon: 101.6869, lv: 2 },
+  { name: '블라디보스토크', country: '러시아', lat: 43.1155, lon: 131.8855, lv: 2 },
+  { name: '암스테르담', country: '네덜란드', lat: 52.3676, lon: 4.9041, lv: 2 },
+  { name: '프라하', country: '체코', lat: 50.0755, lon: 14.4378, lv: 2 },
+  { name: '빈', country: '오스트리아', lat: 48.2082, lon: 16.3738, lv: 2 },
+  { name: '샌프란시스코', country: '미국', lat: 37.7749, lon: -122.4194, lv: 2 },
+  { name: '토론토', country: '캐나다', lat: 43.6532, lon: -79.3832, lv: 2 },
 ]
 
 // 거리 → 점수: 가까울수록 크게, 구간 없이 부드럽게 (1,000km = 500점 — 10/16 맞히기 어려워서 500km → 1,000km 로 후하게)
@@ -59,18 +72,8 @@ export const WORLD_PLACES = [
 export const WORLD_HALF_KM = 1000
 export const worldPoints = (km) => (km == null || !Number.isFinite(km) ? 0 : Math.round(1000 / (1 + (km / WORLD_HALF_KM) ** 2)))
 
-// 한 판 5문제: 쉬움 1 → 보통 3 → 어려움 1 (점점 어려워짐), 최근에 나온 곳은 피함
+// 한 판 5문제: 쉬움 1 → 보통 3 → 어려움 1 (점점 어려워짐)
+// used = 이번 윷놀이 판에 세계 지도로 이미 나온 곳 → 그 판이 끝날 때까지 절대 다시 안 나옴 (rounds.js)
 export function pickWorldRounds(used = [], rand = Math.random) {
-  const pick = (lv, n, taken) => {
-    let pool = WORLD_PLACES.map((p, i) => (p.lv === lv && !taken.includes(i) ? i : -1)).filter((i) => i >= 0)
-    const fresh = pool.filter((i) => !used.includes(i))
-    if (fresh.length >= n) pool = fresh
-    const out = []
-    while (out.length < n && pool.length) out.push(pool.splice(Math.floor(rand() * pool.length), 1)[0])
-    return out
-  }
-  const a = pick(1, 1, [])
-  const b = pick(2, 3, a)
-  const c = pick(3, 1, [...a, ...b])
-  return [...a, ...b, ...c]
+  return pickUnique(WORLD_PLACES, used, [[1, 1], [2, 3], [3, 1]], rand)
 }

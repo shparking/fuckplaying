@@ -16,7 +16,7 @@ import { pickNhaengWord } from './game/words'
 import { pickSubwayLine } from './game/subway'
 import { fakeCircle } from './game/circle'
 import { PRICE_ITEMS, PRICE_USED_KEEP, pricePoints, pickPriceRounds } from './game/prices'
-import { PLACES, mapPoints, pickMapRounds, MAP_USED_KEEP } from './game/places'
+import { PLACES, mapPoints, pickMapRounds } from './game/places'
 import { toXY, toLatLon, distKm, MAP_W, MAP_H } from './game/mapdata'
 import { WORLD_PLACES, worldPoints, pickWorldRounds } from './game/worldplaces'
 import { WORLD_W, WORLD_H, WORLD_LAT, toWorldXY, worldToLatLon } from './game/worldgeo'
@@ -440,6 +440,8 @@ export async function startGame(code, room) {
     teamNop: null,
     teamShield: null,
     nopNotice: null,
+    usedPlaces: null, // 지도 찍기·세계 지도: 한 판 안에서는 같은 곳 안 나옴 → 새 판마다 비움
+    usedWorld: null,
     event: { id: newId(), text: `${teamText} — ${TEAM_INFO[first].name} 먼저!` },
   }
   // 데모: &nop=2 처럼 빨강팀 놉카드 수 지정 (테스트용)
@@ -1471,6 +1473,8 @@ export async function restartGame(code, room) {
     teamNop: null,
     teamShield: null,
     nopNotice: null,
+    usedPlaces: null,
+    usedWorld: null,
     sojuBank: null,
     summary: { id: newId(), at: Date.now(), startedAt: room.startedAt || null, rows, ...(room.winner != null ? { winner: room.winner } : {}) },
   }
@@ -2119,14 +2123,14 @@ async function resolveTeamGame(code, room, p, action, target) {
     if (p.kind === 'mapPin') {
       const rounds = pickMapRounds(arr(room.usedPlaces))
       Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': rounds, 'pending/answers': SOLO ? fakeMapAnswers(room, rounds) : null })
-      upd.usedPlaces = [...arr(room.usedPlaces), ...rounds].slice(-MAP_USED_KEEP) // 그 방에서 거의 다 돌 때까지 같은 곳 안 나옴
+      upd.usedPlaces = [...arr(room.usedPlaces), ...rounds].slice(-300) // 이번 판에 나온 곳: 판이 끝날 때까지 다시 안 나옴 (판 시작 때 비움)
     }
     if (p.kind === 'worldPin') {
       // 데모: &wround=0,13,14,15,36 처럼 문제(장소 번호)를 고정 (테스트용)
       const forced = DEMO ? (new URLSearchParams(window.location.search).get('wround') || '').split(',').filter(Boolean).map(Number).filter((i) => WORLD_PLACES[i]) : []
       const rounds = forced.length === WP_ROUNDS ? forced : pickWorldRounds(arr(room.usedWorld))
       Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': rounds, 'pending/answers': SOLO ? fakeWorldAnswers(room, rounds) : null })
-      upd.usedWorld = [...arr(room.usedWorld), ...rounds].slice(-30)
+      upd.usedWorld = [...arr(room.usedWorld), ...rounds].slice(-300) // 이번 판에 나온 곳: 판이 끝날 때까지 다시 안 나옴 (판 시작 때 비움)
     }
     upd.event = { id: newId(), text: `${emo} ${title} 시작!` }
     await roomUpdate(code, upd)
