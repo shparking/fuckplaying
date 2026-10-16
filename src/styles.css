@@ -4201,3 +4201,79 @@ textarea {
   font-size: 12px;
   margin-top: -6px;
 }
+
+/* ---------- 자석 (42·50번) · 운명의 카드 ---------- */
+.magnet-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.magnet-dir {
+  font-weight: 900;
+  color: var(--corner);
+  white-space: nowrap;
+}
+.magnet-who {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+.fate-card {
+  position: relative;
+  width: 150px;
+  height: 190px;
+  margin: 14px auto 10px;
+  perspective: 800px;
+}
+.fate-card > div {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: transform 0.6s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+.fate-back {
+  background: linear-gradient(135deg, var(--corner), var(--pink));
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  font-size: 64px;
+  transform: rotateY(0deg);
+  animation: fateShake 0.9s ease-in-out;
+}
+.fate-front {
+  background: var(--surface-2);
+  border: 2px solid var(--yellow);
+  box-shadow: 0 0 22px var(--yellow-soft);
+  transform: rotateY(180deg);
+  text-align: center;
+  padding: 10px;
+}
+.fate-card.open .fate-back {
+  transform: rotateY(-180deg);
+}
+.fate-card.open .fate-front {
+  transform: rotateY(0deg);
+}
+.fate-emo {
+  font-size: 54px;
+  line-height: 1;
+}
+.fate-front b {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--text);
+  word-break: keep-all;
+}
+@keyframes fateShake {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-6deg); }
+  40% { transform: rotate(6deg); }
+  60% { transform: rotate(-4deg); }
+  80% { transform: rotate(3deg); }
+}

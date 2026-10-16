@@ -83,7 +83,7 @@ export function nodeName(id) {
 
 // ---------- 칸 내용 (기본값) ----------
 // type 은 미니게임/기능. drink: 'self' | 'team' | 'all' 이면 수행 완료 시 잔 수 자동 +1
-// (10/15 사용자 리스트 + 10/16 방패·지하철·단어 노래·세계 지도. 남은 빈칸 44·51은 일단 소주 +1 적립 — 새 아이디어가 나오면 채움)
+// (10/15 사용자 리스트 + 10/16 방패·지하철·단어 노래·자석. 대각선 빈칸은 이제 없음)
 const NOP = { emoji: '🎫', text: '놉카드 +1', type: 'nop' }
 const HUNMIN = { emoji: '📝', text: '훈민정음\n게임', type: 'hunmin' }
 const ALL = { emoji: '🍻', text: '다 같이\n마셔!', drink: 'all' }
@@ -125,6 +125,9 @@ const EXCEPT_SH = { emoji: '🙅', text: '박상혁 빼고\n다 마셔!', drink:
 const ALLOPT = { emoji: '🚨', text: '모든 옵션\nOn', type: 'allOptions', minutes: 3 }
 // 방패: 도착한 팀 방패 +1 → 우리 말이 잡힐 때 쓸지 고름 (쓰면 안 잡히고 방패 1개 없어짐)
 const SHIELD = { emoji: '🛡️', text: '방패 +1', type: 'shield' }
+// 자석: 앞뒤 range(2)칸 안에 상대 말이 있으면 우리 말이 그쪽으로 끌려가서 잡음 (여러 개면 고르기, 상대 방패는 쓸 수 있음)
+//       2칸 안에 없으면 운명의 카드 (3칸 앞으로 · 2칸 뒤로 · 놉카드 +1 · 다 같이 마셔! 중 하나)
+const MAGNET = { emoji: '🧲', text: '자석', type: 'magnet', range: 2 }
 // 지하철 게임: 3·2·1 → 서울 지하철 1~9호선 중 하나 → 그 호선 역 이름을 돌아가며 (오프라인, 훈민정음처럼)
 const SUBWAY = { emoji: '🚇', text: '지하철\n게임', type: 'subway' }
 // 단어 노래: 3·2·1 → 단어 → 그 단어가 들어간 노래를 돌아가며 한 소절씩 (오프라인, 막히면 마셔)
@@ -134,6 +137,7 @@ const SOJU_ADD = { emoji: '🍶', text: '소주 +1\n적립', type: 'sojuAdd' }
 const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', locked: true }
 // (지금 판에 없는 칸 — 나중에 다시 쓸 수 있게 남겨 둠)
 export const SPARE_CELLS = {
+  WORLD: WORLDPIN, // 10/16 50번에서 자석으로 바뀜 (게임 선택권·혼자 연습에는 있음)
   C1: { emoji: '🍶', text: '한 잔 마셔', drink: 'self' },
   LOVE: { emoji: '🥂', text: '옆 사람과\n러브샷', drink: 'self' },
   SON: { emoji: '🖐️', text: '손병호\n게임' },
@@ -164,10 +168,10 @@ export const DEFAULT_YUT_CELLS = {
   // 대각선 A (오른쪽 위 → 가운데 → 왼쪽 아래) 36~39 · 41~44
   a1: STEAL, a2: NOENG, a3: RELEASE, a4: CHOOSE,
   C: SOJU_BANK, // 40 가운데: 소주 보관소 (고정)
-  a5: ONLY_SH, a6: SHIELD, a7: SONG, a8: SOJU_ADD, // 42 방패 · 43 단어 노래 · 44 아직 빈칸 (소주 +1)
+  a5: ONLY_SH, a6: MAGNET, a7: SONG, a8: SHIELD, // 42 자석 · 43 단어 노래 · 44 방패
   // 대각선 B (왼쪽 위 → 가운데 → 골인) 45~52
   b1: SUBWAY, b2: SHIELD, b3: EXCEPT_SH, b4: TWOTOUCH, // 45 지하철 게임 · 46 방패
-  b5: CHOOSE, b6: WORLDPIN, b7: SOJU_ADD, b8: ALLOPT, // 50 세계 지도 찍기 · 51 아직 빈칸 (소주 +1)
+  b5: CHOOSE, b6: MAGNET, b7: SHIELD, b8: ALLOPT, // 50 자석 · 51 방패 (세계 지도 찍기는 판에서 빠지고 게임 선택권·혼자 연습에 남음)
 }
 
 // ---------- 윷 던지기 ----------

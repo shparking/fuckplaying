@@ -11,7 +11,7 @@
 // }
 import { dbGet, dbSet, dbUpdate, dbRemove, dbOn, dbOnConnected, dbPresence, now, DEMO, SOLO, PRACTICE, demoSeed, dbPurgeOldRooms, dbWatchServerOffset, serverNow, dbOnRooms, shouldPurge, ROOMS } from './db'
 import './firebase'
-import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf, backPath, prevNode } from './game/yut'
+import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, movePiece, BRANCH_NODES, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf, backPath, prevNode } from './game/yut'
 import { pickNhaengWord } from './game/words'
 import { pickSubwayLine } from './game/subway'
 import { fakeCircle } from './game/circle'
@@ -549,6 +549,13 @@ function makePending(room, playerId, pos, kind, title) {
     const path = piece ? backPath(piece, p.steps) : []
     if (path.length) p.to = path[path.length - 1]
   }
+  if (kind === 'magnet') {
+    // 자석: 앞뒤 2칸 안 상대 말 → 끌려가서 잡기 (고르기), 없으면 운명의 카드
+    const cell = roomCells(room)[pos] || {}
+    const targets = magnetTargets(room, teamOf(room, playerId), pos, cell.range || MAGNET_RANGE)
+    if (targets.length) Object.assign(p, { stage: 'pick', targets })
+    else Object.assign(p, { kind: 'fate', fromMagnet: true, card: pickFate() })
+  }
   if (kind === 'sojuBank') {
     // 소주 보관소: 모인 술을 도착한 팀이 의리주로 (도착한 사람이 마지막 순서)
     p.count = Math.max(0, Number(room.sojuBank) || 0)
@@ -727,12 +734,7 @@ export async function moveYut(code, room, ri, from, route) {
   }
   const after = { ...room, pieces: next, yut: { ...y, results: rest } }
   if (teamDone(next, t)) {
-    const losers = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name && teamOf(room, pid) !== t)
-    addDrinks(room, upd, losers)
-    upd.winner = t
-    upd['yut/stage'] = 'done'
-    upd.pending = { kind: 'win', playerId: id, team: t, pos: 'o0', startedAt: Date.now() }
-    upd.event = { id: newId(), text: `🏆 ${info.name} 승리! 나머지 팀 다 마셔! 🍻` }
+    winUpdates(room, upd, id, t)
   } else if (asking.length) {
     upd.pending = shieldAskPending(id, opt.dest, victims, asking, stacked, 'move')
     upd.event = { id: newId(), text: `🛡️ ${me.name} → ${victimText(victims)} 잡기 직전! ${teamLabel(asking.map((x) => x.team))} 방패를 쓸까요?` }
@@ -769,17 +771,112 @@ function shieldAskPending(id, pos, victims, asking, stacked, via) {
     victims,
     asks: Object.fromEntries(asking.map((v) => [nopKey(v.team), 'wait'])),
     stacked: !!stacked,
-    via, // move | back (4칸 뒤로)
+    via, // move | back (4칸 뒤로) | magnet (자석) | fate (운명의 카드)
     startedAt: serverNow(),
   }
 }
+// 칸 효과로 움직여서 잡을 때 이벤트 앞말·이모지 (how = move | back | magnet | fate)
+const HOW_TEXT = { back: '뒤로 가서 ', magnet: '🧲 자석에 끌려가서 ', fate: '🎴 운명의 카드로 ' }
+const HOW_EMOJI = { back: '⏪', magnet: '🧲', fate: '🎴' }
 // 잡기 확정: 잡은 사람은 한 번 더, 잡힌 팀 전원이 잡힌 말 수만큼 마심 (확인할 때 — resolvePending 'caught')
-function caughtUpdates(room, upd, id, pos, victims, back = false) {
+function caughtUpdates(room, upd, id, pos, victims, how = 'move') {
   const me = room.players[id] || {}
   upd['yut/extra'] = (room.yut?.extra || 0) + 1
   upd.pending = { kind: 'caught', playerId: id, pos, victim: victims[0].team, count: victims[0].count, ...(victims.length > 1 ? { victims } : {}), startedAt: Date.now() }
-  upd.event = { id: newId(), text: `🎯 ${me.name} ${back ? '뒤로 가서 ' : ''}잡았다! ${victimText(victims)} → 집으로` }
+  upd.event = { id: newId(), text: `🎯 ${me.name} ${HOW_TEXT[how] || ''}잡았다! ${victimText(victims)} → 집으로` }
   return upd
+}
+// 승리: 나머지 팀 전원 마심 → 승리 화면
+function winUpdates(room, upd, id, t) {
+  const losers = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name && teamOf(room, pid) !== t)
+  addDrinks(room, upd, losers)
+  upd.winner = t
+  upd['yut/stage'] = 'done'
+  upd.pending = { kind: 'win', playerId: id, team: t, pos: 'o0', startedAt: Date.now() }
+  upd.event = { id: newId(), text: `🏆 ${TEAM_INFO[t].name} 승리! 나머지 팀 다 마셔! 🍻` }
+  return upd
+}
+// 칸 효과로 말이 움직일 때 (4칸 뒤로 · 자석 · 운명의 카드): from 칸의 우리 말(업힌 말도)이 mv { path, dest, prev, finished } 대로
+// → 골인(다 들어오면 승리) · 잡기(상대 방패면 먼저 물어봄) · 업기 · 도착한 칸 미션
+function forcedMoveUpdates(room, id, from, mv, how, label) {
+  const t = teamOf(room, id)
+  const pieces = roomPieces(room)
+  const me = room.players[id] || {}
+  const info = TEAM_INFO[t]
+  const idx = pieces[t].map((pc, i) => (pc.n === from ? i : -1)).filter((i) => i >= 0)
+  const next = JSON.parse(JSON.stringify(pieces))
+  const dest = mv.finished ? 'goal' : mv.dest
+  const stacked = !mv.finished && pieces[t].some((pc, i) => pc.n === dest && !idx.includes(i))
+  idx.forEach((i) => (next[t][i] = mv.finished ? { n: 'goal' } : { n: dest, p: mv.prev || prevNode(dest) || 'home' }))
+  const victims = mv.finished ? [] : victimsAt(next, teamCount(room), t, dest)
+  const asking = victims.filter((v) => teamShield(room, v.team) > 0)
+  let caught = null
+  if (victims.length && !asking.length) {
+    sendHome(next, victims.map((v) => v.team), dest)
+    caught = { team: victims[0].team, count: victims[0].count, node: dest }
+  }
+  const upd = { pieces: next, lastMove: { id: newId(), team: t, from, path: arr(mv.path), count: idx.length, dest, caught } }
+  upd[`log/${newId()}`] = {
+    t: Date.now(),
+    text: `${info.emoji} ${me.name} ${HOW_EMOJI[how] || ''} ${label}${idx.length > 1 ? ` (말 ${idx.length}개)` : ''} → ${mv.finished ? '골인 🏁' : nodeName(dest)}${stacked ? ' · 업기' : ''}${caught ? ` · ${victimText(victims)} 잡기!` : ''}${asking.length ? ` · ${victimText(victims)} 잡기 전 🛡️ 방패?` : ''}`,
+  }
+  const after = { ...room, pieces: next }
+  if (mv.finished) {
+    if (teamDone(next, t)) winUpdates(room, upd, id, t)
+    else {
+      upd.event = { id: newId(), text: `🏁 ${me.name} ${HOW_EMOJI[how] || ''} ${label} → 말 ${idx.length}개 골인!` }
+      Object.assign(upd, nextTurnUpdates(after))
+    }
+  } else if (asking.length) {
+    upd.pending = shieldAskPending(id, dest, victims, asking, stacked, how)
+    upd.event = { id: newId(), text: `🛡️ ${me.name} ${HOW_TEXT[how] || ''}${victimText(victims)} 잡기 직전! ${teamLabel(asking.map((x) => x.team))} 방패를 쓸까요?` }
+  } else if (caught) {
+    caughtUpdates(room, upd, id, dest, victims, how)
+  } else {
+    upd.event = { id: newId(), text: `${HOW_EMOJI[how] || ''} ${me.name} ${label} → ${nodeName(dest)}` }
+    arriveUpdates(room, after, upd, id, t, dest, stacked)
+  }
+  return upd
+}
+
+// ---------- 자석 · 운명의 카드 ----------
+export const MAGNET_RANGE = 2
+// 자석 칸(pos)의 우리 말에서 앞뒤 range 칸 안에 상대 말이 있는 칸들 (가까운 순, 같으면 앞쪽 먼저)
+// { node, dir: 'fwd' | 'back', steps, path, prev, victims: [{ team, count }] }
+export function magnetTargets(room, t, pos, range = MAGNET_RANGE) {
+  const pieces = roomPieces(room)
+  const piece = (pieces[t] || []).find((pc) => pc.n === pos)
+  if (!piece) return []
+  const n = teamCount(room)
+  const out = []
+  const add = (node, dir, steps, path, prev) => {
+    if (!node || node === 'home' || node === 'goal' || node === pos || out.some((o) => o.node === node)) return
+    const victims = victimsAt(pieces, n, t, node)
+    if (victims.length) out.push({ node, dir, steps, path, prev: prev || 'home', victims })
+  }
+  const routes = BRANCH_NODES.has(pos) ? ['short', 'long'] : [undefined]
+  for (let k = 1; k <= range; k++) {
+    routes.forEach((route) => {
+      const r = movePiece(piece, k, route)
+      if (r && !r.finished) add(r.dest, 'fwd', k, r.path, r.prev)
+    })
+  }
+  const bp = backPath(piece, range)
+  bp.forEach((node, i) => add(node, 'back', i + 1, bp.slice(0, i + 1), prevNode(node) || 'home'))
+  return out.sort((a, b) => a.steps - b.steps || (a.dir === 'fwd' ? -1 : 1))
+}
+// 운명의 카드 (자석에 아무것도 안 붙었을 때): 넷 중 하나 같은 확률
+export const FATE_CARDS = {
+  fwd3: { emoji: '⏩', text: '3칸 앞으로', steps: 3 },
+  back2: { emoji: '⏪', text: '2칸 뒤로', steps: 2 },
+  nop: { emoji: '🎫', text: '놉카드 +1' },
+  all: { emoji: '🍻', text: '다 같이 마셔!' },
+}
+function pickFate() {
+  const forced = DEMO ? new URLSearchParams(window.location.search).get('fate') : null // 데모: &fate=fwd3 (테스트용)
+  if (forced && FATE_CARDS[forced]) return forced
+  const keys = Object.keys(FATE_CARDS)
+  return keys[Math.floor(Math.random() * keys.length)]
 }
 // 방패 쓸지 고르기: 잡힐 팀 사람 누구나 (혼자 모드는 한 화면에서). use = true 쓰기 / false 안 쓰고 잡히기
 // 고를 때까지 기다림 (시간 제한 없음). 그 팀이 모두 연결이 끊겼으면 방장·던진 사람이 대신 고를 수 있음
@@ -820,7 +917,7 @@ function shieldFinalUpdates(room, p, asks) {
   if (caughtV.length) {
     sendHome(next, caughtV.map((v) => v.team), p.pos)
     upd.pieces = next
-    caughtUpdates(room, upd, id, p.pos, caughtV, p.via === 'back')
+    caughtUpdates(room, upd, id, p.pos, caughtV, p.via)
     if (usedText) upd.event.text = `${usedText} · ${upd.event.text}`
   } else {
     arriveUpdates(room, { ...room, pieces: next }, upd, id, t, p.pos, p.stacked)
@@ -862,50 +959,18 @@ function arriveUpdates(room, after, upd, id, t, dest, stacked) {
   return upd
 }
 
-// 'N칸 뒤로' 칸: 도착한 말(업힌 말 포함)이 N칸 뒤로 → 거기서 잡기·업기, 그 칸의 미션까지
+// 'N칸 뒤로' 칸: 도착한 말(업힌 말 포함)이 N칸 뒤로 → 거기서 잡기(방패)·업기, 그 칸의 미션까지
 async function backMove(code, room, p) {
   const id = p.playerId
   const t = teamOf(room, id)
-  const n = teamCount(room)
-  const pieces = roomPieces(room)
-  const me = room.players[id] || {}
-  const info = TEAM_INFO[t]
-  const idx = pieces[t].map((pc, i) => (pc.n === p.pos ? i : -1)).filter((i) => i >= 0)
-  const path = idx.length ? backPath(pieces[t][idx[0]], p.steps || 4) : []
+  const piece = roomPieces(room)[t].find((pc) => pc.n === p.pos)
+  const path = piece ? backPath(piece, p.steps || 4) : []
   if (!path.length) {
     await roomUpdate(code, { ...nextTurnUpdates(room), event: { id: newId(), text: '⏪ 뒤로 갈 칸이 없어요' } })
     return
   }
   const dest = path[path.length - 1]
-  const next = JSON.parse(JSON.stringify(pieces))
-  const stacked = pieces[t].some((pc, i) => pc.n === dest && !idx.includes(i))
-  idx.forEach((i) => (next[t][i] = { n: dest, p: prevNode(dest) || 'home' }))
-  // 잡기: 뒤로 간 칸에 다른 팀 말이 있으면 전부 집으로 (한 번 더 던짐). 그 팀에 방패가 있으면 먼저 쓸지 물어봄
-  const victims = victimsAt(next, n, t, dest)
-  const asking = victims.filter((v) => teamShield(room, v.team) > 0)
-  let caught = null
-  if (victims.length && !asking.length) {
-    sendHome(next, victims.map((v) => v.team), dest)
-    caught = { team: victims[0].team, count: victims[0].count, node: dest }
-  }
-  const upd = {
-    pieces: next,
-    lastMove: { id: newId(), team: t, from: p.pos, path, count: idx.length, dest, caught },
-  }
-  upd[`log/${newId()}`] = {
-    t: Date.now(),
-    text: `${info.emoji} ${me.name} ⏪ ${path.length}칸 뒤로${idx.length > 1 ? ` (말 ${idx.length}개)` : ''} → ${nodeName(dest)}${stacked ? ' · 업기' : ''}${caught ? ` · ${victimText(victims)} 잡기!` : ''}${asking.length ? ` · ${victimText(victims)} 잡기 전 🛡️ 방패?` : ''}`,
-  }
-  if (asking.length) {
-    upd.pending = shieldAskPending(id, dest, victims, asking, stacked, 'back')
-    upd.event = { id: newId(), text: `🛡️ ${me.name} 뒤로 가서 ${victimText(victims)} 잡기 직전! ${teamLabel(asking.map((x) => x.team))} 방패를 쓸까요?` }
-  } else if (caught) {
-    caughtUpdates(room, upd, id, dest, victims, true)
-  } else {
-    upd.event = { id: newId(), text: `⏪ ${me.name} ${path.length}칸 뒤로 → ${nodeName(dest)}` }
-    arriveUpdates(room, { ...room, pieces: next }, upd, id, t, dest, stacked)
-  }
-  await roomUpdate(code, upd)
+  await roomUpdate(code, forcedMoveUpdates(room, id, p.pos, { path, dest, prev: prevNode(dest) || 'home', finished: false }, 'back', `${path.length}칸 뒤로`))
 }
 
 // 돌발 미션: 진행 중인 미션이 없을 때 10% 확률로 한 명에게 몰래 전달 (데모: ?mission=초 로 강제)
@@ -1099,7 +1164,7 @@ export async function resolvePending(code, room, action, target) {
     if (p.kind === 'option' || p.kind === 'release' || p.kind === 'allOptions') return // 옵션은 놉카드로 거부 불가
     if (p.kind === 'liar' && p.stage !== 'category') return // 라이어 게임은 시작 전에만 거부 가능
     if (p.kind === 'balance' && p.stage !== 'vote') return
-    if (p.kind === 'vote' || p.kind === 'choose' || p.kind === 'shuffle' || p.kind === 'gamble' || p.kind === 'caught' || p.kind === 'shieldAsk' || p.kind === 'win' || p.kind === 'again') return
+    if (p.kind === 'vote' || p.kind === 'choose' || p.kind === 'shuffle' || p.kind === 'gamble' || p.kind === 'caught' || p.kind === 'shieldAsk' || p.kind === 'magnet' || p.kind === 'fate' || p.kind === 'win' || p.kind === 'again') return
     if (TEAM_GAMES.has(p.kind)) return // 팀 대결은 모두 함께 하는 게임이라 한 사람이 거부할 수 없음
     if ((p.kind === 'bomb' || p.kind === 'reaction') && p.stage !== 'ready') return
     const mt = teamOf(room, id)
@@ -1281,6 +1346,49 @@ export async function resolvePending(code, room, action, target) {
         songUsed: [...arr(room.songUsed), p.word].filter(Boolean).slice(-20),
         event: { id: newId(), text: `🎶 ${me.name} 단어 노래 「${p.word}」 수행 ✅` },
       })
+      return
+    }
+    case 'magnet': {
+      // 자석: 고른 상대 말 쪽으로 끌려가서 잡기 (상대 팀 방패면 먼저 물어봄)
+      if (action !== 'pull') return
+      const tg = arr(p.targets)[Number(target)]
+      if (!tg || !tg.node) return
+      const dirText = tg.dir === 'fwd' ? `${tg.steps}칸 앞으로` : `${tg.steps}칸 뒤로`
+      await roomUpdate(code, forcedMoveUpdates(room, id, p.pos, { path: arr(tg.path), dest: tg.node, prev: tg.prev, finished: false }, 'magnet', `자석 ${dirText}`))
+      return
+    }
+    case 'fate': {
+      // 운명의 카드: 3칸 앞으로 · 2칸 뒤로 (움직여서 잡기·업기·그 칸 미션까지) · 놉카드 +1 · 다 같이 마셔
+      if (action !== 'done') return
+      const mt = teamOf(room, id)
+      const card = FATE_CARDS[p.card] ? p.card : 'all'
+      const piece = roomPieces(room)[mt].find((pc) => pc.n === p.pos)
+      if (card === 'fwd3' && piece) {
+        const r = movePiece(piece, FATE_CARDS.fwd3.steps)
+        if (r) {
+          await roomUpdate(code, forcedMoveUpdates(room, id, p.pos, { path: r.path, dest: r.dest, prev: r.prev, finished: r.finished }, 'fate', `운명의 카드 ${FATE_CARDS.fwd3.steps}칸 앞으로`))
+          return
+        }
+      }
+      if (card === 'back2' && piece) {
+        const path = backPath(piece, FATE_CARDS.back2.steps)
+        if (path.length) {
+          const dest = path[path.length - 1]
+          await roomUpdate(code, forcedMoveUpdates(room, id, p.pos, { path, dest, prev: prevNode(dest) || 'home', finished: false }, 'fate', `운명의 카드 ${path.length}칸 뒤로`))
+          return
+        }
+      }
+      if (card === 'nop') {
+        const n = teamNop(room, mt) + 1
+        await roomUpdate(code, { ...nextTurnUpdates(room), [`teamNop/${nopKey(mt)}`]: n, event: { id: newId(), text: `🎴 운명의 카드: ${TEAM_INFO[mt].name} 놉카드 +1 (지금 ${n}장)` } })
+        return
+      }
+      if (card === 'all') {
+        const all = Object.keys(room.players || {}).filter((pid) => room.players[pid]?.name)
+        await roomUpdate(code, addDrinks(room, { ...nextTurnUpdates(room), event: { id: newId(), text: `🎴 운명의 카드: 다 같이 마셔! 🍻` } }, all))
+        return
+      }
+      await roomUpdate(code, { ...nextTurnUpdates(room), event: { id: newId(), text: '🎴 운명의 카드 — 움직일 말이 없어요' } })
       return
     }
     case 'bunny': {
