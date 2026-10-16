@@ -6,12 +6,14 @@ import { SOLO, PRACTICE } from '../db'
 import { TEAM_INFO } from '../game/yut'
 import { SYNC_QUESTIONS, CT_COLORS } from '../game/teamgames'
 import { scoreCircle, circleAccuracy, circleComment, fakeCircle, seeded } from '../game/circle'
-import { PRICE_ITEMS, PRICE_BASE, pricePoints, won } from '../game/prices'
+import { PRICE_ITEMS, PRICE_BASE, PRICE_STEPS, pricePoints, won } from '../game/prices'
 import { PLACES } from '../game/places'
 import { MAP_W, MAP_H, MAP_KR, MAP_NK, MAP_JP, MAP_DO, ISLAND_DOTS, toXY } from '../game/mapdata'
 import {
   arr,
   ini,
+  myId,
+  teamName,
   resolvePending,
   serverNow,
   teamMembers,
@@ -156,6 +158,8 @@ function ReadyModal({ room, p, ctl, emoji, title, headline, rules, startLabel, c
             </div>
           ))}
         </div>
+        {/* 걸린 사람이 연결 끊겨서 방장이 대신 시작할 때 */}
+        {ctl && !SOLO && p.playerId !== myId() && <div className="shield-proxy">{actor?.name}이(가) 연결이 끊겨서 방장이 대신 시작해요</div>}
         <div className="actions">
           {PRACTICE && (
             <button className="btn btn-ghost" onClick={() => practiceCancel(code, room)}>
@@ -206,7 +210,7 @@ function TeamResult({ room, p, ctl, code, emoji, title, rows, losers, tie, note,
           <>
             <Avatars room={room} ids={teamMembers(room, loser)} />
             <div className="ai-name">
-              <b style={{ color: TEAM_INFO[loser]?.color }}>{TEAM_INFO[loser]?.name}</b> 다 같이 마셔! 🍶
+              <b style={{ color: TEAM_INFO[loser]?.color }}>{teamName(room, loser)}</b> 다 같이 마셔! 🍶
             </div>
           </>
         )}
@@ -278,14 +282,14 @@ export function TeamRoulette({ room, p, ctl, code, emoji, title }) {
         <div className="roulette-legend">
           {teams.map((t) => (
             <span key={t}>
-              <i className="sw" style={{ background: TEAM_INFO[t]?.color }} /> {TEAM_INFO[t]?.name}
+              <i className="sw" style={{ background: TEAM_INFO[t]?.color }} /> {teamName(room, t)}
             </span>
           ))}
         </div>
         <div className="ai-name">
           {done ? (
             <>
-              <b style={{ color: TEAM_INFO[loser]?.color }}>{TEAM_INFO[loser]?.name}</b> 다 같이 마셔! 🍶
+              <b style={{ color: TEAM_INFO[loser]?.color }}>{teamName(room, loser)}</b> 다 같이 마셔! 🍶
             </>
           ) : (
             <span className="muted-light">돌아가는 중…</span>
@@ -688,7 +692,7 @@ export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
         startLabel="💣 폭탄 켜기"
         rules={
           <>
-            폭탄을 켜면 <b style={{ color: starter.color }}>{starter.name}</b>부터 팀끼리 돌아가며 주제에 맞는 단어를 <b>말로</b> 하나씩 말해요 (폰은 그냥 두세요). 폭탄은 <b>20~40초 사이 아무 때나</b> 터지고, 그때 얘기하고 있던 팀이 다 같이 마셔요. 이미 나온 단어나 3초 넘게 뜸 들이면 그 팀이 마셔요.
+            폭탄을 켜면 <b style={{ color: starter.color }}>{teamName(room, p.holder0 ?? 0)}</b>부터 팀끼리 돌아가며 주제에 맞는 단어를 <b>말로</b> 하나씩 말해요 (폰은 그냥 두세요). 폭탄은 <b>20~40초 사이 아무 때나</b> 터지고, 그때 얘기하고 있던 팀이 다 같이 마셔요. 이미 나온 단어나 3초 넘게 뜸 들이면 그 팀이 마셔요.
           </>
         }
       />
@@ -705,7 +709,7 @@ export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
           <div className="ai-note">주제</div>
           <div className="bomb-topic">{p.topic}</div>
           <div className="bomb-holder">
-            <b style={{ color: starter.color }}>{starter.name}</b>부터 팀끼리 돌아가며 말해요
+            <b style={{ color: starter.color }}>{teamName(room, p.holder0 ?? 0)}</b>부터 팀끼리 돌아가며 말해요
           </div>
           <div className="bomb-tick">째깍… 째깍…</div>
           <div className="ai-sub">언제 터질지 아무도 몰라요</div>
@@ -1239,21 +1243,19 @@ export function PricePanel({ room, pending: p, me, ctl, code }) {
         startLabel="💰 시작"
         extra={
           <div className="pg-scale">
-            {[
-              ['딱!', 1000],
-              ['10%', 800],
-              ['20%', 500],
-              ['50%', 138],
-            ].map(([k, v]) => (
-              <span key={k}>
-                {k} <b>{v}</b>
+            {PRICE_STEPS.map((v, i) => (
+              <span key={i}>
+                {(i + 1) * 10}% <b>{v}</b>
               </span>
             ))}
+            <span>
+              넘으면 <b>0</b>
+            </span>
           </div>
         }
         rules={
           <>
-            편의점 물건이 나오면 <b>숫자 키패드</b>로 가격을 넣고 확인! 모두 {PG_ROUNDS}문제, 문제마다 {PG_ANSWER_MS / 1000}초. 정답과 <b>가까울수록 점수가 커요</b> (딱 맞히면 1000점, 10% 차이 800점, 20% 차이 500점… 구간 없이 부드럽게). 문제마다 정답과 내 점수가 나오고, 끝나면 팀 점수를 공개해서 낮은 팀이 다 같이 마셔요. 가격은 {PRICE_BASE}.
+            편의점 물건이 나오면 <b>숫자 키패드</b>로 가격을 넣고 확인! 모두 {PG_ROUNDS}문제, 문제마다 {PG_ANSWER_MS / 1000}초. 정답과 <b>가까울수록 점수가 커요</b> — 차이가 10% 이내면 1000점, 20% 이내 900점… 10%마다 100점씩 줄어서 100% 이내 100점, 그보다 크면 0점 (위 표). 문제마다 정답과 내 점수가 나오고, 끝나면 팀 점수를 공개해서 낮은 팀이 다 같이 마셔요. 가격은 {PRICE_BASE}.
           </>
         }
       />
@@ -1900,7 +1902,7 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
         }
         rules={
           <>
-            도시·명소 이름이 나오면 (나라 힌트도 같이) 세계 지도에 <b>핀을 꽂아요</b>. <b>두 손가락으로 확대</b>, 끌어서 이동, 그냥 누르면 핀 (다시 누르면 옮겨져요, ＋ － 버튼도 있어요). 모두 {WP_ROUNDS}문제, 문제마다 {WP_ANSWER_MS / 1000}초, 점점 어려워져요. 실제 위치와 <b>가까울수록 점수가 커요</b> (딱 맞히면 1000점, 500km 차이 500점). 끝나면 팀 점수가 낮은 팀이 다 같이 마셔요.
+            도시·명소 이름이 나오면 (나라 힌트도 같이) 세계 지도에 <b>핀을 꽂아요</b>. <b>두 손가락으로 확대</b>, 끌어서 이동, 그냥 누르면 핀 (다시 누르면 옮겨져요, ＋ － 버튼도 있어요). 모두 {WP_ROUNDS}문제, 문제마다 {WP_ANSWER_MS / 1000}초, 점점 어려워져요. 실제 위치와 <b>가까울수록 점수가 커요</b> (딱 맞히면 1000점, 500km 차이 800점, 1,000km 차이 500점). 끝나면 팀 점수가 낮은 팀이 다 같이 마셔요.
           </>
         }
       />

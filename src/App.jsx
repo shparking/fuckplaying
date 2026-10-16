@@ -61,6 +61,8 @@ import {
   MAGNET_RANGE,
   teamsOf,
   teamLabel,
+  teamName,
+  loserTeamsText,
   optionTargets,
   TEAM_GAMES,
   PRACTICE_GAMES,
@@ -71,7 +73,7 @@ import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel, 
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
 import { subwayLine } from './game/subway'
-import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID } from './game/yut'
+import { DEFAULT_YUT_CELLS, TEAM_INFO, moveOptions, nodeName, yutName, isBonus, moveKey, routeLabel, pieceCountOf, CORNERS, CORNER_BL, NODE_BY_ID, START } from './game/yut'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // 흔들어서 던지기 감도 (m/s², 횟수, ms): 세게 흔드는 동안 0.8초 안에 4번 이상 강한 움직임
@@ -121,10 +123,11 @@ const KIND_LABEL = {
 const oneLine = (t) => String(t || '').replace(/\n/g, ' ')
 // 칸 보기 팝업 설명 (새 칸들)
 const KIND_DESC = {
+  home: '골인은 이 칸을 지나가야 해요. 딱 멈춘 말은 여기 서 있다가 다음에 한 칸이라도 움직이면 골인 (빽도로 들어와도 같아요 — 도로 1번 갔다가 빽도면 대박!). 상대 말이 와서 멈추면 잡혀요.',
   pickTeam: '상대 팀 전원이 다 같이 마셔요. 2팀이면 바로 상대 팀, 3팀 이상이면 도착한 사람이 마실 팀을 골라요.',
   toast: '상대 팀에서 한 명을 골라 둘이 같이 짠! 둘만 마셔요.',
   nhaeng: '랜덤 키워드가 나오면 글자 수만큼 n행시를 짓고 다 같이 마셔요. 키워드는 바꿀 수 있어요.',
-  back: '말이 4칸 뒤로 가요 (업힌 말도 같이). 도착한 칸 미션도 하고, 상대 말이 있으면 잡아요. 팀 놉카드로 거부할 수 있어요.',
+  back: '말이 4칸 뒤로 가요 (업힌 말도 같이). 도착한 칸 미션도 하고, 상대 말이 있으면 잡아요.',
   allOptions: '판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)이 전부 상대 팀에 3분씩 걸려요.',
   shield: '도착한 팀 방패 +1. 우리 말이 잡힐 때 방패를 쓸지 골라요 (시간 제한 없음). 쓰면 안 잡히고(잡으려던 사람도 한 번 더 없음) 방패가 1개 줄어요.',
   subway: '3, 2, 1 → 서울 지하철 1~9호선 중 하나가 나와요. 그 호선 역 이름을 돌아가며 말하고, 막히거나 틀리거나 나온 역을 또 말하면 마셔요.',
@@ -268,7 +271,7 @@ function CountOverlay({ step, emoji, sub }) {
 }
 
 // 축하 화면: 지목된 사람(들) 공개 + 컨페티
-function CongratsOverlay({ room, targets, actorId, iAct, canNop, onDone, onTargetNop, title = '🎉 Congratulations! 🎉', note, refused = {}, teamWide = false }) {
+function CongratsOverlay({ room, targets, actorId, iAct, onDone, title = '🎉 Congratulations! 🎉', note, refused = {}, teamWide = false }) {
   const pieces = Array.from({ length: 28 })
   const names = targets.map((t) => room.players[t]?.name).filter(Boolean)
   // 연대책임: 걸린 사람의 팀 전원이 같이 마심
@@ -304,7 +307,7 @@ function CongratsOverlay({ room, targets, actorId, iAct, canNop, onDone, onTarge
           <div className="ai-team-drink">
             {drinkTeams.map((t, i) => (
               <span key={t} style={{ color: TEAM_INFO[t]?.color }}>
-                {TEAM_INFO[t]?.name}
+                {teamName(room, t)}
                 {i < drinkTeams.length - 1 ? ', ' : ''}
               </span>
             ))}{' '}
@@ -312,11 +315,6 @@ function CongratsOverlay({ room, targets, actorId, iAct, canNop, onDone, onTarge
           </div>
         )}
         <div className="ai-actions">
-          {canNop && (
-            <button className="btn btn-ghost" onClick={onTargetNop}>
-              <NopIcon /> 놉카드로 거부
-            </button>
-          )}
           {iAct ? (
             <button className="btn btn-primary" onClick={onDone}>
               확인
@@ -331,13 +329,88 @@ function CongratsOverlay({ room, targets, actorId, iAct, canNop, onDone, onTarge
 }
 
 // AI 지목: 3, 2, 1 → 축하 화면 (모든 폰에 동시에 표시)
-function AiPickOverlay({ room, pending, me, iAct, onDone, onTargetNop }) {
+function AiPickOverlay({ room, pending, me, iAct, onDone }) {
   const step = useCountdown(`${pending.target}-${pending.startedAt}`)
   if (step > 0) return <CountOverlay step={step} emoji="🤖" sub="AI가 한 명을 고르고 있어요…" />
-  const target = room.players[pending.target]
-  const isTarget = SOLO || pending.target === me
+  return <CongratsOverlay room={room} targets={[pending.target]} actorId={pending.playerId} iAct={iAct} onDone={onDone} />
+}
+
+// 놉카드 사용 알림: 누가 팀 놉카드를 쓰면 모든 폰에 뜨고, 각자 '확인했어요'를 눌러 닫음 (무엇을 거부하는지는 말로)
+// 늦게 들어온 폰·새로고침에는 오래된 알림(2분 넘음)은 안 띄움
+const NOP_NOTICE_MS = 2 * 60 * 1000
+function NopNotice({ room, notice, me, onClose }) {
+  const info = TEAM_INFO[notice.team]
+  const mine = !SOLO && notice.by === me
+  useEffect(() => {
+    try {
+      navigator.vibrate?.([120, 60, 120])
+    } catch {}
+  }, [notice.id])
   return (
-    <CongratsOverlay room={room} targets={[pending.target]} actorId={pending.playerId} iAct={iAct} canNop={false} onDone={onDone} onTargetNop={onTargetNop} />
+    <div className="modal-backdrop nop-notice-bg">
+      <div className="modal nop-notice" style={{ '--tc': info.color }}>
+        <div className="nop-notice-emo">🎫</div>
+        <div className="kicker">놉카드 사용</div>
+        <h2>
+          <span style={{ color: info.color }}>{teamName(room, notice.team)}</span>
+          <br />
+          놉카드 1장 사용! 🙅
+        </h2>
+        <div className="muted">
+          {mine ? '내가 썼어요' : notice.who ? `${notice.who}이(가) 썼어요` : '팀 놉카드를 썼어요'} · 남은 놉카드 {notice.left}장
+        </div>
+        <div className="actions">
+          <button className="btn btn-primary" onClick={onClose}>
+            확인했어요
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 같이 짠: 상대를 고르면 모든 폰에 3, 2, 1 → 두 사람 공개 "A ❤️ B 둘이 마셔! (잘됐으면 좋겠다.. ❤️)"
+function ToastReveal({ room, pending: p, iAct, onDone }) {
+  const step = useCountdown(`${p.target}-${p.startedAt}`)
+  const a = room.players[p.playerId]
+  const b = room.players[p.target]
+  if (step > 0) return <CountOverlay step={step} emoji="🥂" sub={`${a?.name}이(가) 같이 짠 할 사람은…`} />
+  return (
+    <div className="ai-overlay toast-reveal">
+      <div className="ai-reveal">
+        <div className="toast-hearts" aria-hidden>
+          {Array.from({ length: 14 }).map((_, i) => (
+            <i key={i} style={{ '--i': i, left: `${(i * 41) % 100}%`, animationDelay: `${(i % 7) * 0.18}s` }}>
+              {i % 3 ? '❤️' : '💕'}
+            </i>
+          ))}
+        </div>
+        <div className="ai-congrats">🥂 같이 짠!</div>
+        <div className="toast-pair">
+          <div className="ai-avatar" style={{ background: a?.color }}>
+            {ini(a?.name)}
+          </div>
+          <span className="toast-heart">❤️</span>
+          <div className="ai-avatar" style={{ background: b?.color }}>
+            {ini(b?.name)}
+          </div>
+        </div>
+        <div className="ai-name">
+          <b>{a?.name}</b> ❤️ <b>{b?.name}</b>
+        </div>
+        <div className="ai-team-drink">둘이 마셔! 🥂</div>
+        <div className="ai-note">(잘됐으면 좋겠다.. ❤️)</div>
+        <div className="ai-actions">
+          {iAct ? (
+            <button className="btn btn-primary" onClick={onDone}>
+              확인
+            </button>
+          ) : (
+            <div className="waiting">{a?.name}이(가) 확인하면 다음 차례로 넘어가요</div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -594,7 +667,7 @@ function ShieldAskPanel({ room, pending: p, me, code }) {
         <div className="kicker">{nodeName(p.pos)} · 🛡️ 방패</div>
         <h2>🛡️ 방패를 쓸까요?</h2>
         <div className="muted">
-          <b style={{ color: actor?.color }}>{actor?.name}</b>이(가) {victims.map((v) => `${TEAM_INFO[v.team]?.name} 말 ${v.count}개`).join(' · ')}를 잡으려 해요. 방패를 쓰면 안 잡히고 방패가 1개 줄어요. 안 쓰면 말이 집으로 가고 팀 전원이 마셔요.
+          <b style={{ color: actor?.color }}>{actor?.name}</b>이(가) {victims.map((v) => `${teamName(room, v.team)} 말 ${v.count}개`).join(' · ')}를 잡으려 해요. 방패를 쓰면 안 잡히고 방패가 1개 줄어요. 안 쓰면 말이 집으로 가고 팀 전원이 마셔요.
         </div>
         <div className="shield-list">
           {askTeams.map((t) => {
@@ -607,13 +680,13 @@ function ShieldAskPanel({ room, pending: p, me, code }) {
               <div key={t} className={`shield-row ${st}`} style={{ '--tc': info.color }}>
                 <div className="shield-head">
                   <span className="team-dot" />
-                  <b>{info.name}</b>
+                  <b>{teamName(room, t)}</b>
                   <span className="shield-have">🛡️ {teamShield(room, t)}개</span>
                 </div>
                 {st === 'wait' ? (
                   mine ? (
                     <>
-                    {proxy && <div className="shield-proxy">{info.name}이 모두 연결이 끊겨서 대신 골라요</div>}
+                    {proxy && <div className="shield-proxy">{teamName(room, t)}이 모두 연결이 끊겨서 대신 골라요</div>}
                     <div className="shield-btns">
                       <button className="btn btn-primary" onClick={() => shieldDecide(code, room, t, true)}>
                         🛡️ 방패 쓰기
@@ -624,7 +697,7 @@ function ShieldAskPanel({ room, pending: p, me, code }) {
                     </div>
                     </>
                   ) : (
-                    <div className="waiting">{info.name}이 고르는 중…{teamAllOffline(room, t) ? ' (모두 연결 끊김 — 방장·던진 사람이 대신 고를 수 있어요)' : ''}</div>
+                    <div className="waiting">{teamName(room, t)}이 고르는 중…{teamAllOffline(room, t) ? ' (모두 연결 끊김 — 방장·던진 사람이 대신 고를 수 있어요)' : ''}</div>
                   )
                 ) : (
                   <div className="shield-done">{st === 'use' ? '🛡️ 방패 씀' : '안 씀 → 잡혀요'}</div>
@@ -721,7 +794,7 @@ function GamblePanel({ room, pending: p, iAct, code }) {
             { emoji: '😇', label: '안 마셔', color: '#06d6a0' },
             { emoji: '🍶', label: '팀 다 같이 마셔', color: '#ea002c' },
           ]
-    const resultText = had > 0 ? (win ? `${TEAM_INFO[myTeam].name} 놉카드 +2! 🎫🎫` : `${TEAM_INFO[myTeam].name} 놉카드 ${had}장 소멸… 💀`) : win ? '안 마셔도 돼요! 😇' : `${TEAM_INFO[myTeam].name} 다 같이 마셔! 🍶`
+    const resultText = had > 0 ? (win ? `${teamName(room, myTeam)} 놉카드 +2! 🎫🎫` : `${teamName(room, myTeam)} 놉카드 ${had}장 소멸… 💀`) : win ? '안 마셔도 돼요! 😇' : `${teamName(room, myTeam)} 다 같이 마셔! 🍶`
     return (
       <RouletteOverlay
         room={room}
@@ -729,7 +802,7 @@ function GamblePanel({ room, pending: p, iAct, code }) {
         iAct={iAct}
         revealKey={p.revealedAt}
         title="🎰 놉카드 도박"
-        note={`${actor?.name} · ${TEAM_INFO[myTeam].name} 놉카드 ${had}장`}
+        note={`${actor?.name} · ${teamName(room, myTeam)} 놉카드 ${had}장`}
         options={options}
         pick={win ? 0 : 1}
         resultText={resultText}
@@ -743,7 +816,7 @@ function GamblePanel({ room, pending: p, iAct, code }) {
         <div className="kicker">🎰 놉카드 도박</div>
         <h2>도박, 할까요?</h2>
         <div className="muted">
-          <b style={{ color: actor?.color }}>{actor?.name}</b> — {TEAM_INFO[myTeam].name} 놉카드 {nop}장.{' '}
+          <b style={{ color: actor?.color }}>{actor?.name}</b> — {teamName(room, myTeam)} 놉카드 {nop}장.{' '}
           {nop > 0 ? (
             <>
               룰렛 50%로 <b>팀 놉카드 +2</b> 아니면 <b>팀 놉카드 전부 소멸</b>이에요.
@@ -911,9 +984,9 @@ function MissionQuiz({ room, me, code }) {
           </div>
           <div className="muted" style={{ marginTop: 10 }}>
             {r.caught
-              ? `절반 이상이 맞혔어요 → ${who?.name}의 ${teamLabel(teamsOf(room, [m.playerId]))} 다 같이 마셔! 🍶`
+              ? `절반 이상이 맞혔어요 → ${who?.name}의 ${teamLabel(teamsOf(room, [m.playerId]), room)} 다 같이 마셔! 🍶`
               : r.wrong.length
-                ? `틀린 사람: ${r.wrong.map((pid) => room.players[pid]?.name).join(', ')} → ${teamLabel(teamsOf(room, r.wrong))} 다 같이 마셔! 🍶`
+                ? `틀린 사람: ${r.wrong.map((pid) => room.players[pid]?.name).join(', ')} → ${teamLabel(teamsOf(room, r.wrong), room)} 다 같이 마셔! 🍶`
                 : '아무도 안 마셔요 😇'}
           </div>
           <div className="actions">
@@ -981,7 +1054,7 @@ function SojuBankPanel({ room, pending: p, iAct, code }) {
         {n > 0 ? (
           <>
             <h2>
-              <span style={{ color: info.color }}>{info.name}</span> 의리주 {n}잔!
+              <span style={{ color: info.color }}>{teamName(room, t)}</span> 의리주 {n}잔!
             </h2>
             <div className="soju-jar" aria-label={`소주 ${n}잔`}>
               {'🍶'.repeat(Math.min(n, 12))}
@@ -1004,7 +1077,7 @@ function SojuBankPanel({ room, pending: p, iAct, code }) {
         ) : (
           <>
             <h2>보관소가 비어 있어요 😇</h2>
-            <div className="muted">아직 '소주 +1' 칸에서 모인 술이 없어요. {info.name} 그냥 통과!</div>
+            <div className="muted">아직 '소주 +1' 칸에서 모인 술이 없어요. {teamName(room, t)} 그냥 통과!</div>
           </>
         )}
         <div className="actions">
@@ -1042,7 +1115,7 @@ function OptionTimers({ options }) {
           <div className={`timer ${left < 60000 ? 'soon' : ''} ${o.team != null ? 'team' : ''}`} key={k} style={o.team != null && TEAM_INFO[o.team] ? { '--tc': TEAM_INFO[o.team].color } : undefined}>
             <div className="timer-bar" style={{ width: `${pct}%` }} />
             <span className="timer-text">{oneLine(o.text)}</span>
-            <span className="timer-who">{o.team != null && TEAM_INFO[o.team] ? `${TEAM_INFO[o.team].name}에 걸림` : o.who || '모두'}</span>
+            <span className="timer-who">{o.team != null && TEAM_INFO[o.team] ? `${o.who && String(o.who).startsWith(TEAM_INFO[o.team].name) ? o.who : TEAM_INFO[o.team].name}에 걸림` : o.who || '모두'}</span>
             <span className="timer-time">{left === 0 ? '끝!' : `${mm}:${ss}`}</span>
           </div>
         )
@@ -1146,7 +1219,8 @@ function SummaryCard({ summary, me, onClose }) {
           </div>
           {summary.winner != null && TEAM_INFO[summary.winner] && (
             <div className="summary-win" style={{ color: TEAM_INFO[summary.winner].color }}>
-              🏆 {TEAM_INFO[summary.winner].name} 승리
+              🏆 {TEAM_INFO[summary.winner].name}
+              {rows.some((r) => r.team === summary.winner) ? `(${rows.filter((r) => r.team === summary.winner).map((r) => r.name).join(', ')})` : ''} 승리
             </div>
           )}
           {mins && (
@@ -1203,7 +1277,7 @@ function WinOverlay({ room, pending: p, isHost, onDone }) {
         </div>
         <div className="ai-note">{mem.map((t) => room.players[t]?.name).join(', ')} — 말 {pieceCountOf(room)}개 모두 골인!</div>
         <div className="ai-name">
-          <b>나머지 팀</b> 다 마셔! 🍻
+          <b>{loserTeamsText(room, p.team)}</b> 🍻
         </div>
         <div className="ai-actions">
           {isHost ? (
@@ -1257,6 +1331,14 @@ export default function App() {
   const [showLog, setShowLog] = useState(false)
   const [missionSeen, setMissionSeen] = useState(null) // 확인한 돌발 미션 id
   const [nopConfirm, setNopConfirm] = useState(null) // 놉카드 사용 확인 중인 팀 { team }
+  // 놉카드 사용 알림: 이 폰에서 '확인했어요'를 누른 알림 id (새로고침해도 다시 안 뜨게 sessionStorage)
+  const [nopSeen, setNopSeen] = useState(() => {
+    try {
+      return sessionStorage.getItem('yt-nop-seen') || ''
+    } catch {
+      return ''
+    }
+  })
   const [showDrinks, setShowDrinks] = useState(false) // 🍺 오늘의 술고래 순위 팝업
   const [summaryHidden, setSummaryHidden] = useState(null) // 닫은 결과 카드 id
   const [pwInput, setPwInput] = useState('') // 방 만들 때 비밀번호(선택)
@@ -1473,7 +1555,8 @@ export default function App() {
   const showPending = !!pending && !busy
   const iAct = SOLO || pending?.playerId === me
   // 팀 대결 게임은 도착한 사람 또는 방장이 진행 (도착한 사람이 자리를 비워도 막히지 않게)
-  const ctlTeam = SOLO || pending?.playerId === me || isHost
+  // 팀 대결 진행(시작·룰렛·확인)은 그 칸에 걸린 사람만 — 그 사람이 연결 끊겼을 때만 방장이 대신 (게임이 안 멈추게)
+  const ctlTeam = SOLO || pending?.playerId === me || (isHost && room?.players?.[pending?.playerId]?.online === false)
   const playing = room?.status === 'playing'
   const canThrow = playing && myTurn && !pending && stage === 'throw' && room.winner == null && !busy
   const canMove = playing && myTurn && !pending && stage === 'move' && room.winner == null && !busy
@@ -1730,7 +1813,7 @@ export default function App() {
   const statusText = !playing
     ? ''
     : room.winner != null
-      ? `${TEAM_INFO[room.winner]?.name} 승리!`
+      ? `${teamName(room, room.winner)} 승리!`
       : throwAnim || unplayedThrow
         ? '윷 던지는 중…'
         : animating || unplayedMove
@@ -2191,7 +2274,7 @@ export default function App() {
                               {routeArrow(o)} {routeLabel(o)}
                             </b>
                           )}
-                          {o.finished ? '🏁 골인!' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
+                          {o.finished ? '🏁 골인!' : o.dest === START ? '🏁 출발·골인 칸에 멈춤 (다음에 한 칸만 가도 골인)' : `${nodeName(o.dest)} ${cells[o.dest]?.emoji || ''} ${oneLine(cells[o.dest]?.text)}`}
                           {hint && <em>{hint}</em>}
                         </span>
                       </button>
@@ -2306,10 +2389,9 @@ export default function App() {
               targets={vs.flatMap((v) => teamMembers(room, v.team))}
               actorId={pending.playerId}
               iAct={iAct}
-              canNop={false}
               title="🎯 잡았다!"
               teamWide
-              note={`${vs.map((v) => `${TEAM_INFO[v.team]?.name} 말 ${v.count}개${v.count > 1 ? `(${v.count}잔씩)` : ''}`).join(' · ')}가 집으로! · ${room.players[pending.playerId]?.name} 한 번 더 던져요`}
+              note={`${vs.map((v) => `${teamName(room, v.team)} 말 ${v.count}개${v.count > 1 ? `(${v.count}잔씩)` : ''}`).join(' · ')}가 집으로! · ${room.players[pending.playerId]?.name} 한 번 더 던져요`}
               onDone={() => resolvePending(code, room, 'done')}
             />
           )
@@ -2321,9 +2403,14 @@ export default function App() {
       {/* ---------- 승리 ---------- */}
       {room && showPending && pending.kind === 'win' && <WinOverlay room={room} pending={pending} isHost={isHost || SOLO} onDone={() => resolvePending(code, room, 'done')} />}
 
+      {/* ---------- 같이 짠: 3·2·1 → 두 사람 공개 ---------- */}
+      {room && showPending && pending.kind === 'toast' && pending.stage === 'reveal' && room.players[pending.target] && (
+        <ToastReveal room={room} pending={pending} iAct={iAct} onDone={() => resolvePending(code, room, 'done')} />
+      )}
+
       {/* ---------- AI 지목 ---------- */}
       {room && showPending && pending.kind === 'aiPick' && (
-        <AiPickOverlay room={room} pending={pending} me={me} iAct={iAct} onDone={() => resolvePending(code, room, 'done')} onTargetNop={() => resolvePending(code, room, 'target-nop')} />
+        <AiPickOverlay room={room} pending={pending} me={me} iAct={iAct} onDone={() => resolvePending(code, room, 'done')} />
       )}
 
       {/* ---------- 돌발 미션 ---------- */}
@@ -2377,6 +2464,7 @@ export default function App() {
         showPending &&
         !['aiPick', 'hunmin', 'subway', 'wordSong', 'shieldAsk', 'magnet', 'fate', 'shuffle', 'gamble', 'caught', 'win', 'sojuBank'].includes(pending.kind) &&
         !TEAM_GAMES.has(pending.kind) &&
+        !(pending.kind === 'toast' && pending.stage === 'reveal') &&
         pendingCell && (
           <div className="modal-backdrop">
             <div className="modal">
@@ -2416,9 +2504,9 @@ export default function App() {
                 ))}
               <div className="muted">
                 <b style={{ color: room.players[pending.playerId]?.color }}>{room.players[pending.playerId]?.name}</b>
-                {pending.kind === 'nop' && ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 놉카드 +1! (지금 ${pending.teamNop ?? teamNop(room, teamOf(room, pending.playerId))}장 · 팀 누구나 쓸 수 있어요)`}
+                {pending.kind === 'nop' && ` — ${teamName(room, teamOf(room, pending.playerId))} 놉카드 +1! (지금 ${pending.teamNop ?? teamNop(room, teamOf(room, pending.playerId))}장 · 팀 누구나 쓸 수 있어요)`}
                 {pending.kind === 'shield' &&
-                  ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 방패 +1! (지금 ${pending.teamShield ?? teamShield(room, teamOf(room, pending.playerId))}개) 우리 말이 잡힐 때 방패를 쓸지 고를 수 있어요. 쓰면 안 잡혀요 🛡️`}
+                  ` — ${teamName(room, teamOf(room, pending.playerId))} 방패 +1! (지금 ${pending.teamShield ?? teamShield(room, teamOf(room, pending.playerId))}개) 우리 말이 잡힐 때 방패를 쓸지 고를 수 있어요. 쓰면 안 잡혀요 🛡️`}
                 {pending.kind === 'normal' && (iAct ? ' — 수행하고 완료를 눌러주세요.' : ' — 수행 중이에요.')}
                 {pending.kind === 'bunny' && ' — 오프라인으로 바니바니 게임을 하고, 걸린 사람이 마셔요. 끝나면 수행 완료!'}
                 {pending.kind === 'normal' &&
@@ -2429,25 +2517,25 @@ export default function App() {
                       ? ` (이름에 '${pendingCell.who}'이 들어간 사람만 마셔요)`
                       : pendingCell.drink === 'except'
                         ? ` (이름에 '${pendingCell.who}'이 들어간 사람 빼고 전원 마셔요)`
-                        : ` (연대책임! ${TEAM_INFO[teamOf(room, pending.playerId)]?.name} 다 같이 마셔요)`)}
+                        : ` (연대책임! ${teamName(room, teamOf(room, pending.playerId))} 다 같이 마셔요)`)}
                 {pending.kind === 'allOptions' &&
-                  ` — 상대 팀(${teamLabel(optionTargets(room, pending.playerId))})에 판에 있는 옵션(${Object.values(cells)
+                  ` — 상대 팀(${teamLabel(optionTargets(room, pending.playerId), room)})에 판에 있는 옵션(${Object.values(cells)
                     .filter((c) => c.type === 'option')
                     .map((c) => oneLine(c.text))
                     .join(' · ')})이 전부 ${pendingCell.minutes || 3}분씩 걸려요. 이미 걸려 있으면 시간이 더해져요.`}
                 {pending.kind === 'sojuAdd' && ` — 소주 보관소에 1잔 적립! 지금 ${pending.bank ?? room.sojuBank ?? 0}잔 모였어요. 가운데 40번 보관소에 도착한 팀이 의리주로 다 마셔요 🏺`}
                 {pending.kind === 'again' && ' — 보너스! 이번 차례에 윷을 한 번 더 던져요 🎲'}
-                {pending.kind === 'home' && ' — 빽도로 출발 칸에 들어왔어요. 다음에 이 말을 움직이면 바로 골인!'}
+                {pending.kind === 'home' && ' — 출발·골인 칸에 딱 멈췄어요! 골인은 이 칸을 지나가야 해서, 다음에 이 말을 한 칸이라도 움직이면 골인 🏁'}
                 {pending.kind === 'option' &&
                   (() => {
                     const ts = optionTargets(room, pending.playerId)
                     const on = ts.some((t) => room.options?.[optionKey(pending.pos, t)]?.endsAt > Date.now())
-                    return ` — 상대 팀(${teamLabel(ts)})에 ${oneLine(pendingCell.text)} ${pendingCell.minutes || 5}분이 걸려요${on ? ' (이미 걸려 있어서 시간 추가)' : ''}. 시간 안에 어기면 그 팀이 다 같이 마셔요! 남은 시간은 모든 폰 위에 떠요.`
+                    return ` — 상대 팀(${teamLabel(ts, room)})에 ${oneLine(pendingCell.text)} ${pendingCell.minutes || 5}분이 걸려요${on ? ' (이미 걸려 있어서 시간 추가)' : ''}. 시간 안에 어기면 그 팀이 다 같이 마셔요! 남은 시간은 모든 폰 위에 떠요.`
                   })()}
                 {pending.kind === 'release' &&
                   (pending.released
-                    ? ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name}에 걸린 옵션 ${pending.released}개가 풀렸어요 🔓`
-                    : ` — ${TEAM_INFO[teamOf(room, pending.playerId)]?.name}에 걸린 옵션이 없어요.`)}
+                    ? ` — ${teamName(room, teamOf(room, pending.playerId))}에 걸린 옵션 ${pending.released}개가 풀렸어요 🔓`
+                    : ` — ${teamName(room, teamOf(room, pending.playerId))}에 걸린 옵션이 없어요.`)}
                 {pending.kind === 'steal' &&
                   (liveTeams(room).some((t) => t !== teamOf(room, pending.playerId) && teamNop(room, t) > 0)
                     ? iAct
@@ -2457,7 +2545,7 @@ export default function App() {
                 {pending.kind === 'choose' && (iAct ? ' — 진행할 게임을 하나 고르세요.' : ' — 게임을 고르고 있어요.')}
                 {pending.kind === 'pickTeam' &&
                   (pending.stage === 'confirm' && TEAM_INFO[pending.target]
-                    ? ` — 상대 팀 ${TEAM_INFO[pending.target].emoji} ${TEAM_INFO[pending.target].name} 다 같이 마셔요! 🍻`
+                    ? ` — 상대 팀 ${TEAM_INFO[pending.target].emoji} ${teamName(room, pending.target)} 다 같이 마셔요! 🍻`
                     : liveTeams(room).some((t) => t !== teamOf(room, pending.playerId))
                       ? iAct
                         ? ' — 다 같이 마실 팀을 고르세요.'
@@ -2482,7 +2570,7 @@ export default function App() {
                     .map((t) => (
                       <button key={t} className="steal-btn" disabled={!iAct} onClick={() => resolvePending(code, room, 'pickTeam', t)}>
                         <span className="team-dot" style={{ '--tc': TEAM_INFO[t].color }} />
-                        <span className="pname">{TEAM_INFO[t].name}</span>
+                        <span className="pname">{teamName(room, t)}</span>
                         <span className="cnt">{teamMembers(room, t).length}명</span>
                       </button>
                     ))}
@@ -2523,7 +2611,7 @@ export default function App() {
                     .map((t) => (
                       <button key={t} className={`steal-btn ${teamNop(room, t) > 0 ? '' : 'none'}`} disabled={!iAct || teamNop(room, t) === 0} onClick={() => resolvePending(code, room, 'steal', t)}>
                         <span className="team-dot" style={{ '--tc': TEAM_INFO[t].color }} />
-                        <span className="pname">{TEAM_INFO[t].name}</span>
+                        <span className="pname">{teamName(room, t)}</span>
                         <span className={`nop-badge ${teamNop(room, t) === 0 ? 'empty' : ''}`}>
                           <NopIcon /> {teamNop(room, t)}
                         </span>
@@ -2536,11 +2624,6 @@ export default function App() {
                   {pending.kind === 'nhaeng' && (
                     <button className="btn btn-ghost" onClick={() => resolvePending(code, room, 'reroll')}>
                       🔄 다른 키워드
-                    </button>
-                  )}
-                  {pending.kind === 'back' && pending.to && teamNop(room, teamOf(room, pending.playerId)) > 0 && (
-                    <button className="btn btn-ghost" onClick={() => resolvePending(code, room, 'nop-skip')}>
-                      🎫 놉카드로 거부
                     </button>
                   )}
                   {pending.kind !== 'choose' &&
@@ -2557,7 +2640,7 @@ export default function App() {
                             : pending.kind === 'again'
                               ? '🎲 한 번 더!'
                               : pending.kind === 'pickTeam' && pending.stage === 'confirm' && TEAM_INFO[pending.target]
-                                ? `👉 ${TEAM_INFO[pending.target].name} 마셔!`
+                                ? `👉 ${teamName(room, pending.target)} 마셔!`
                                 : pending.kind === 'nhaeng'
                                   ? '🍻 다 같이 마셔!'
                                   : pending.kind === 'back' && pending.to
@@ -2583,9 +2666,9 @@ export default function App() {
         <div className="modal-backdrop" onClick={() => setNopConfirm(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="kicker">🎫 팀 놉카드</div>
-            <h2>{TEAM_INFO[nopConfirm.team].name} 놉카드를 쓸까요?</h2>
+            <h2>{teamName(room, nopConfirm.team)} 놉카드를 쓸까요?</h2>
             <div className="muted">
-              우리 팀 놉카드 {teamNop(room, nopConfirm.team)}장. 1장 쓰면 벌칙 하나를 거부할 수 있고, 모두에게 알림이 떠요. 팀원 누구나 쓸 수 있어요.
+              우리 팀 놉카드 {teamNop(room, nopConfirm.team)}장. 놉카드는 말로 쓰는 거예요 — 무엇을 거부하는지 말하고 1장 쓰면, 모든 폰에 '놉카드 사용' 알림이 떠요. 팀원 누구나 쓸 수 있어요.
             </div>
             <div className="actions">
               <button className="btn btn-ghost" onClick={() => setNopConfirm(null)}>
@@ -2603,6 +2686,21 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ---------- 놉카드 사용 알림 (모든 폰, 각자 '확인했어요'로 닫음) ---------- */}
+      {room && room.status === 'playing' && room.nopNotice?.id && room.nopNotice.id !== nopSeen && serverNow() - (room.nopNotice.at || 0) < NOP_NOTICE_MS && TEAM_INFO[room.nopNotice.team] && (
+        <NopNotice
+          room={room}
+          notice={room.nopNotice}
+          me={me}
+          onClose={() => {
+            setNopSeen(room.nopNotice.id)
+            try {
+              sessionStorage.setItem('yt-nop-seen', room.nopNotice.id)
+            } catch {}
+          }}
+        />
       )}
 
       {/* ---------- 게임 로그 ---------- */}

@@ -8,7 +8,8 @@
 //   대각선 B: 왼쪽 위 모서리(o18) → b1..b4 → 가운데(C) → b5..b8 → 골인
 //   규칙: 오른쪽 위·왼쪽 위 모서리, 가운데에 "멈춘" 말은 다음 이동 때 대각선(지름길)과 직진 중에서 고름.
 //        지나가기만 하면 들어온 방향 그대로 직진.
-//   골인: 출발 칸에 도착하거나 지나가면 골인. (빽도로 출발 칸에 들어가면 다음 이동 때 바로 골인)
+//   골인: 출발·골인 칸(o0)을 '지나가야' 골인. 딱 멈추면 그 칸에 서 있다가 다음 이동 때 한 칸이라도 가면 골인
+//        (10/16 사용자 규칙 — 도로 1번 갔다가 빽도로 출발·골인 칸에 들어가면 대박: 다음에 아무거나 나오면 골인)
 
 // 팀 색: 밤 배경에서 네온처럼 빛나는 색
 export const TEAM_INFO = [
@@ -202,7 +203,7 @@ export function sticksFor(value, rand = Math.random) {
 // 한 칸 앞 (기본 길)
 const NEXT = {}
 for (let k = 0; k < OUTER_N - 1; k++) NEXT[`o${k}`] = `o${k + 1}`
-NEXT[LAST_OUTER] = 'goal'
+NEXT[LAST_OUTER] = START // 35번 → 출발·골인 칸 (멈출 수 있음)
 for (let i = 1; i < HALF; i++) {
   NEXT[`a${i}`] = `a${i + 1}`
   NEXT[`b${i}`] = `b${i + 1}`
@@ -212,7 +213,7 @@ for (let i = 1; i < HALF; i++) {
 NEXT[`a${HALF}`] = 'C'
 NEXT[`b${HALF}`] = 'C'
 NEXT[`a${HALF * 2}`] = CORNER_BL
-NEXT[`b${HALF * 2}`] = 'goal'
+NEXT[`b${HALF * 2}`] = START // 52번 → 출발·골인 칸 (멈출 수 있음)
 // 한 칸 뒤 (빽도용 기본값, 직전 노드를 알면 그걸 우선)
 const PREV = { [START]: LAST_OUTER, a1: CORNER_TR, b1: CORNER_TL, C: `a${HALF}`, [`a${HALF + 1}`]: 'C', [`b${HALF + 1}`]: 'C' }
 for (let k = 1; k < OUTER_N; k++) PREV[`o${k}`] = `o${k - 1}`
@@ -249,7 +250,7 @@ function branchStep(node, from, route) {
 // 한 칸 앞. from = 직전 노드, start = 이번 이동의 첫 걸음인지, route = 갈림길에서 고른 길
 function stepForward(node, from, start, route) {
   if (node === 'home') return 'o1'
-  if (node === START) return 'goal' // 빽도로 출발 칸에 들어가 있던 말
+  if (node === START) return 'goal' // 출발·골인 칸에 서 있던 말 (딱 멈췄거나 빽도로 들어감) → 한 칸만 가도 골인
   if (start && BRANCH_NODES.has(node)) return branchStep(node, from, route)
   if (node === 'C') return throughCenter(from)
   return NEXT[node]
@@ -273,8 +274,8 @@ export function movePiece(piece, steps, route) {
   for (let i = 0; i < steps; i++) {
     const nx = stepForward(cur, from, i === 0, route)
     if (nx === 'goal') {
-      // 골인: 화면에는 출발 칸까지 보여줌
-      path.push(START)
+      // 골인: 출발·골인 칸을 지나감 (화면에는 출발 칸까지 보여줌, 이미 거기면 한 번만)
+      if (path[path.length - 1] !== START) path.push(START)
       return { path, dest: 'goal', prev: cur, finished: true }
     }
     path.push(nx)
