@@ -13,8 +13,8 @@ import { dbGet, dbSet, dbUpdate, dbRemove, dbOn, dbOnConnected, dbPresence, now,
 import './firebase'
 import { DEFAULT_YUT_CELLS, TEAM_INFO, throwSticks, sticksFor, yutName, isBonus, moveOptions, movePiece, BRANCH_NODES, teamDone, freshPieces, normPieces, nodeName, routeLabel, pieceCountOf, backPath, prevNode } from './game/yut'
 import { pickNhaengWord } from './game/words'
-import { pickSubwayLine } from './game/subway'
-import { fakeCircle } from './game/circle'
+import { pickSubwayLine, subwayLine, SUBWAY_LINES } from './game/subway'
+import { fakeShape, pickShape, shapeTitle } from './game/circle'
 import { PRICE_ITEMS, PRICE_USED_KEEP, pricePoints, pickPriceRounds } from './game/prices'
 import { PLACES, mapPoints, pickMapRounds } from './game/places'
 import { toXY, toLatLon, distKm, MAP_W, MAP_H } from './game/mapdata'
@@ -487,7 +487,11 @@ function makePending(room, playerId, pos, kind, title) {
   const p = { kind, playerId, pos }
   if (title) p.title = title
   if (kind === 'hunmin') p.chosung = pickChosung()
-  if (kind === 'subway') p.line = pickSubwayLine(room.lastLine) // 지하철 게임: 1~9호선 (직전 호선 빼고)
+  if (kind === 'subway') {
+    // 지하철 게임: 1~9호선 + 수인분당선·경의중앙선 등 (직전 노선 빼고). 데모: &line=su 처럼 고정 (테스트용)
+    const forced = DEMO ? new URLSearchParams(window.location.search).get('line') : null
+    p.line = forced && SUBWAY_LINES.some((l) => String(l.n) === forced) ? subwayLine(forced).n : pickSubwayLine(room.lastLine)
+  }
   if (kind === 'wordSong') p.word = pickSongWord(arr(room.songUsed)) // 단어 노래: 최근에 나온 단어 빼고
   if (kind === 'shuffle') {
     // 의리주: 방에 있는 사람들 순서를 무작위로
@@ -502,6 +506,11 @@ function makePending(room, playerId, pos, kind, title) {
     p.qs = pickSyncQuestions(room)
   }
   if (['tapWar', 'teamReact', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin', 'worldPin'].includes(kind)) p.stage = 'ready'
+  if (kind === 'circle') {
+    // 완벽한 원: 게임마다 원·정삼각형~정육각형 중 하나 (바로 전 도형은 빼고). 데모: &shape=5 처럼 고정 (테스트용)
+    const forced = DEMO ? parseInt(new URLSearchParams(window.location.search).get('shape'), 10) : NaN
+    p.shape = [0, 3, 4, 5, 6].includes(forced) ? forced : pickShape(room.lastShape)
+  }
   if (kind === 'teamBomb') {
     p.stage = 'ready'
     p.topic = pickBombTopic()
@@ -1292,7 +1301,7 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'subway': {
       // 지하철 게임: 역 이름은 오프라인으로 (훈민정음처럼 수행 완료만)
-      await roomUpdate(code, { ...nextTurnUpdates(room), lastLine: p.line || null, event: { id: newId(), text: `🚇 ${me.name} 지하철 게임 (${p.line}호선) 수행 ✅` } })
+      await roomUpdate(code, { ...nextTurnUpdates(room), lastLine: p.line || null, event: { id: newId(), text: `🚇 ${me.name} 지하철 게임 (${subwayLine(p.line).name}) 수행 ✅` } })
       return
     }
     case 'pickTeam': {
@@ -1785,7 +1794,7 @@ export function circleResult(room, p) {
   const mvp = rows.flatMap((r) => r.per).filter((x) => !x.none).sort((a, b) => b.s - a.s)[0] || null
   return { rows, mvp, ...losersBy(rows, 'avg', 'min') }
 }
-// 내 원 내기 (한 번만, 그리는 시간 안에서). 점수는 그린 폰이 계산 (circle.js scoreCircle)
+// 내 원·정n각형 내기 (한 번만, 그리는 시간 안에서). 점수는 그린 폰이 계산 (circle.js scoreShape)
 export async function circleSubmit(code, room, res) {
   const p = room.pending
   if (!p || p.kind !== 'circle' || p.stage !== 'play' || !res) return
@@ -1798,16 +1807,18 @@ export async function circleSubmit(code, room, res) {
   const pts = arr(res.pts).slice(0, 160).map(int)
   const c = arr(res.c).slice(0, 3).map(int)
   const s = Math.max(0, Math.min(100, Math.round((Number(res.s) || 0) * 10) / 10))
-  await roomUpdate(code, { [`pending/results/${id}`]: { s, pts, c, at: nowMs } })
+  // 정n각형은 가장 잘 맞는 정n각형의 첫 꼭짓점 각도도 (0.1도 단위, 결과 그림용)
+  const a = Number(p.shape) >= 3 && Number.isFinite(Number(res.a)) ? Math.max(0, Math.min(3599, Math.round(Number(res.a)))) : null
+  await roomUpdate(code, { [`pending/results/${id}`]: { s, pts, c, ...(a != null ? { a } : {}), at: nowMs } })
 }
-// 혼자 연습·혼자 보는 데모: 가짜 참가자 원 (그리는 시간 중 아무 때나 낸 걸로)
-function fakeCircleResults(room, startAt) {
+// 혼자 연습·혼자 보는 데모: 가짜 참가자 원·정n각형 (그리는 시간 중 아무 때나 낸 걸로)
+function fakeCircleResults(room, startAt, shape = 0) {
   const me = myId()
   const out = {}
   Object.keys(room.players || {}).forEach((pid) => {
     if (pid === me || !room.players[pid]?.name) return
-    const f = fakeCircle()
-    out[pid] = { s: f.s, pts: f.pts, c: f.c, at: startAt + 2500 + Math.floor(Math.random() * (CIRCLE_MS - 5000)) }
+    const f = fakeShape(shape)
+    out[pid] = { s: f.s, pts: f.pts, c: f.c, ...(f.a != null ? { a: f.a } : {}), at: startAt + 2500 + Math.floor(Math.random() * (CIRCLE_MS - 5000)) }
   })
   return out
 }
@@ -2044,7 +2055,7 @@ export const PRACTICE_GAMES = [
   ['teamReact', '⚡', '팀 반응속도', '초록불이 되면 바로 탭'],
   ['teamBomb', '💣', '폭탄 돌리기 팀전', '째깍째깍… 언제 터질지 몰라요'],
   ['colorTrap', '🎨', '색깔 함정', '글자 뜻 말고 글자 색깔 고르기'],
-  ['circle', '⭕', '완벽한 원', '손가락으로 원 한 번, 얼마나 동그란지 점수'],
+  ['circle', '⭕', '완벽한 원', '원·정삼각형~정육각형 중 하나를 한 번에, 얼마나 정확한지 점수'],
   ['priceGuess', '💰', '얼마게요', '편의점 물건 가격 맞히기'],
   ['timeSum', '🕰️', '팀 시간 합치기', '팀원 누른 시간 합이 30초에 가깝게'],
   ['mapPin', '🗺️', '지도 찍기', '한국 지도에 장소 핀 꽂기'],
@@ -2105,7 +2116,7 @@ function teamScoreText(room, p, r) {
 
 async function resolveTeamGame(code, room, p, action, target) {
   const nowMs = serverNow()
-  const title = p.title || TEAM_TITLE[p.kind]
+  const title = p.kind === 'circle' ? shapeTitle(p.shape) : p.title || TEAM_TITLE[p.kind]
   const emo = TEAM_EMOJI[p.kind]
   if (action === 'start' && p.stage === 'ready') {
     const upd = {}
@@ -2116,7 +2127,8 @@ async function resolveTeamGame(code, room, p, action, target) {
     if (p.kind === 'colorTrap') Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': nowMs + TEAM_LEAD_MS, 'pending/rounds': makeColorRounds(CT_ROUNDS), 'pending/answers': null })
     if (p.kind === 'circle') {
       const startAt = nowMs + TEAM_LEAD_MS
-      Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': startAt, 'pending/endAt': startAt + CIRCLE_MS, 'pending/results': SOLO ? fakeCircleResults(room, startAt) : null })
+      Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': startAt, 'pending/endAt': startAt + CIRCLE_MS, 'pending/results': SOLO ? fakeCircleResults(room, startAt, p.shape) : null })
+      upd.lastShape = Number(p.shape) || 0 // 다음 완벽한 원은 다른 도형으로
     }
     if (p.kind === 'priceGuess') {
       const rounds = pickPriceRounds(PG_ROUNDS, arr(room.usedPrices))

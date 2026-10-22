@@ -129,7 +129,7 @@ const SHIELD = { emoji: '🛡️', text: '방패 +1', type: 'shield' }
 // 자석: 앞뒤 range(2)칸 안에 상대 말이 있으면 우리 말이 그쪽으로 끌려가서 잡음 (여러 개면 고르기, 상대 방패는 쓸 수 있음)
 //       2칸 안에 없으면 운명의 카드 (3칸 앞으로 · 2칸 뒤로 · 놉카드 +1 · 다 같이 마셔! 중 하나)
 const MAGNET = { emoji: '🧲', text: '자석', type: 'magnet', range: 2 }
-// 지하철 게임: 3·2·1 → 서울 지하철 1~9호선 중 하나 → 그 호선 역 이름을 돌아가며 (오프라인, 훈민정음처럼)
+// 지하철 게임: 3·2·1 → 서울 지하철 노선(1~9호선 + 수인분당선·경의중앙선 등) 중 하나 → 그 노선 역 이름을 돌아가며 (오프라인, 훈민정음처럼)
 const SUBWAY = { emoji: '🚇', text: '지하철\n게임', type: 'subway' }
 // 단어 노래: 3·2·1 → 단어 → 그 단어가 들어간 노래를 돌아가며 한 소절씩 (오프라인, 막히면 마셔)
 const SONG = { emoji: '🎶', text: '단어 노래\n부르기', type: 'wordSong' }
@@ -177,9 +177,18 @@ export const yutName = (v) => YUT_NAME[v] ?? '?'
 export const isBonus = (v) => v === 4 || v === 5
 export const YUT_VALUES = [1, 2, 3, 4, 5, -1] // 도 개 걸 윷 모 빽도
 
-// 도·개·걸·윷·모·빽도가 모두 같은 확률(1/6). 윷가락 모양은 결과에 맞춰 그림 (0번 윷가락 = 빽도 윷, 배에 '-' 표시)
+// 확률 (10/22 사용자 요청): 윷·모 10%씩, 도·개·걸·빽도 20%씩 (낙 없음). 윷가락 모양은 결과에 맞춰 그림 (0번 윷가락 = 빽도 윷, 배에 '-' 표시)
+export const YUT_ODDS = { 1: 0.2, 2: 0.2, 3: 0.2, 4: 0.1, 5: 0.1, '-1': 0.2 }
 export function throwSticks(rand = Math.random) {
-  const value = YUT_VALUES[Math.min(YUT_VALUES.length - 1, Math.floor(rand() * YUT_VALUES.length))]
+  let r = rand()
+  let value = YUT_VALUES[YUT_VALUES.length - 1]
+  for (const v of YUT_VALUES) {
+    r -= YUT_ODDS[v]
+    if (r < 0) {
+      value = v
+      break
+    }
+  }
   return { value, sticks: sticksFor(value, rand) }
 }
 // 결과값에 맞는 윷가락 모양 (애니메이션용, true = 배)

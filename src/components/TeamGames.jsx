@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { SOLO, PRACTICE } from '../db'
 import { TEAM_INFO } from '../game/yut'
 import { SYNC_QUESTIONS, CT_COLORS } from '../game/teamgames'
-import { scoreCircle, circleAccuracy, circleComment, fakeCircle, seeded } from '../game/circle'
+import { scoreShape, circleAccuracy, circleComment, fakeShape, seeded, shapeName, shapeTitle, resultVerts, polyVerts } from '../game/circle'
 import { PRICE_ITEMS, PRICE_BASE, PRICE_STEPS, pricePoints, won } from '../game/prices'
 import { PLACES } from '../game/places'
 import { MAP_W, MAP_H, MAP_KR, MAP_NK, MAP_JP, MAP_DO, ISLAND_DOTS, toXY } from '../game/mapdata'
@@ -913,15 +913,25 @@ export function ColorTrapPanel({ room, pending: p, me, ctl, code }) {
 // ---------- 완벽한 원 ----------
 // 15초 안에 손가락으로 원을 한 번에 (손 떼면 끝). 동그란 정도 0~100점 (그린 폰이 채점 → circle.js), 팀 평균이 낮은 팀이 마심 (동점 → 룰렛)
 // 결과 화면에 모두가 그린 원을 같이 보여 줌
-function CirclePic({ r, color, size = 64 }) {
+function CirclePic({ r, color, size = 64, n = 0 }) {
   const pts = arr(r?.pts)
   const xy = []
   for (let i = 0; i + 1 < pts.length; i += 2) xy.push(`${(pts[i] / 10).toFixed(1)},${(pts[i + 1] / 10).toFixed(1)}`)
   const c = arr(r?.c)
+  const V = Number(n) >= 3 ? resultVerts(r, n) : null // 정n각형: 가장 잘 맞는 정n각형
   return (
     <svg className="circle-pic" viewBox="0 0 100 100" width={size} height={size} aria-hidden>
-      {c.length === 3 && <circle className="circle-ideal" cx={c[0] / 10} cy={c[1] / 10} r={c[2] / 10} />}
+      {V ? <polygon className="circle-ideal" points={V.map(([x, y]) => `${(x / 10).toFixed(1)},${(y / 10).toFixed(1)}`).join(' ')} /> : c.length === 3 && <circle className="circle-ideal" cx={c[0] / 10} cy={c[1] / 10} r={c[2] / 10} />}
       {xy.length > 1 && <polyline points={xy.join(' ')} fill="none" stroke={color} strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  )
+}
+// 도형 그림 (시작 화면): 원 / 정n각형 (꼭짓점 하나가 위로)
+function ShapeIcon({ n, size = 56, color = '#ffd166' }) {
+  const V = Number(n) >= 3 ? polyVerts(50, Number(n) === 3 ? 56 : 50, 40, -Math.PI / 2 + (Number(n) === 4 ? Math.PI / 4 : 0), Number(n)) : null
+  return (
+    <svg className="shape-icon" viewBox="0 0 100 100" width={size} height={size} aria-hidden>
+      {V ? <polygon points={V.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')} fill="none" stroke={color} strokeWidth="6" strokeLinejoin="round" /> : <circle cx="50" cy="50" r="40" fill="none" stroke={color} strokeWidth="6" />}
     </svg>
   )
 }
@@ -945,7 +955,8 @@ function CircleDraw({ room, p, me, code, left }) {
   const [msg, setMsg] = useState('')
   const [mine, setMine] = useState(null)
   const server = p.results?.[me] || null
-  const result = mine || (server ? { s: server.s, pts: server.pts, c: server.c } : null)
+  const result = mine || (server ? { s: server.s, pts: server.pts, c: server.c, a: server.a } : null)
+  const n = Number(p.shape) || 0 // 0 원 · 3~6 정n각형
   resRef.current = result
   const myTeam = teamOf(room, me)
   const color = TEAM_INFO[myTeam]?.color || '#ff7a1a'
@@ -972,15 +983,19 @@ function CircleDraw({ room, p, me, code, left }) {
     ctx.lineJoin = 'round'
     ctx.lineWidth = 15 * k
     if (res) {
-      // 다 그린 원: 가장 잘 맞는 원(점선) 위에 내 원
+      // 다 그린 원: 가장 잘 맞는 원(점선) 위에 내 원 · 정n각형이면 가장 잘 맞는 정n각형(점선)
       const c = arr(res.c)
+      const V = n >= 3 ? resultVerts(res, n) : null
       if (c.length === 3) {
         ctx.save()
         ctx.setLineDash([16 * k, 14 * k])
         ctx.lineWidth = 5 * k
         ctx.strokeStyle = 'rgba(255,255,255,0.45)'
         ctx.beginPath()
-        ctx.arc(c[0] * k, c[1] * k, c[2] * k, 0, Math.PI * 2)
+        if (V) {
+          V.forEach(([x, y], i) => (i ? ctx.lineTo(x * k, y * k) : ctx.moveTo(x * k, y * k)))
+          ctx.closePath()
+        } else ctx.arc(c[0] * k, c[1] * k, c[2] * k, 0, Math.PI * 2)
         ctx.stroke()
         ctx.restore()
       }
@@ -994,13 +1009,13 @@ function CircleDraw({ room, p, me, code, left }) {
       ctx.shadowBlur = 0
       return
     }
-    // 그리는 중: 지금까지 그린 선에 맞는 원 기준으로 구간마다 색
-    const a = circleAccuracy(pts)
+    // 그리는 중: 지금까지 그린 선에 맞는 원 기준으로 구간마다 색 (정n각형은 다 그린 뒤에 채점 — 그리는 중엔 우리 팀 색)
+    const a = n ? null : circleAccuracy(pts)
     const c = a?.c
     for (let i = 1; i < pts.length; i++) {
       const [x0, y0] = pts[i - 1]
       const [x1, y1] = pts[i]
-      ctx.strokeStyle = c ? devColor(Math.abs(Math.hypot(x1 - c.cx, y1 - c.cy) - c.r) / c.r) : '#ffffff'
+      ctx.strokeStyle = c ? devColor(Math.abs(Math.hypot(x1 - c.cx, y1 - c.cy) - c.r) / c.r) : n ? color : '#ffffff'
       ctx.beginPath()
       ctx.moveTo(x0 * k, y0 * k)
       ctx.lineTo(x1 * k, y1 * k)
@@ -1044,9 +1059,9 @@ function CircleDraw({ room, p, me, code, left }) {
   const finish = () => {
     if (!drawingRef.current) return
     drawingRef.current = false
-    const res = scoreCircle(ptsRef.current)
+    const res = scoreShape(ptsRef.current, n)
     if (!res.ok) {
-      setMsg(res.why === 'small' ? '너무 작아요! 크게 다시' : res.why === 'short' ? '원을 그려 주세요!' : '손 떼지 말고 한 바퀴 다 그려요!')
+      setMsg(res.why === 'small' ? '너무 작아요! 크게 다시' : res.why === 'short' ? `${shapeName(n)}을 그려 주세요!` : '손 떼지 말고 한 바퀴 다 그려요!')
       ptsRef.current = []
       setLive(null)
       buzz(30)
@@ -1091,7 +1106,7 @@ function CircleDraw({ room, p, me, code, left }) {
     <div className="ai-overlay tg circle">
       <div className="tg-box">
         <div className="tg-head">
-          <span>⭕ 완벽한 원</span>
+          <span>⭕ {shapeTitle(n)}</span>
           <span className="tg-score">{result ? `${result.s.toFixed(1)}점` : live != null ? `정확도 ${live.toFixed(1)}%` : `${Math.ceil(left / 1000)}초`}</span>
         </div>
         <div className={`tg-timer ${result || timeUp ? 'done' : ''}`}>
@@ -1106,7 +1121,7 @@ function CircleDraw({ room, p, me, code, left }) {
           onPointerCancel={finish}
         />
         <div className={`circle-fb ${result ? 'ok' : msg || timeUp ? 'no' : ''}`}>
-          {result ? `${circleComment(result.s)}` : timeUp ? '시간 초과! 0점' : msg || '가운데 점을 둘러서, 손 떼지 말고 한 바퀴!'}
+          {result ? `${circleComment(result.s, n)}` : timeUp ? '시간 초과! 0점' : msg || (n ? `가운데 점을 둘러서, 손 떼지 말고 ${shapeName(n)} 한 바퀴! 꼭짓점은 뾰족하게` : '가운데 점을 둘러서, 손 떼지 말고 한 바퀴!')}
         </div>
         <div className="ai-sub">
           {result ? '다른 사람을 기다려요 · ' : ''}우리 팀 {done}/{mates.length}명 그렸어요
@@ -1119,8 +1134,10 @@ function CircleDraw({ room, p, me, code, left }) {
 export function CirclePanel({ room, pending: p, me, ctl, code }) {
   const live = p.stage === 'play'
   const now = useNow(live, 100)
-  const title = p.title || '완벽한 원'
-  const ex = useMemo(() => [fakeCircle(seeded(44)), fakeCircle(seeded(121))], [])
+  const n = Number(p.shape) || 0 // 10/16: 게임마다 원·정삼각형~정육각형 중 하나
+  const title = shapeTitle(n)
+  const sname = shapeName(n)
+  const ex = useMemo(() => [fakeShape(n, seeded(44)), fakeShape(n, seeded(121))], [n])
   if (p.stage === 'ready')
     return (
       <ReadyModal
@@ -1130,28 +1147,38 @@ export function CirclePanel({ room, pending: p, me, ctl, code }) {
         code={code}
         emoji="⭕"
         title={title}
-        headline="한 번에 동그랗게!"
-        startLabel="⭕ 시작"
+        headline={n ? `이번엔 ${sname}! 한 번에 그려요` : '한 번에 동그랗게!'}
+        startLabel={`⭕ ${sname} 그리기 시작`}
         extra={
           <div className="circle-example">
+            <div className="circle-cell shape-target">
+              <ShapeIcon n={n} size={72} />
+              <b>{sname}</b>
+            </div>
             {ex.map((r, i) => (
               <div key={i} className="circle-cell">
-                <CirclePic r={r} color={i ? '#ff5d6c' : '#3be38b'} size={72} />
+                <CirclePic r={r} n={n} color={i ? '#ff5d6c' : '#3be38b'} size={72} />
                 <b>{r.s.toFixed(1)}점</b>
               </div>
             ))}
           </div>
         }
         rules={
-          <>
-            시작하면 <b>{CIRCLE_MS / 1000}초</b> 안에 손가락으로 원을 <b>한 번에</b> 그려요 (손 떼면 끝). 가장 잘 맞는 원과 비교해서 얼마나 동그란지 <b>0~100점</b>! 한 바퀴를 다 못 돌면 감점, 너무 작거나 반 바퀴도 안 되면 다시 그려요. 팀원 <b>평균 점수</b>가 낮은 팀이 다 같이 마셔요. 동점이면 룰렛!
-          </>
+          n ? (
+            <>
+              시작하면 <b>{CIRCLE_MS / 1000}초</b> 안에 손가락으로 <b>{sname}</b>을 <b>한 번에</b> 그려요 (손 떼면 끝). 점수(0~100) = <b>모양</b> × <b>꼭짓점</b> × <b>한 바퀴</b>: 가장 잘 맞는 {sname}과 비교해서 선이 테두리에서 평균 몇 % 벗어났는지 (2% 92점 · 5% 82점 · 10% 67점), 꼭짓점 {n}개가 {sname}처럼 튀어나왔는지 (동그랗게 그리면 크게 감점), 한 바퀴를 다 돌았는지. 너무 작거나 반 바퀴도 안 되면 다시 그려요. 팀원 <b>평균 점수</b>가 낮은 팀이 다 같이 마셔요. 동점이면 룰렛!
+            </>
+          ) : (
+            <>
+              시작하면 <b>{CIRCLE_MS / 1000}초</b> 안에 손가락으로 원을 <b>한 번에</b> 그려요 (손 떼면 끝). 가장 잘 맞는 원과 비교해서 선이 평균 몇 % 벗어났는지로 <b>0~100점</b> (2% 92점 · 5% 82점 · 10% 67점)! 한 바퀴를 다 못 돌면 감점, 너무 작거나 반 바퀴도 안 되면 다시 그려요. 팀원 <b>평균 점수</b>가 낮은 팀이 다 같이 마셔요. 동점이면 룰렛!
+            </>
+          )
         }
       />
     )
   if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="⭕" title={title} />
   const ph = circlePhase(room, p, now)
-  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="⭕" sub="손가락으로 원 한 번! 손 떼지 말고" />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="⭕" sub={`손가락으로 ${sname} 한 번! 손 떼지 말고`} />
   if (ph.phase === 'draw') return <CircleDraw room={room} p={p} me={me} code={code} left={ph.left} />
   const r = circleResult(room, p)
   const name = (pid) => room.players[pid]?.name || ''
@@ -1175,7 +1202,7 @@ export function CirclePanel({ room, pending: p, me, ctl, code }) {
           {r.rows.flatMap((row) =>
             row.per.map((x) => (
               <div key={x.pid} className={`circle-cell ${r.mvp?.pid === x.pid ? 'mvp' : ''}`} style={{ '--tc': TEAM_INFO[row.team]?.color }}>
-                {x.r ? <CirclePic r={x.r} color={TEAM_INFO[row.team]?.color} size={58} /> : <div className="circle-none">✋</div>}
+                {x.r ? <CirclePic r={x.r} n={n} color={TEAM_INFO[row.team]?.color} size={58} /> : <div className="circle-none">✋</div>}
                 <span>{name(x.pid)}</span>
                 <b>{x.none ? '미참여' : x.s.toFixed(1)}</b>
               </div>
@@ -1183,7 +1210,7 @@ export function CirclePanel({ room, pending: p, me, ctl, code }) {
           )}
         </div>
       }
-      note={r.mvp ? `🏅 MVP ${name(r.mvp.pid)} ${r.mvp.s.toFixed(1)}점 — ${circleComment(r.mvp.s)}` : ''}
+      note={r.mvp ? `🏅 MVP ${name(r.mvp.pid)} ${r.mvp.s.toFixed(1)}점 — ${circleComment(r.mvp.s, n)}` : ''}
     />
   )
 }

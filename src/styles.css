@@ -3443,6 +3443,18 @@ textarea {
   font-size: 14px;
   font-weight: 900;
 }
+/* 완벽한 원: 이번 도형 (시작 화면, 10/16 정n각형) */
+.circle-cell.shape-target {
+  padding: 0 14px 0 0;
+  border-right: 1.5px dashed var(--line, rgba(255, 255, 255, 0.18));
+}
+.circle-cell.shape-target b {
+  color: #ffd166;
+}
+.shape-icon {
+  display: block;
+  filter: drop-shadow(0 0 8px rgba(255, 209, 102, 0.45));
+}
 .circle-none {
   width: 58px;
   height: 58px;
@@ -3901,6 +3913,24 @@ textarea {
   font-size: 48px;
   line-height: 1;
   color: var(--text);
+}
+/* 이름 노선 (수인분당선·경의중앙선 등, 10/22): 동그라미 대신 알약 모양 + 이름이 길면 작게 */
+.subway-card.named {
+  flex-direction: column;
+  gap: 10px;
+}
+.subway-badge.named {
+  width: auto;
+  min-width: 64px;
+  height: 52px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 26px;
+  white-space: nowrap;
+}
+.subway-card.named .subway-name {
+  font-size: clamp(30px, 9vw, 44px);
+  white-space: nowrap;
 }
 
 /* ---------- 세계 지도 찍기 (50번) ---------- */

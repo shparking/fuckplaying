@@ -132,7 +132,8 @@ const KIND_DESC = {
   back: '말이 4칸 뒤로 가요 (업힌 말도 같이). 도착한 칸 미션도 하고, 상대 말이 있으면 잡아요.',
   allOptions: '판에 있는 옵션(영어금지·투터치·아니·근데·진짜 금지)이 전부 상대 팀에 3분씩 걸려요.',
   shield: '도착한 팀 방패 +1. 우리 말이 잡힐 때 방패를 쓸지 골라요 (시간 제한 없음). 쓰면 안 잡히고(잡으려던 사람도 한 번 더 없음) 방패가 1개 줄어요.',
-  subway: '3, 2, 1 → 서울 지하철 1~9호선 중 하나가 나와요. 그 호선 역 이름을 돌아가며 말하고, 막히거나 틀리거나 나온 역을 또 말하면 마셔요.',
+  subway: '3, 2, 1 → 서울 지하철 노선(1~9호선·수인분당선·경의중앙선·신분당선·공항철도 등) 중 하나가 나와요. 그 노선 역 이름을 돌아가며 말하고, 막히거나 틀리거나 나온 역을 또 말하면 마셔요.',
+  circle: '게임마다 원·정삼각형·정사각형·정오각형·정육각형 중 하나가 나와요 (시작 화면에 보여요). 15초 안에 손가락으로 한 번에 그리면 0~100점, 팀 평균이 낮은 팀이 마셔요.',
   magnet: '앞뒤 2칸 안에 상대 말이 있으면 우리 말이 그쪽으로 끌려가서 잡아요 (여러 개면 고르기, 상대 팀 방패는 쓸 수 있어요). 2칸 안에 없으면 운명의 카드: 3칸 앞으로 · 2칸 뒤로 · 놉카드 +1 · 다 같이 마셔! 중 하나.',
   bunny: '오프라인 게임: 바니바니 게임을 하고, 걸린 사람이 마셔요. 끝나면 던진 사람이 수행 완료. 게임 선택권에서도 고를 수 있어요.',
   wordSong: '3, 2, 1 → 단어가 하나 나와요. 그 단어가 들어간 노래를 돌아가며 한 소절씩 부르고, 막히거나 이미 나온 노래를 부르면 마셔요.',
@@ -489,10 +490,10 @@ function HunminPanel({ room, pending: p, iAct, code, keyId }) {
   )
 }
 
-// 지하철 게임: 3, 2, 1 → 서울 지하철 n호선 제시 (역 이름은 오프라인으로 돌아가며)
+// 지하철 게임: 3, 2, 1 → 서울 지하철 노선 제시 (1~9호선 + 수인분당선·경의중앙선 등, 역 이름은 오프라인으로 돌아가며)
 function SubwayPanel({ room, pending: p, iAct, code, keyId }) {
   const step = useCountdown(keyId)
-  if (step > 0) return <CountOverlay step={step} emoji="🚇" sub="호선을 뽑고 있어요…" />
+  if (step > 0) return <CountOverlay step={step} emoji="🚇" sub="노선을 뽑고 있어요…" />
   const actor = room.players[p.playerId]
   const line = subwayLine(p.line)
   return (
@@ -500,12 +501,12 @@ function SubwayPanel({ room, pending: p, iAct, code, keyId }) {
       <div className="modal">
         <div className="kicker">🚇 지하철 게임</div>
         <h2>{p.title || '지하철 게임'}</h2>
-        <div className="subway-card" style={{ '--sub': line.color }}>
-          <span className="subway-badge">{line.n}</span>
-          <span className="subway-name">{line.n}호선</span>
+        <div className={`subway-card ${line.badge ? 'named' : ''}`} style={{ '--sub': line.color }}>
+          <span className={`subway-badge ${line.badge ? 'named' : ''}`}>{line.badge || line.n}</span>
+          <span className="subway-name">{line.name}</span>
         </div>
         <div className="muted">
-          <b style={{ color: actor?.color }}>{actor?.name}</b>부터 돌아가며 {line.n}호선 역 이름을 말해요. 막히거나, 틀리거나, 나온 역을 또 말하면 마셔요!
+          <b style={{ color: actor?.color }}>{actor?.name}</b>부터 돌아가며 {line.name} 역 이름을 말해요. 막히거나, 틀리거나, 나온 역을 또 말하면 마셔요!
         </div>
         {iAct ? (
           <div className="actions">
