@@ -507,7 +507,7 @@ function makePending(room, playerId, pos, kind, title) {
   }
   if (['tapWar', 'teamReact', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin', 'worldPin'].includes(kind)) p.stage = 'ready'
   if (kind === 'circle') {
-    // 완벽한 원: 게임마다 원·정삼각형~정육각형 중 하나 (바로 전 도형은 빼고). 데모: &shape=5 처럼 고정 (테스트용)
+    // 완벽한 도형 그리기: 게임마다 원·정삼각형~정육각형 중 하나 (바로 전 도형은 빼고). 데모: &shape=5 처럼 고정 (테스트용)
     const forced = DEMO ? parseInt(new URLSearchParams(window.location.search).get('shape'), 10) : NaN
     p.shape = [0, 3, 4, 5, 6].includes(forced) ? forced : pickShape(room.lastShape)
   }
@@ -1188,7 +1188,7 @@ export async function resolvePending(code, room, action, target) {
     }
     case 'choose': {
       // 게임 선택권: 'choose' + target(팀 대결 10개 · hunmin·subway·wordSong·bunny) → 그 게임으로 전환
-      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', worldPin: '세계 지도 찍기', hunmin: '훈민정음 게임', subway: '지하철 게임', wordSong: '단어 노래', bunny: '바니바니 게임' }
+      const titles = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 도형 그리기', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', worldPin: '세계 지도 찍기', hunmin: '훈민정음 게임', subway: '지하철 게임', wordSong: '단어 노래', bunny: '바니바니 게임' }
       if (action === 'choose' && titles[target]) {
         const np = makePending(room, id, p.pos, target, titles[target])
         await roomUpdate(code, withTopicUpdates(room, np, { pending: np, event: { id: newId(), text: `${me.name} 🎁 ${titles[target]} 선택!` } }))
@@ -1519,7 +1519,7 @@ export const CT_GAP_MS = 1600 // 라운드 사이: 정답과 내 점수
 export const CT_MAX = 1000
 export const CT_MIN = 100
 export const CT_WRONG = -300
-// 완벽한 원: 15초 안에 손가락으로 원 한 번 (0~100점), 팀 평균이 낮은 팀이 마심
+// 완벽한 도형 그리기: 15초 안에 손가락으로 원·정n각형 한 번 (0~100점), 팀 평균이 낮은 팀이 마심
 export const CIRCLE_MS = 15000
 export const CIRCLE_SETTLE_MS = 1200 // 시간이 끝나고 마지막 기록이 다 모일 때까지
 // 얼마게요: 편의점 가격 5문제 × 15초 (숫자 키패드), 정답 공개 3.5초
@@ -1539,7 +1539,7 @@ export const WP_ROUNDS = 5 // 세계 지도 찍기: 확대·이동할 시간이 
 export const WP_ANSWER_MS = 15000
 export const WP_GAP_MS = 4000
 
-const TEAM_TITLE = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 원', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', worldPin: '세계 지도 찍기' }
+const TEAM_TITLE = { teamSync: '팀 이구동성', tapWar: '연타 줄다리기', teamReact: '팀 반응속도', teamBomb: '폭탄 돌리기 팀전', colorTrap: '색깔 함정', circle: '완벽한 도형 그리기', priceGuess: '얼마게요', timeSum: '팀 시간 합치기', mapPin: '지도 찍기', worldPin: '세계 지도 찍기' }
 const TEAM_EMOJI = { teamSync: '👯', tapWar: '🦦', teamReact: '⚡', teamBomb: '💣', colorTrap: '🎨', circle: '⭕', priceGuess: '💰', timeSum: '🕰️', mapPin: '🗺️', worldPin: '🌍' }
 
 // 이구동성 질문 4개 (최근에 나온 질문은 피함)
@@ -1763,7 +1763,7 @@ export async function colorAnswer(code, room, q, c) {
   await roomUpdate(code, upd)
 }
 
-// --- 완벽한 원: 15초 안에 한 번에 원 그리기, 동그란 정도 0~100점. 팀 평균이 낮은 팀이 마심 ---
+// --- 완벽한 도형 그리기 (kind 'circle'): 15초 안에 한 번에 원·정n각형 그리기, 0~100점. 팀 평균이 낮은 팀이 마심 ---
 // 기록: pending/results/{pid} = { s: 점수, pts: [x0,y0,...](0~1000, 64점), c: [cx, cy, r], at: 낸 시각 }
 // 지금 단계: count(3·2·1) → draw(그리기) → final(결과)
 export function circlePhase(room, p, nowMs) {
@@ -2055,7 +2055,7 @@ export const PRACTICE_GAMES = [
   ['teamReact', '⚡', '팀 반응속도', '초록불이 되면 바로 탭'],
   ['teamBomb', '💣', '폭탄 돌리기 팀전', '째깍째깍… 언제 터질지 몰라요'],
   ['colorTrap', '🎨', '색깔 함정', '글자 뜻 말고 글자 색깔 고르기'],
-  ['circle', '⭕', '완벽한 원', '원·정삼각형~정육각형 중 하나를 한 번에, 얼마나 정확한지 점수'],
+  ['circle', '⭕', '완벽한 도형 그리기', '원·정삼각형~정육각형 중 하나를 한 번에, 얼마나 정확한지 점수'],
   ['priceGuess', '💰', '얼마게요', '편의점 물건 가격 맞히기'],
   ['timeSum', '🕰️', '팀 시간 합치기', '팀원 누른 시간 합이 30초에 가깝게'],
   ['mapPin', '🗺️', '지도 찍기', '한국 지도에 장소 핀 꽂기'],
@@ -2128,7 +2128,7 @@ async function resolveTeamGame(code, room, p, action, target) {
     if (p.kind === 'circle') {
       const startAt = nowMs + TEAM_LEAD_MS
       Object.assign(upd, { 'pending/stage': 'play', 'pending/startAt': startAt, 'pending/endAt': startAt + CIRCLE_MS, 'pending/results': SOLO ? fakeCircleResults(room, startAt, p.shape) : null })
-      upd.lastShape = Number(p.shape) || 0 // 다음 완벽한 원은 다른 도형으로
+      upd.lastShape = Number(p.shape) || 0 // 다음 완벽한 도형 그리기는 다른 도형으로
     }
     if (p.kind === 'priceGuess') {
       const rounds = pickPriceRounds(PG_ROUNDS, arr(room.usedPrices))

@@ -92,7 +92,9 @@ export const CT_COLORS = [
   { name: '노랑', hex: '#ffd60a' },
   { name: '보라', hex: '#b15cff' },
 ]
-// 라운드 n개: w = 글자 뜻(색 번호), i = 글자 색(정답), o = 보기 4개(정답·함정 포함, 섞음), oi = 보기 글자 색(마지막 2라운드만, 함정 강화)
+// 라운드 n개: w = 글자 뜻(색 번호), i = 글자 색(정답), o = 보기 4개(정답·함정 포함, 섞음), oi = 보기 글자 색
+// 10/22 사용자: 보기가 흰색으로만 나오면 고장 같다 → 모든 문제에서 보기 글자도 (그 보기 뜻과 다른) 색으로 칠함
+// 마지막 2문제(함정 강화): 글자 뜻과 같은 보기를 정답 색으로 칠함 (정답 색으로 칠해진 보기는 그 함정 하나뿐)
 export function makeColorRounds(n = 5, rand = Math.random) {
   const N = CT_COLORS.length
   const pick = (k) => Math.floor(rand() * k)
@@ -117,9 +119,12 @@ export function makeColorRounds(n = 5, rand = Math.random) {
     const others = shuffle([...Array(N).keys()].filter((c) => c !== w && c !== ink)).slice(0, 2)
     const o = shuffle([ink, w, ...others])
     const r = { w, i: ink, o }
-    if (k >= n - 2) r.oi = o.map((c) => {
-      let x = pick(N - 1)
-      if (x >= c) x++
+    const hard = k >= n - 2
+    r.oi = o.map((c) => {
+      if (hard && c === w) return ink // 함정 강화: 뜻 보기를 정답 색으로
+      let x
+      do x = pick(N)
+      while (x === c || (hard && x === ink))
       return x
     })
     out.push(r)

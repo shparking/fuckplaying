@@ -195,7 +195,9 @@ export function fakeCircle(rand = Math.random) {
 export const SHAPES = [0, 3, 4, 5, 6] // 0 = 원
 const SHAPE_KO = { 0: '원', 3: '정삼각형', 4: '정사각형', 5: '정오각형', 6: '정육각형' }
 export const shapeName = (n) => SHAPE_KO[Number(n) || 0] || '원'
-export const shapeTitle = (n) => `완벽한 ${shapeName(n)}`
+// 10/22 사용자 요청: 게임 이름 '완벽한 원' → '완벽한 도형 그리기' (그리는 도형은 따로 보여 줌)
+export const CIRCLE_GAME = '완벽한 도형 그리기'
+export const shapeTitle = (n) => `${CIRCLE_GAME} (${shapeName(n)})` // 기록·알림용
 export function pickShape(prev, rand = Math.random) {
   const pool = SHAPES.filter((n) => n !== Number(prev ?? -1))
   return pool[Math.floor(rand() * pool.length)]

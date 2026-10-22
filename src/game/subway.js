@@ -16,13 +16,16 @@ export const SUBWAY_LINES = [
   { n: 'gj', name: '경의중앙선', badge: '경의중앙', color: '#77C4A3' },
   { n: 'gc', name: '경춘선', badge: '경춘', color: '#0C8E72' },
   { n: 'ar', name: '공항철도', badge: '공항철도', color: '#0090D2' },
-  { n: 'sh', name: '서해선', badge: '서해', color: '#8FC31F' },
   { n: 'gg', name: '경강선', badge: '경강', color: '#0054A6' },
+]
+// 10/22 사용자 요청으로 뺀 노선 (서해선·우이신설선·신림선·김포골드라인): 이제 안 뽑히고, 배포할 때 진행 중이던 방 표시용으로만 남김
+const RETIRED_LINES = [
+  { n: 'sh', name: '서해선', badge: '서해', color: '#8FC31F' },
   { n: 'ui', name: '우이신설선', badge: '우이신설', color: '#B0CE18' },
   { n: 'sl', name: '신림선', badge: '신림', color: '#6789CA' },
   { n: 'gp', name: '김포골드라인', badge: '김포골드', color: '#A17800' },
 ]
-export const subwayLine = (n) => SUBWAY_LINES.find((l) => String(l.n) === String(n)) || SUBWAY_LINES[0]
+export const subwayLine = (n) => [...SUBWAY_LINES, ...RETIRED_LINES].find((l) => String(l.n) === String(n)) || SUBWAY_LINES[0]
 
 // 바로 전에 나온 노선은 빼고 하나
 export function pickSubwayLine(prev, rand = Math.random) {

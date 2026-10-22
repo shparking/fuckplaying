@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { SOLO, PRACTICE } from '../db'
 import { TEAM_INFO } from '../game/yut'
 import { SYNC_QUESTIONS, CT_COLORS } from '../game/teamgames'
-import { scoreShape, circleAccuracy, circleComment, fakeShape, seeded, shapeName, shapeTitle, resultVerts, polyVerts } from '../game/circle'
+import { scoreShape, circleAccuracy, circleComment, fakeShape, seeded, shapeName, CIRCLE_GAME, resultVerts, polyVerts } from '../game/circle'
 import { PRICE_ITEMS, PRICE_BASE, PRICE_STEPS, pricePoints, won } from '../game/prices'
 import { PLACES } from '../game/places'
 import { MAP_W, MAP_H, MAP_KR, MAP_NK, MAP_JP, MAP_DO, ISLAND_DOTS, toXY } from '../game/mapdata'
@@ -807,7 +807,7 @@ export function ColorTrapPanel({ room, pending: p, me, ctl, code }) {
         }
         rules={
           <>
-            색 이름이 <b>다른 색으로</b> 칠해져 나와요. 글자 뜻 말고 <b>글자 색깔</b>을 5초 안에 고르세요. 모두 {CT_ROUNDS}문제, <b>빨리 맞힐수록 점수가 커요</b> (바로 1000점 → 5초 100점). <b>틀리면 {CT_WRONG}점</b>, 시간 초과는 0점. 마지막 두 문제는 보기 글자까지 색이 섞여요. 끝나면 팀 점수 합계를 공개하고, 낮은 팀이 다 같이 마셔요. 동점이면 룰렛!
+            색 이름이 <b>다른 색으로</b> 칠해져 나와요. 글자 뜻 말고 <b>글자 색깔</b>을 5초 안에 고르세요. 모두 {CT_ROUNDS}문제, <b>빨리 맞힐수록 점수가 커요</b> (바로 1000점 → 5초 100점). <b>틀리면 {CT_WRONG}점</b>, 시간 초과는 0점. 보기 글자도 다른 색으로 칠해져 있어요. 마지막 두 문제는 <b>함정 강화</b> — 글자 뜻과 같은 보기가 정답 색으로 칠해져요! 끝나면 팀 점수 합계를 공개하고, 낮은 팀이 다 같이 마셔요. 동점이면 룰렛!
           </>
         }
       />
@@ -1106,7 +1106,7 @@ function CircleDraw({ room, p, me, code, left }) {
     <div className="ai-overlay tg circle">
       <div className="tg-box">
         <div className="tg-head">
-          <span>⭕ {shapeTitle(n)}</span>
+          <span>⭕ {shapeName(n)} 그리기</span>
           <span className="tg-score">{result ? `${result.s.toFixed(1)}점` : live != null ? `정확도 ${live.toFixed(1)}%` : `${Math.ceil(left / 1000)}초`}</span>
         </div>
         <div className={`tg-timer ${result || timeUp ? 'done' : ''}`}>
@@ -1135,7 +1135,7 @@ export function CirclePanel({ room, pending: p, me, ctl, code }) {
   const live = p.stage === 'play'
   const now = useNow(live, 100)
   const n = Number(p.shape) || 0 // 10/16: 게임마다 원·정삼각형~정육각형 중 하나
-  const title = shapeTitle(n)
+  const title = CIRCLE_GAME // 10/22: 게임 이름은 '완벽한 도형 그리기', 이번 도형은 제목 줄에
   const sname = shapeName(n)
   const ex = useMemo(() => [fakeShape(n, seeded(44)), fakeShape(n, seeded(121))], [n])
   if (p.stage === 'ready')
@@ -1147,7 +1147,7 @@ export function CirclePanel({ room, pending: p, me, ctl, code }) {
         code={code}
         emoji="⭕"
         title={title}
-        headline={n ? `이번엔 ${sname}! 한 번에 그려요` : '한 번에 동그랗게!'}
+        headline={n ? `이번엔 ${sname}! 한 번에 그려요` : '이번엔 원! 한 번에 동그랗게'}
         startLabel={`⭕ ${sname} 그리기 시작`}
         extra={
           <div className="circle-example">
