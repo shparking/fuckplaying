@@ -79,7 +79,7 @@ import {
   mqDrive,
   mqResult,
 } from '../room'
-import { TITLES, MQ_GAME, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_BLUR, mqRounds, isTitleAnswer, chosungHint } from '../game/mediaquiz'
+import { TITLES, MQ_GAME, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_BLUR, mqRounds, isTitleAnswer, chosungHint, blanksHint } from '../game/mediaquiz'
 import { mqUnlock, mqPlay, mqPrime, mqStop } from '../game/mqaudio'
 import { WORLD_PLACES, worldPoints } from '../game/worldplaces'
 import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
@@ -2032,7 +2032,8 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
 }
 
 // ---------- 드라마·영화·노래 맞히기 (주관식) ----------
-// 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요' 누르면 3초 → 5초 + 초성, 영화·드라마는 흐릿 → 조금 선명 → 선명 + 초성.
+// 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요' 누르면 3초 → 5초 + 초성, 영화는 흐릿 → 조금 선명 → 선명 + 초성.
+// 10/31 사용자: 드라마는 이모지 → + 글자 수 → + 초성.
 // 제목을 써서 가장 먼저 맞힌 사람이 정답 (그 팀 +1, 바로 공개). 맞힌 문제가 적은 팀이 마심.
 // 진행·소리는 한 폰에서만: 걸린 사람 (연결 끊기면 방장)
 const mqDj = (room, p) => (SOLO ? myId() : room.players?.[p.playerId]?.online !== false ? p.playerId : room.hostId)
@@ -2166,7 +2167,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
     mqUnlock() // 누르는 순간에 해야 이 폰에서 소리가 남
     try {
       const res = await resolvePending(code, room, 'start')
-      if (res && res.ok === false && res.why !== 'gone') setErr(`노래·사진을 못 불러왔어요. 인터넷을 확인하고 다시 눌러 주세요.${res.nokey ? ' (영화·드라마 사진은 TMDB 키를 넣어야 나와요)' : ''}`)
+      if (res && res.ok === false && res.why !== 'gone') setErr(`노래·사진을 못 불러왔어요. 인터넷을 확인하고 다시 눌러 주세요.${res.nokey ? ' (영화 사진은 TMDB 키를 넣어야 나와요)' : ''}`)
     } finally {
       setBusy(false)
     }
@@ -2191,7 +2192,10 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
                 🎵 <b>1초</b> → 3초 → 5초 + 초성
               </span>
               <span>
-                🎬📺 <b>흐릿</b> → 조금 선명 → 선명 + 초성
+                🎬 <b>흐릿</b> → 조금 선명 → 선명 + 초성
+              </span>
+              <span>
+                📺 <b>이모지</b> → + 글자 수 → + 초성
               </span>
             </div>
             <div className="mq-dj">🔊 소리는 {djName} 폰에서 나와요 — 소리를 키워 주세요</div>
@@ -2201,13 +2205,13 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
         }
         rules={
           <>
-            🎵 <b>노래</b>는 {djName} 폰에서 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. 🎬 <b>영화</b>·📺 <b>드라마</b>는 흐릿한 장면 사진이 같은 식으로 선명해져요. 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}문제, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
+            🎵 <b>노래</b>는 {djName} 폰에서 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. 🎬 <b>영화</b>는 흐릿한 장면 사진이 같은 식으로 선명해지고, 📺 <b>드라마</b>는 <b>이모지</b> → 글자 수 → 초성 힌트가 나와요. 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}문제, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
           </>
         }
       />
     )
   if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🎬" title={title} />
-  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🎬" sub={p.note === 'nokey' ? '영화·드라마 사진은 TMDB 키가 없어서 이번엔 노래만!' : '노래는 듣고, 영화·드라마는 보고!'} />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🎬" sub={p.note === 'nomedia' ? '노래·영화를 못 불러와서 이번엔 드라마 이모지만!' : p.note === 'nokey' ? 'TMDB 키가 없어서 영화 사진 문제는 빠졌어요' : '노래는 듣고, 영화·드라마는 보고!'} />
   const res = mqResult(room, p)
   const name = (pid) => room.players[pid]?.name || ''
   if ((ph.phase === 'q' || ph.phase === 'gap') && r) {
@@ -2264,7 +2268,11 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
           </div>
           <MqStages k={r.k} stage={st} done={!asking} />
           {!asking && <MqAnswer item={item} />}
-          {r.k === 'v' ? (
+          {r.k === 'e' ? (
+            <div className="mq-emoji-box">
+              <div className="mq-emoji">{item?.e}</div>
+            </div>
+          ) : r.k === 'v' ? (
             <div className={`mq-pic ${asking ? '' : 'clear'}`}>
               <img src={r.u} alt="" draggable={false} style={{ filter: asking ? `blur(${MQ_BLUR[st]}px)` : 'none' }} />
             </div>
@@ -2288,7 +2296,19 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
           )}
           {asking && !w ? (
             <>
-              <div className="mq-hint">{st === MQ_STAGES - 1 ? <>초성 <b>{chosungHint(item?.t)}</b></> : `${cat.name} 제목을 써요 — 가장 먼저 맞히면 정답!`}</div>
+              <div className="mq-hint">
+                {st === MQ_STAGES - 1 ? (
+                  <>
+                    초성 <b>{chosungHint(item?.t)}</b>
+                  </>
+                ) : r.k === 'e' && st === 1 ? (
+                  <>
+                    글자 수 <b>{blanksHint(item?.t)}</b>
+                  </>
+                ) : (
+                  `${cat.name} 제목을 써요 — 가장 먼저 맞히면 정답!`
+                )}
+              </div>
               <form className={`mq-form ${shake ? 'shake' : ''}`} onSubmit={submit}>
                 <input
                   className="field mq-input"
@@ -2326,7 +2346,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
                     🎉 <b>{name(w.pid)}</b> 정답!
                   </div>
                   <span>{teamName(room, winTeam)} +1</span>
-                  <em>{r.k === 'a' ? `${mqStageName('a', w.st).replace(' + 초성', '')} 듣고 맞힘` : `${mqStageName('v', w.st).replace(' + 초성', '')}일 때 맞힘`}</em>
+                  <em>{(MQ_WIN_TEXT[r.k] || MQ_WIN_TEXT.v)[w.st]}</em>
                 </>
               ) : (
                 '😵 아무도 못 맞혔어요'
@@ -2354,7 +2374,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
               ) : (
                 MQ_SRC[r.s] || ''
               )}
-              {' · '}
+              {MQ_SRC[r.s] || r.l ? ' · ' : ''}
               {q + 1 < n ? '다음 문제…' : '결과 공개!'}
             </div>
           )}
@@ -2385,7 +2405,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
                   {cat.emoji} {it?.t}
                 </span>
                 <b>{it?.c === 'song' ? it?.by : it?.y}</b>
-                <em>{ww ? `🎉 ${name(ww.pid)} (${mqStageName(x.k, ww.st).replace(' + 초성', '')})` : '아무도 못 맞힘'}</em>
+                <em>{ww ? `🎉 ${name(ww.pid)} (${(MQ_STAGE_SHORT[x.k] || MQ_STAGE_SHORT.v)[ww.st]})` : '아무도 못 맞힘'}</em>
               </div>
             )
           })}

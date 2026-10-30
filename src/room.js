@@ -23,7 +23,7 @@ import { WORLD_W, WORLD_H, WORLD_LAT, toWorldXY, worldToLatLon } from './game/wo
 import { pickSongWord } from './game/songwords'
 import { pickBombTopic } from './game/bomb'
 import { SYNC_QUESTIONS, makeColorRounds } from './game/teamgames'
-import { TITLES, MQ_GAME, MQ_ROUNDS, MQ_MIN_ROUNDS, MQ_STAGES, MQ_STAGE_TIMEOUT_MS, mqPhase, mqN, mqRounds, mqWinner, isTitleAnswer, pickMediaCandidates, arrangeMediaRounds } from './game/mediaquiz'
+import { TITLES, MQ_GAME, MQ_ROUNDS, MQ_MIN_ROUNDS, MQ_STAGES, MQ_STAGE_TIMEOUT_MS, mqPhase, mqN, mqRounds, mqWinner, mqKindOf, isTitleAnswer, pickMediaCandidates, arrangeMediaRounds } from './game/mediaquiz'
 import { drawMission, MISSION_CHANCE, MISSION_MIN_GAP } from './game/missions'
 import { autoEmoji } from './game/emoji'
 
@@ -2053,7 +2053,7 @@ function fakeWorldAnswers(room, rounds) {
 
 // --- 드라마·영화·노래 맞히기 (kind 'mediaQuiz', 주관식) ---
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요' 누르면 3초 → 5초(+초성), 가장 빨리 맞힌 사람이 정답 (그 팀 +1).
-// 영화·드라마도 같은 방식 (흐릿 → 조금 선명 → 선명 + 초성). 마지막 단계에서도 모두 모르면 정답 공개.
+// 영화도 같은 방식 (흐릿 → 조금 선명 → 선명 + 초성), 드라마는 10/31 이모지 → + 글자 수 → + 초성. 마지막 단계에서도 모두 모르면 정답 공개.
 // 진행(단계 넘기기·문제 끝내기)은 걸린 사람 폰(mqDrive, 연결 끊기면 방장)이 하고, 소리도 그 폰에서만 남. 상태 모양은 game/mediaquiz.js 위 설명
 export { mqPhase, mqN, mqWinner }
 // '잘 모르겠어요'를 눌러야 하는 사람: 팀에 있고 연결된 사람 전부 (혼자 연습은 연습봇까지)
@@ -2196,18 +2196,24 @@ async function fetchMedia(i) {
   }
 }
 // 후보(노래 7 · 영화 3 · 드라마 3)의 소리·사진을 한꺼번에 찾고 → 찾은 것으로 5문제 (노래·화면 번갈아)
+// 드라마는 이모지 문제라 찾을 게 없음 (10/31) — 영화 사진(TMDB 키)이 없어도 드라마는 나옴
 async function prepareMediaRounds(room) {
   const { songs, screens } = pickMediaCandidates(arr(room.usedTitles))
-  const got = await Promise.all([...songs, ...screens].map(async (i) => [i, await fetchMedia(i)]))
+  const got = await Promise.all(
+    [...songs, ...screens].map(async (i) => [i, mqKindOf(TITLES[i]) === 'e' ? { ok: true, kind: 'emoji', url: 'emoji' } : await fetchMedia(i)])
+  )
   const good = got.filter(([, m]) => m?.ok && m.url)
   const isSong = ([i]) => TITLES[i]?.c === 'song'
-  const nokey = got.some(([i, m]) => !isSong([i]) && (m?.why === 'nokey' || m?.why === 'badkey'))
+  const nokey = got.some(([i, m]) => TITLES[i]?.c === 'movie' && (m?.why === 'nokey' || m?.why === 'badkey'))
   const picked = arrangeMediaRounds(good.filter(isSong), good.filter((x) => !isSong(x)), MQ_ROUNDS)
   const rounds = picked.map(([i, m]) => {
+    if (m.kind === 'emoji') return { i, k: 'e' }
     const urls = Array.isArray(m.urls) && m.urls.length ? m.urls : [m.url]
     return { i, k: m.kind === 'image' ? 'v' : 'a', u: urls[Math.floor(Math.random() * urls.length)], s: m.src || '', l: m.link || '' }
   })
-  return { rounds, nokey }
+  // 노래·영화를 하나도 못 불러왔으면 (인터넷·서버 문제) 드라마 이모지만으로 — 화면에 안내
+  const note = rounds.length && rounds.every((r) => r.k === 'e') ? 'nomedia' : nokey ? 'nokey' : null
+  return { rounds, nokey, note }
 }
 
 // ---------- 혼자 연습 게임 (홈 → 연습 게임, ?practice=) ----------
@@ -2223,7 +2229,7 @@ export const PRACTICE_GAMES = [
   ['timeSum', '🕰️', '팀 시간 합치기', '팀원 누른 시간 합이 30초에 가깝게'],
   ['mapPin', '🗺️', '지도 찍기', '한국 지도에 장소 핀 꽂기'],
   ['worldPin', '🌍', '세계 지도 찍기', '세계 지도에 도시·명소 핀 꽂기'],
-  ['mediaQuiz', '🎬', MQ_GAME, '노래 1초 듣고, 영화·드라마는 흐릿한 장면 보고 제목 쓰기 — 가장 빨리 맞힌 사람이 정답'],
+  ['mediaQuiz', '🎬', MQ_GAME, '노래는 1초 듣고, 영화는 흐릿한 장면, 드라마는 이모지 보고 제목 쓰기 — 가장 빨리 맞힌 사람이 정답'],
 ]
 function fakeRate(pid) {
   let h = 7
@@ -2328,7 +2334,7 @@ async function resolveTeamGame(code, room, p, action, target) {
         'pending/startAt': serverNow() + TEAM_LEAD_MS,
         'pending/rounds': prep.rounds,
         'pending/n': prep.rounds.length,
-        'pending/note': prep.nokey ? 'nokey' : null, // 영화·드라마 사진은 TMDB 키가 있어야 나옴
+        'pending/note': prep.note, // 'nokey': 영화 사진은 TMDB 키가 있어야 나옴 · 'nomedia': 노래·영화를 못 불러와서 드라마만
         'pending/rs': null,
         'pending/answers': null,
         'pending/pass': null,

@@ -4515,6 +4515,10 @@ textarea {
   color: var(--text-3);
   font-size: 12px;
 }
+.mc-t small.mc-emoji {
+  font-size: 26px;
+  color: inherit;
+}
 .mc-img {
   width: 96px;
   height: 54px;
@@ -4607,4 +4611,23 @@ textarea {
   font-size: 18px;
   color: rgba(255, 255, 255, 0.8);
   box-shadow: none;
+}
+
+/* 10/31 드라마 이모지 문제 */
+.mq-emoji-box {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  padding: 16px 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+}
+.mq-emoji {
+  font-size: 54px;
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+  text-align: center;
+  word-break: break-all;
+  animation: pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
