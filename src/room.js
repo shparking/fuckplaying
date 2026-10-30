@@ -23,7 +23,7 @@ import { WORLD_W, WORLD_H, WORLD_LAT, toWorldXY, worldToLatLon } from './game/wo
 import { pickSongWord } from './game/songwords'
 import { pickBombTopic } from './game/bomb'
 import { SYNC_QUESTIONS, makeColorRounds } from './game/teamgames'
-import { TITLES, MQ_GAME, MQ_ROUNDS, MQ_MIN_ROUNDS, MQ_ANSWER_MS, MQ_GAP_MS, mqPointsAt, isTitleAnswer, pickMediaCandidates, arrangeMediaRounds } from './game/mediaquiz'
+import { TITLES, MQ_GAME, MQ_ROUNDS, MQ_MIN_ROUNDS, MQ_STAGES, MQ_STAGE_TIMEOUT_MS, mqPhase, mqN, mqRounds, mqWinner, isTitleAnswer, pickMediaCandidates, arrangeMediaRounds } from './game/mediaquiz'
 import { drawMission, MISSION_CHANCE, MISSION_MIN_GAP } from './game/missions'
 import { autoEmoji } from './game/emoji'
 
@@ -2051,41 +2051,135 @@ function fakeWorldAnswers(room, rounds) {
   return out
 }
 
-// --- 드라마·영화·노래 맞히기 (kind 'mediaQuiz', 주관식): 노래는 걸린 사람 폰에서 1초 → 3초 → 5초, 영화·드라마는 흐릿 → 선명 ---
-// 시작할 때 걸린 사람 폰이 /api/media 로 소리·사진 주소를 받아 pending/rounds 에 저장: [{ i: 제목 번호, k: 'a'(소리)|'v'(사진), u: 주소, s: 출처, l: 출처 링크 }]
-// 답: 맞히면 pending/answers/r{문제}/{pid} = { ms: 문제 시작부터 } 한 번만, 틀리면 pending/wrong/r{문제}/{pid} = 마지막에 쓴 오답 (정답 공개 때 보여 줌)
-// 점수: 1단계(0~6초, 글자 치는 여유 1.5초 더) 1000 · 2단계(6~12초) 700 · 3단계(12~20초, 초성 힌트) 400, 못 맞히면 0. 팀 점수 낮은 팀이 마심
-export const mqN = (p) => Math.max(1, Number(p?.n) || arr(p?.rounds).length || MQ_ROUNDS)
-export const mqPhase = (p, nowMs) => roundPhase(p, nowMs, mqN(p), MQ_ANSWER_MS, MQ_GAP_MS)
-export const mqEndAt = (p) => (p?.startAt || 0) + mqN(p) * (MQ_ANSWER_MS + MQ_GAP_MS)
-export function mqAnswerOf(p, q, pid) {
-  const a = p?.answers?.[`r${q}`]?.[pid]
-  if (!a) return null
-  const ms = Math.max(0, Math.min(MQ_ANSWER_MS, Number(a.ms) || 0))
-  return { ms, ...mqPointsAt(ms) }
+// --- 드라마·영화·노래 맞히기 (kind 'mediaQuiz', 주관식) ---
+// 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요' 누르면 3초 → 5초(+초성), 가장 빨리 맞힌 사람이 정답 (그 팀 +1).
+// 영화·드라마도 같은 방식 (흐릿 → 조금 선명 → 선명 + 초성). 마지막 단계에서도 모두 모르면 정답 공개.
+// 진행(단계 넘기기·문제 끝내기)은 걸린 사람 폰(mqDrive, 연결 끊기면 방장)이 하고, 소리도 그 폰에서만 남. 상태 모양은 game/mediaquiz.js 위 설명
+export { mqPhase, mqN, mqWinner }
+// '잘 모르겠어요'를 눌러야 하는 사람: 팀에 있고 연결된 사람 전부 (혼자 연습은 연습봇까지)
+export function mqVoters(room) {
+  return liveTeams(room)
+    .flatMap((t) => teamMembers(room, t))
+    .filter((pid) => room.players?.[pid]?.name && (SOLO || room.players[pid].online !== false))
 }
-export const mqResult = (room, p) => roundsResult(room, p, mqN(p), mqAnswerOf)
-// 내 답 (문제마다 맞힐 때까지 여러 번). 맞는지는 이 폰에서 바로 확인 → { ok, ms } (dup: 이미 맞힘, closed: 시간 끝)
+// 지금 단계에서 누른 사람 / 안 누른 사람
+export function mqPassInfo(room, p, q, st) {
+  const pressed = p?.pass?.[`r${q}`]?.[`s${st}`] || {}
+  const voters = mqVoters(room)
+  return { voters, done: voters.filter((pid) => pressed[pid]), left: voters.filter((pid) => !pressed[pid]) }
+}
+// 팀별 맞힌 문제 수 → 적은 팀이 마심 (동점이면 룰렛). per: 사람별 맞힌 수
+export function mqResult(room, p) {
+  const n = mqN(p)
+  const wins = Array.from({ length: n }, (_, q) => mqWinner(p, q))
+  const rows = liveTeams(room).map((t) => {
+    const members = teamMembers(room, t)
+    const per = members.map((pid) => ({ pid, total: wins.filter((w) => w?.pid === pid).length }))
+    return { team: t, members, per, sum: wins.filter((w) => w && teamOf(room, w.pid) === t).length }
+  })
+  const mvp = rows.flatMap((r) => r.per).sort((a, b) => b.total - a.total)[0] || null
+  return { rows, wins, mvp, ...losersBy(rows, 'sum', 'min') }
+}
+// 내 답 (맞힐 때까지 여러 번). → { ok } / { ok: false, late: 다른 사람이 먼저 맞힘 } / { ok: false, closed: 문제 끝남 }
 export async function mqAnswer(code, room, q, text) {
   const p = room.pending
   const s = String(text || '').trim().slice(0, 40)
   if (!p || p.kind !== 'mediaQuiz' || p.stage !== 'play' || !s) return { ok: false }
   const nowMs = serverNow()
   const ph = mqPhase(p, nowMs)
-  // 시간 끝나는 순간에 낸 답도 받음 (0.8초 여유)
-  const late = ph.phase === 'gap' && ph.q === q && nowMs - ph.at < MQ_ANSWER_MS + 800
-  if (!((ph.phase === 'q' && ph.q === q) || late)) return { ok: false, closed: true }
-  const item = TITLES[arr(p.rounds)[q]?.i]
+  if (ph.phase !== 'q' || ph.q !== q) return { ok: false, closed: true }
+  const item = TITLES[mqRounds(p)[q]?.i]
   const id = myId()
   if (!item || (!SOLO && !room.players?.[id]?.name)) return { ok: false }
   if (p.answers?.[`r${q}`]?.[id]) return { ok: true, dup: true }
-  const ms = Math.min(MQ_ANSWER_MS, Math.max(0, Math.round(nowMs - ph.at)))
-  if (isTitleAnswer(s, item)) {
-    await roomUpdate(code, { [`pending/answers/r${q}/${id}`]: { ms } })
-    return { ok: true, ms }
+  if (!isTitleAnswer(s, item)) {
+    await roomUpdate(code, { [`pending/wrong/r${q}/${id}`]: s.slice(0, 24) })
+    return { ok: false }
   }
-  await roomUpdate(code, { [`pending/wrong/r${q}/${id}`]: s.slice(0, 24) })
-  return { ok: false, ms }
+  const w = mqWinner(p, q)
+  if (w && w.at < nowMs) return { ok: false, late: true, winner: w.pid }
+  await roomUpdate(code, { [`pending/answers/r${q}/${id}`]: { at: nowMs, st: ph.st } })
+  return { ok: true }
+}
+// '잘 모르겠어요' (지금 단계에서 한 번)
+export async function mqPass(code, room, q, st) {
+  const p = room.pending
+  if (!p || p.kind !== 'mediaQuiz' || p.stage !== 'play') return
+  const ph = mqPhase(p, serverNow())
+  if (ph.phase !== 'q' || ph.q !== q || ph.st !== st) return
+  const id = myId()
+  if (!SOLO && !room.players?.[id]?.name) return
+  if (p.pass?.[`r${q}`]?.[`s${st}`]?.[id]) return
+  await roomUpdate(code, { [`pending/pass/r${q}/s${st}/${id}`]: true })
+}
+// 같은 쓰기를 잠깐 사이에 두 번 안 하게 (화면이 0.1초마다 진행을 확인해서)
+const mqSent = new Map()
+function mqOnce(key, ms = 4000) {
+  const t = Date.now()
+  if (t - (mqSent.get(key) || 0) < ms) return false
+  mqSent.set(key, t)
+  return true
+}
+// 연습봇 (혼자 연습): 단계마다 맞힐 확률 15% · 35% · 60%, 1.8~6초 뒤에 맞히거나 '잘 모르겠어요' (모를 땐 35% 는 오답부터)
+function mqRand(str) {
+  let h = 2166136261
+  for (const c of str) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
+  return () => {
+    h ^= h << 13
+    h ^= h >>> 17
+    h ^= h << 5
+    return ((h >>> 0) % 100000) / 100000
+  }
+}
+// 데모: &mqbot=pass 면 연습봇은 맞히지 않고 0.6~1.5초 뒤 '잘 모르겠어요'만 (테스트용)
+function mqBotUpdates(room, p, ph, nowMs, me) {
+  const q = ph.q
+  const out = {}
+  const cat = TITLES[mqRounds(p)[q]?.i]?.c
+  const onlyPass = DEMO && new URLSearchParams(window.location.search).get('mqbot') === 'pass'
+  mqVoters(room).forEach((pid) => {
+    if (pid === me) return
+    const r = mqRand(`${p.mq}|${q}|${ph.st}|${pid}`)
+    const knows = !onlyPass && r() < [0.15, 0.35, 0.6][ph.st]
+    const delay = onlyPass ? 600 + r() * 900 : 1800 + r() * 4200
+    const wrongFirst = !onlyPass && r() < 0.35
+    if (nowMs - ph.stAt < delay) return
+    if (knows) {
+      if (!p.answers?.[`r${q}`]?.[pid] && mqOnce(`bot-a:${p.mq}:${q}:${pid}`)) out[`pending/answers/r${q}/${pid}`] = { at: nowMs, st: ph.st }
+      return
+    }
+    if (p.pass?.[`r${q}`]?.[`s${ph.st}`]?.[pid] || !mqOnce(`bot-p:${p.mq}:${q}:${ph.st}:${pid}`)) return
+    if (wrongFirst) {
+      const others = TITLES.filter((x, i) => i !== mqRounds(p)[q]?.i && x.c === cat)
+      if (others.length) out[`pending/wrong/r${q}/${pid}`] = others[Math.floor(r() * others.length)].t.slice(0, 24)
+    }
+    out[`pending/pass/r${q}/s${ph.st}/${pid}`] = true
+  })
+  return out
+}
+// 진행 (걸린 사람 폰이 0.1초마다): 누가 맞히면 문제 끝 → 모두 '잘 모르겠어요'(또는 25초)면 다음 단계, 마지막 단계면 문제 끝
+export async function mqDrive(code, room) {
+  const p = room.pending
+  if (!p || p.kind !== 'mediaQuiz' || p.stage !== 'play') return
+  const nowMs = serverNow()
+  const ph = mqPhase(p, nowMs)
+  if (ph.phase !== 'q') return
+  const q = ph.q
+  const base = `pending/rs/r${q}`
+  if (mqWinner(p, q)) {
+    if (mqOnce(`end:${p.mq}:${q}`)) await roomUpdate(code, { [`${base}/end`]: nowMs })
+    return
+  }
+  const info = mqPassInfo(room, p, q, ph.st)
+  if ((info.voters.length && !info.left.length) || nowMs - ph.stAt >= MQ_STAGE_TIMEOUT_MS) {
+    if (!mqOnce(`adv:${p.mq}:${q}:${ph.st}`)) return
+    await roomUpdate(code, ph.st < MQ_STAGES - 1 ? { [`${base}/s${ph.st + 1}`]: nowMs } : { [`${base}/end`]: nowMs })
+    return
+  }
+  if (SOLO) {
+    const upd = mqBotUpdates(room, p, ph, nowMs, myId())
+    if (Object.keys(upd).length) await roomUpdate(code, upd)
+  }
 }
 // 문제 하나의 소리·사진 주소 (서버 함수 api/media.js). 실패하면 null
 async function fetchMedia(i) {
@@ -2115,32 +2209,6 @@ async function prepareMediaRounds(room) {
   })
   return { rounds, nokey }
 }
-// 가짜 참가자 (혼자 연습·혼자 보는 데모): 60% 맞힘 (2.5~18.5초), 35% 오답 하나 (같은 종류 다른 제목)
-function fakeMqAnswers(room, rounds) {
-  const me = myId()
-  const out = {}
-  rounds.forEach((_, q) =>
-    Object.keys(room.players || {}).forEach((pid) => {
-      if (pid === me || !room.players[pid]?.name || Math.random() > 0.6) return
-      out[`r${q}`] = out[`r${q}`] || {}
-      out[`r${q}`][pid] = { ms: 2500 + Math.floor(Math.random() * 16000) }
-    })
-  )
-  return out
-}
-function fakeMqWrong(room, rounds) {
-  const me = myId()
-  const out = {}
-  rounds.forEach((r, q) => {
-    const others = TITLES.filter((x, i) => i !== r.i && x.c === TITLES[r.i]?.c)
-    Object.keys(room.players || {}).forEach((pid) => {
-      if (pid === me || !room.players[pid]?.name || Math.random() > 0.35 || !others.length) return
-      out[`r${q}`] = out[`r${q}`] || {}
-      out[`r${q}`][pid] = others[Math.floor(Math.random() * others.length)].t.slice(0, 24)
-    })
-  })
-  return out
-}
 
 // ---------- 혼자 연습 게임 (홈 → 연습 게임, ?practice=) ----------
 // 연습 방은 이 기기 메모리에만 있음 (가짜 참가자 3명: 우리 팀 1명 + 상대 팀 2명). 게임 선택권처럼 팀 게임을 골라 바로 시작
@@ -2155,7 +2223,7 @@ export const PRACTICE_GAMES = [
   ['timeSum', '🕰️', '팀 시간 합치기', '팀원 누른 시간 합이 30초에 가깝게'],
   ['mapPin', '🗺️', '지도 찍기', '한국 지도에 장소 핀 꽂기'],
   ['worldPin', '🌍', '세계 지도 찍기', '세계 지도에 도시·명소 핀 꽂기'],
-  ['mediaQuiz', '🎬', MQ_GAME, '노래는 1초 → 3초 → 5초 듣고, 영화·드라마는 흐릿한 장면 보고 제목 쓰기'],
+  ['mediaQuiz', '🎬', MQ_GAME, '노래 1초 듣고, 영화·드라마는 흐릿한 장면 보고 제목 쓰기 — 가장 빨리 맞힌 사람이 정답'],
 ]
 function fakeRate(pid) {
   let h = 7
@@ -2191,7 +2259,7 @@ export function teamGameResult(room, p, nowMs = serverNow()) {
   if (p.kind === 'priceGuess') return p.stage === 'play' && nowMs >= priceEndAt(p) - 300 ? priceResult(room, p) : null
   if (p.kind === 'mapPin') return p.stage === 'play' && nowMs >= mapEndAt(p) - 300 ? mapResult(room, p) : null
   if (p.kind === 'worldPin') return p.stage === 'play' && nowMs >= worldEndAt(p) - 300 ? worldResult(room, p) : null
-  if (p.kind === 'mediaQuiz') return p.stage === 'play' && nowMs >= mqEndAt(p) - 300 ? mqResult(room, p) : null
+  if (p.kind === 'mediaQuiz') return p.stage === 'play' && mqPhase(p, nowMs + 300).phase === 'final' ? mqResult(room, p) : null
   if (p.kind === 'timeSum') return timeSumDone(room, p, nowMs + 300) ? timeSumResult(room, p) : null
   // 폭탄: 마실 팀은 앱이 안 고름 (얘기하고 있던 팀이 오프라인으로 마심) — 터지면 끝
   if (p.kind === 'teamBomb') return bombExploded(p, nowMs) ? { rows: [], losers: [], tie: false, offline: true } : null
@@ -2205,7 +2273,8 @@ function teamScoreText(room, p, r) {
   if (p.kind === 'teamReact') return r.rows.map((x) => `${e(x.team)}${(x.avg / 1000).toFixed(3)}초`).join(' : ')
   if (p.kind === 'colorTrap') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
   if (p.kind === 'circle') return r.rows.map((x) => `${e(x.team)}평균 ${x.avg.toFixed(1)}점`).join(' : ')
-  if (p.kind === 'priceGuess' || p.kind === 'mapPin' || p.kind === 'worldPin' || p.kind === 'mediaQuiz') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
+  if (p.kind === 'mediaQuiz') return r.rows.map((x) => `${e(x.team)}${x.sum}문제`).join(' : ')
+  if (p.kind === 'priceGuess' || p.kind === 'mapPin' || p.kind === 'worldPin') return r.rows.map((x) => `${e(x.team)}${r.byAvg ? `평균 ${Math.round(x.avg)}점` : `${x.sum}점`}`).join(' : ')
   if (p.kind === 'timeSum') return r.rows.map((x) => `${e(x.team)}${(x.sum / 1000).toFixed(1)}초`).join(' : ')
   if (p.kind === 'teamBomb') return `주제: ${p.topic}`
   return ''
@@ -2260,8 +2329,10 @@ async function resolveTeamGame(code, room, p, action, target) {
         'pending/rounds': prep.rounds,
         'pending/n': prep.rounds.length,
         'pending/note': prep.nokey ? 'nokey' : null, // 영화·드라마 사진은 TMDB 키가 있어야 나옴
-        'pending/answers': SOLO ? fakeMqAnswers(room, prep.rounds) : null,
-        'pending/wrong': SOLO ? fakeMqWrong(room, prep.rounds) : null,
+        'pending/rs': null,
+        'pending/answers': null,
+        'pending/pass': null,
+        'pending/wrong': null,
       })
       upd.usedTitles = [...arr(room.usedTitles), ...prep.rounds.map((r) => r.i)].slice(-300) // 이번 판에 나온 제목은 판이 끝날 때까지 안 나옴
     }

@@ -1,6 +1,6 @@
 // 드라마·영화·노래 맞히기 (팀 대결, 주관식) — 화면·서버 함수가 같이 쓰는 것 (브라우저 전용 코드 없음)
-// 문제마다 노래면 걸린 사람 폰에서 1초 → 3초 → 5초씩 미리듣기, 영화·드라마면 장면 사진이 흐릿 → 선명.
-// 제목을 직접 써서 맞힘 (띄어쓰기·문장부호·대소문자·작은 오타 괜찮음). 빨리 맞힐수록 점수, 팀 점수 낮은 팀이 마심
+// 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요'를 누르면 3초 → 5초(+초성 힌트), 가장 빨리 맞힌 사람이 정답.
+// 영화·드라마도 같은 방식으로 장면 사진이 흐릿 → 조금 선명 → 선명(+초성). 맞힌 사람 팀 +1, 맞힌 문제가 적은 팀이 마심
 import { TITLES } from './titles.js'
 export { TITLES }
 
@@ -11,25 +11,52 @@ export const MQ_CATS = {
   drama: { emoji: '📺', name: '드라마' },
 }
 
-// ---------- 시간·점수 ----------
+// ---------- 진행 ----------
 export const MQ_ROUNDS = 5 // 한 게임 문제 수 (미리듣기·사진을 못 찾으면 줄어듦)
 export const MQ_MIN_ROUNDS = 3 // 이보다 적게 찾으면 시작 안 함
-export const MQ_STAGE_AT = [0, 6000, 12000] // 문제 시작부터 단계가 바뀌는 때 (ms)
-export const MQ_ANSWER_MS = 20000 // 문제마다 답하는 시간
-export const MQ_GAP_MS = 6500 // 정답 공개
-export const MQ_PTS = [1000, 700, 400] // 단계별 점수 (3단계는 초성 힌트)
-export const MQ_GRACE_MS = 1500 // 글자 치는 시간 여유: 2단계가 되고 1.5초 안에 내면 아직 1단계 점수 (초성 힌트가 나온 3단계는 여유 없음)
+export const MQ_STAGES = 3 // 1초 · 3초 · 5초(+초성) / 흐릿 · 조금 선명 · 선명(+초성)
 export const MQ_CLIP_MS = [1000, 3000, 5000] // 단계별로 들려주는 길이
-export const MQ_CLIP_FROM = 3 // 미리듣기 3초 지점부터 (앞부분이 작게 시작하는 곡이 있어서)
+export const MQ_CLIP_FROM = 0 // 미리듣기 처음부터 (10/30 사용자)
+export const MQ_STAGE_TIMEOUT_MS = 25000 // 안 누르는 사람이 있어도 한 단계에 25초 지나면 다음 단계로 (마지막 단계면 정답 공개)
+export const MQ_GAP_MS = 6500 // 정답 공개
 export const MQ_REVEAL_CLIP_MS = 5500 // 정답 공개 때 들려주는 길이
 export const MQ_BLUR = [26, 13, 5] // 단계별 사진 흐림 (px)
-export const mqStageAt = (t) => (t >= MQ_STAGE_AT[2] ? 2 : t >= MQ_STAGE_AT[1] ? 1 : 0)
-// 낸 시각(문제 시작부터 ms) → 단계·점수
-export function mqPointsAt(ms) {
-  const t = Math.max(0, Number(ms) || 0)
-  let st = mqStageAt(t)
-  if (st === 1 && t - MQ_STAGE_AT[1] < MQ_GRACE_MS) st = 0
-  return { st, pts: MQ_PTS[st] }
+export const MQ_STAGE_NAMES = { a: ['1초', '3초', '5초 + 초성'], v: ['흐릿', '조금 선명', '선명 + 초성'] }
+
+// pending (stage 'play'): startAt = 첫 문제 시작(3·2·1 뒤), n = 문제 수, rounds = [{ i, k: 'a'|'v', u, s, l }]
+//   rs/r{q} = { s1, s2: 단계가 바뀐 시각, end: 문제가 끝난 시각 } (걸린 사람 폰이 씀)
+//   answers/r{q}/{pid} = { at: 맞힌 시각, st: 그때 단계 } (맞힌 것만) — 가장 빠른 at 이 정답
+//   pass/r{q}/s{단계}/{pid} = true ('잘 모르겠어요'), wrong/r{q}/{pid} = 마지막 오답 (공개 때 보여 줌)
+// 다음 문제는 앞 문제 end + 정답 공개 시간에 저절로 시작 (모든 폰이 같은 계산)
+const toArr = (v) => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.keys(v).sort((a, b) => a - b).map((k) => v[k]) : [])
+export const mqRounds = (p) => toArr(p?.rounds)
+export const mqN = (p) => Math.max(1, Number(p?.n) || mqRounds(p).length || MQ_ROUNDS)
+export function mqPhase(p, nowMs) {
+  if (!p || p.stage !== 'play' || !p.startAt) return { phase: p?.stage || 'ready' }
+  if (nowMs < p.startAt) return { phase: 'count', left: p.startAt - nowMs }
+  const n = mqN(p)
+  let at = p.startAt
+  for (let q = 0; q < n; q++) {
+    const r = p.rs?.[`r${q}`] || {}
+    if (!r.end) {
+      const st = r.s2 ? 2 : r.s1 ? 1 : 0
+      return { phase: 'q', q, at, st, stAt: [at, r.s1, r.s2][st] }
+    }
+    if (nowMs < r.end + MQ_GAP_MS) return { phase: 'gap', q, at, end: r.end, left: r.end + MQ_GAP_MS - nowMs }
+    at = r.end + MQ_GAP_MS
+  }
+  return { phase: 'final' }
+}
+// 그 문제를 가장 먼저 맞힌 사람 { pid, at, st } (없으면 null)
+export function mqWinner(p, q) {
+  const a = p?.answers?.[`r${q}`] || {}
+  let best = null
+  for (const [pid, x] of Object.entries(a)) {
+    const at = Number(x?.at)
+    if (!Number.isFinite(at)) continue
+    if (!best || at < best.at || (at === best.at && pid < best.pid)) best = { pid, at, st: Number(x.st) || 0 }
+  }
+  return best
 }
 
 // ---------- 정답 비교 ----------
