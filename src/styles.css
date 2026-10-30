@@ -2064,6 +2064,8 @@ textarea {
   letter-spacing: 0.01em;
   color: #ffd23f;
   text-shadow: 0 0 10px rgba(255, 210, 63, 0.7), 0 0 30px rgba(255, 210, 63, 0.35);
+  /* 긴 게임 이름(드라마·영화·노래 맞히기 결과)이 글자 중간에서 안 끊기게 */
+  word-break: keep-all;
 }
 .ai-avatar {
   width: 92px;
@@ -2245,7 +2247,8 @@ textarea {
   border: 1.5px solid var(--line);
   font-size: 13px;
   font-weight: 800;
-  color: var(--text);
+  color: var(--text);  /* 긴 게임 이름(드라마·영화·노래 맞히기)이 낱말 중간에서 안 끊기게 */
+  word-break: keep-all;
 }
 .cat-btn:disabled {
   opacity: 0.5;
@@ -4175,4 +4178,341 @@ textarea {
 }
 .summary-left {
   font-size: 13px;
+}
+
+/* ---------- 드라마·영화·노래 맞히기 ---------- */
+.ai-overlay.mq {
+  background: radial-gradient(120% 90% at 50% 0%, rgba(76, 201, 240, 0.22), rgba(5, 6, 15, 0.95) 66%);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* 키보드가 올라와도 입력창이 보이게 위쪽부터 */
+.ai-overlay.mq .tg-box {
+  justify-content: flex-start;
+  gap: 10px;
+}
+.mq-cat {
+  font-style: normal;
+  font-family: 'Pretendard Variable', Pretendard, sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  margin-left: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  vertical-align: 3px;
+}
+.ai-overlay.mq .tg-score {
+  font-size: 16px;
+  color: #ffd23f;
+}
+.mq-stages {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.mq-stages span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 4px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1.5px solid transparent;
+  transition: all 0.25s ease;
+}
+.mq-stages span b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 15px;
+}
+.mq-stages span.past {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+.mq-stages span.on {
+  color: #fff;
+  background: rgba(76, 201, 240, 0.2);
+  border-color: #4cc9f0;
+  box-shadow: 0 0 14px rgba(76, 201, 240, 0.45);
+}
+.mq-stages span.on b {
+  color: #ffd23f;
+}
+.mq-pic {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 32vh;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #0b0d1a;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+}
+.mq-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* 흐림 가장자리 번짐이 안 보이게 살짝 키움 */
+  transform: scale(1.1);
+  transition: filter 0.9s ease, transform 0.9s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
+}
+.mq-pic.clear img {
+  transform: scale(1);
+}
+.mq-sound {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+}
+.mq-eq {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 64px;
+}
+.mq-eq i {
+  width: 9px;
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #4cc9f0, #b388ff);
+  opacity: 0.35;
+  transition: opacity 0.2s ease;
+}
+.mq-eq.on i {
+  opacity: 1;
+  animation: mqbar 0.55s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) * -0.13s);
+}
+@keyframes mqbar {
+  from {
+    height: 10px;
+  }
+  to {
+    height: 60px;
+  }
+}
+.mq-sound-text {
+  font-size: 15px;
+  font-weight: 800;
+  min-height: 21px;
+}
+.mq-sound-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.mq-hint {
+  text-align: center;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.75);
+  min-height: 22px;
+}
+.mq-hint b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 26px;
+  letter-spacing: 0.12em;
+  color: #ffd23f;
+  margin-left: 6px;
+  vertical-align: -3px;
+}
+.mq-form {
+  display: flex;
+  gap: 8px;
+}
+.mq-form.shake {
+  animation: mqshake 0.4s ease;
+}
+@keyframes mqshake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-8px);
+  }
+  40%,
+  80% {
+    transform: translateX(8px);
+  }
+}
+.mq-input {
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  font-size: 18px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.mq-send {
+  min-width: 76px;
+  height: 52px;
+}
+.mq-fb {
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  min-height: 20px;
+}
+.mq-fb.no {
+  color: #ff8a8a;
+}
+.mq-answer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.mq-answer b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 34px;
+  line-height: 1.15;
+  color: #ffd23f;
+  text-shadow: 0 0 18px rgba(255, 210, 63, 0.45);
+  word-break: keep-all;
+}
+.mq-answer em {
+  font-style: normal;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.8);
+}
+.mq-solvers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.mq-solvers span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid var(--tc, rgba(255, 255, 255, 0.3));
+  animation: pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mq-solvers span b {
+  color: #3be38b;
+}
+.mq-wrongs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.mq-wrongs span {
+  color: rgba(255, 255, 255, 0.9);
+}
+.mq-credit {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+}
+.modal .mq-credit {
+  color: var(--text-3);
+  margin-top: 6px;
+}
+.mq-credit a {
+  color: inherit;
+  text-decoration: underline;
+}
+.mq-dj {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-2);
+}
+.mq-err {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff8a8a;
+  background: rgba(255, 84, 104, 0.12);
+  border: 1px solid rgba(255, 84, 104, 0.35);
+}
+
+/* ---------- 확인 화면 (?mediacheck=1) ---------- */
+.mc {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mc-bar,
+.mc-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.mc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mc-row {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  font-size: 14px;
+}
+.mc-row.ok {
+  border-color: rgba(18, 183, 106, 0.6);
+}
+.mc-row.no {
+  border-color: rgba(255, 84, 104, 0.7);
+  background: rgba(255, 84, 104, 0.08);
+}
+.mc-no {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.mc-t em {
+  font-style: normal;
+  color: var(--text-2);
+}
+.mc-t small {
+  display: block;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.mc-img {
+  width: 96px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 8px;
 }

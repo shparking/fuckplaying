@@ -70,7 +70,14 @@ import {
   worldResult,
   WP_ROUNDS,
   WP_ANSWER_MS,
+  mqPhase,
+  mqN,
+  mqAnswer,
+  mqAnswerOf,
+  mqResult,
 } from '../room'
+import { TITLES, MQ_GAME, MQ_CATS, MQ_PTS, MQ_STAGE_AT, MQ_ANSWER_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_BLUR, mqStageAt, mqPointsAt, isTitleAnswer, chosungHint } from '../game/mediaquiz'
+import { mqUnlock, mqPlay, mqPrime, mqStop } from '../game/mqaudio'
 import { WORLD_PLACES, worldPoints } from '../game/worldplaces'
 import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
 
@@ -139,7 +146,8 @@ function CountScreen({ left, emoji, sub }) {
 }
 
 // 시작 전 안내 (모든 폰). 진행자(도착한 사람·방장)가 시작
-function ReadyModal({ room, p, ctl, emoji, title, headline, rules, startLabel, code, extra }) {
+// onStart: 시작 버튼을 따로 처리할 때 (드라마·영화·노래 맞히기: 소리 잠금 풀기 + 소리·사진 찾기), busy: 찾는 중이면 버튼 막기
+function ReadyModal({ room, p, ctl, emoji, title, headline, rules, startLabel, code, extra, onStart, busy }) {
   const actor = room.players[p.playerId]
   return (
     <div className="modal-backdrop">
@@ -167,7 +175,7 @@ function ReadyModal({ room, p, ctl, emoji, title, headline, rules, startLabel, c
             </button>
           )}
           {ctl ? (
-            <button className="btn btn-primary" onClick={() => resolvePending(code, room, 'start')}>
+            <button className="btn btn-primary" disabled={!!busy} onClick={() => (onStart ? onStart() : resolvePending(code, room, 'start'))}>
               {startLabel}
             </button>
           ) : (
@@ -2016,6 +2024,366 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
         </div>
       }
       note={r.byAvg ? '팀 인원이 달라서 1인 평균으로 비교해요' : r.mvp ? `🏅 MVP ${name(r.mvp.pid)} ${r.mvp.total.toLocaleString('ko-KR')}점` : ''}
+    />
+  )
+}
+
+// ---------- 드라마·영화·노래 맞히기 (주관식) ----------
+// 문제마다 🎵 노래면 걸린 사람 폰에서 1초 → 3초 → 5초씩 미리듣기, 🎬 영화·📺 드라마면 장면 사진이 흐릿 → 선명.
+// 제목을 직접 써서 맞힘 (틀리면 다시). 빨리 맞힐수록 점수 (1000 · 700 · 초성 힌트 400), 팀 점수 낮은 팀이 마심
+// 소리는 한 폰에서만: 걸린 사람 (연결 끊기면 방장)
+const mqDj = (room, p) => (SOLO ? myId() : room.players?.[p.playerId]?.online !== false ? p.playerId : room.hostId)
+const MQ_STAGE_NAMES = { a: ['1초', '3초', '5초 + 초성'], v: ['흐릿', '조금 선명', '선명 + 초성'] }
+const MQ_SRC = { deezer: 'Deezer', apple: 'Apple Music', tmdb: 'TMDB' }
+const mqStageName = (k, st) => (MQ_STAGE_NAMES[k] || MQ_STAGE_NAMES.v)[st]
+function MqWave({ on }) {
+  return (
+    <div className={`mq-eq ${on ? 'on' : ''}`} aria-hidden>
+      {Array.from({ length: 9 }).map((_, i) => (
+        <i key={i} style={{ '--i': i }} />
+      ))}
+    </div>
+  )
+}
+function MqStages({ k, stage, done }) {
+  return (
+    <div className="mq-stages">
+      {MQ_PTS.map((pts, st) => (
+        <span key={st} className={!done && st === stage ? 'on' : !done && st < stage ? 'past' : ''}>
+          {mqStageName(k, st)}
+          <b>{pts}</b>
+        </span>
+      ))}
+    </div>
+  )
+}
+// 정답 (공개 후에만 보여 줌)
+function MqAnswer({ item, big }) {
+  if (!item) return null
+  const cat = MQ_CATS[item.c] || MQ_CATS.movie
+  return (
+    <div className={`mq-answer ${big ? 'big' : ''}`}>
+      <b>{item.t}</b>
+      <em>
+        {cat.emoji} {item.c === 'song' ? item.by : `${cat.name} · ${item.y}`}
+      </em>
+    </div>
+  )
+}
+export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
+  const live = p.stage === 'play'
+  const now = useNow(live, 100)
+  const ph = mqPhase(p, now)
+  const title = p.title || MQ_GAME
+  const rounds = arr(p.rounds)
+  const n = mqN(p)
+  const dj = mqDj(room, p)
+  const isDj = live && dj === me
+  const djName = room.players[dj]?.name || '걸린 사람'
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [blocked, setBlocked] = useState(false)
+  const [val, setVal] = useState('')
+  const [mine, setMine] = useState({}) // 문제별 내가 맞힌 시각(ms) — 서버 반영 전에도 바로 보이게
+  const [wrong, setWrong] = useState({}) // 문제별 내 마지막 오답
+  const [shake, setShake] = useState(false) // 틀리면 입력창 흔들기 (입력창은 그대로 둬서 키보드가 안 닫힘)
+  const qRef = useRef(null)
+  const sending = useRef(false)
+  const shakeT = useRef(null)
+  useEffect(() => () => clearTimeout(shakeT.current), [])
+  const q = ph.q
+  const r = q != null ? rounds[q] : null
+  const item = r ? TITLES[r.i] : null
+  const t = ph.phase === 'q' ? now - ph.at : 0
+  const stage = ph.phase === 'q' ? mqStageAt(t) : 2
+  // 새 문제: 입력 비우기 + 진동
+  useEffect(() => {
+    if (ph.phase === 'q' && qRef.current !== ph.q) {
+      qRef.current = ph.q
+      setVal('')
+      buzz(50)
+    }
+  }, [ph.phase, ph.q])
+  // 사진은 모든 폰이 미리 받아 둠
+  useEffect(() => {
+    if (!live) return
+    rounds.forEach((x) => {
+      if (x?.k === 'v' && x.u) new Image().src = x.u
+    })
+  }, [live, p.startAt])
+  // 소리: 걸린 사람 폰만 — 단계가 바뀔 때마다 1초·3초·5초, 정답 공개 때 5.5초. 쉬는 동안 다음 노래를 미리 받아 둠
+  useEffect(() => {
+    if (!isDj) return
+    const nextSong = (from) => rounds.slice(from).find((x) => x?.k === 'a')?.u
+    if (ph.phase === 'count') {
+      const u = nextSong(0)
+      if (u) mqPrime(u)
+      return
+    }
+    if (ph.phase === 'final') return mqStop()
+    if (ph.phase !== 'q' && ph.phase !== 'gap') return
+    if (r?.k === 'a') {
+      const blockedNow = () => setBlocked(true) // 브라우저가 소리를 막으면 '소리 켜기' 버튼
+      if (ph.phase === 'q') {
+        // 늦게 들어온 폰(다시 연결 등)은 단계 시작 1.5초 안일 때만 틈
+        if (serverNow() - ph.at - MQ_STAGE_AT[stage] < 1500) {
+          setBlocked(false)
+          mqPlay(r.u, MQ_CLIP_FROM, MQ_CLIP_MS[stage], blockedNow)
+        }
+      } else {
+        setBlocked(false)
+        mqPlay(r.u, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, blockedNow)
+      }
+      return
+    }
+    const u = nextSong(q + 1)
+    if (u) mqPrime(u)
+  }, [isDj, ph.phase, ph.q, stage])
+  useEffect(() => () => mqStop(), [])
+
+  const start = async () => {
+    if (busy) return
+    setErr('')
+    setBusy(true)
+    mqUnlock() // 누르는 순간에 해야 이 폰에서 소리가 남
+    try {
+      const res = await resolvePending(code, room, 'start')
+      if (res && res.ok === false && res.why !== 'gone') setErr(`노래·사진을 못 불러왔어요. 인터넷을 확인하고 다시 눌러 주세요.${res.nokey ? ' (영화·드라마 사진은 TMDB 키를 넣어야 나와요)' : ''}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (p.stage === 'ready')
+    return (
+      <ReadyModal
+        room={room}
+        p={p}
+        ctl={ctl}
+        code={code}
+        emoji="🎬"
+        title={title}
+        headline="노래는 듣고, 영화·드라마는 보고 맞혀요!"
+        startLabel={busy ? '🔍 노래·사진 찾는 중…' : '🎬 시작'}
+        onStart={start}
+        busy={busy}
+        extra={
+          <>
+            <div className="pg-scale">
+              {MQ_PTS.map((v, i) => (
+                <span key={i}>
+                  {i + 1}단계 <b>{v}</b>
+                </span>
+              ))}
+              <span>
+                못 맞히면 <b>0</b>
+              </span>
+            </div>
+            <div className="mq-dj">🔊 소리는 {djName} 폰에서 나와요 — 소리를 키워 주세요</div>
+            {err && <div className="mq-err">{err}</div>}
+            <div className="mq-credit">미리듣기 Deezer · Apple Music / 사진 TMDB — This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
+          </>
+        }
+        rules={
+          <>
+            문제마다 <b>🎵 노래</b>면 {djName} 폰에서 <b>1초 → 3초 → 5초</b>씩 들려주고, <b>🎬 영화·📺 드라마</b>면 장면 사진이 <b>흐릿했다가 점점 선명</b>해져요. 제목을 <b>직접 써서</b> 맞혀요 — 띄어쓰기·작은 오타는 괜찮고, 틀리면 다시 쓰면 돼요. 빨리 맞힐수록 점수: 1단계(0~6초) 1000 · 2단계(6~12초) 700 · 3단계(초성 힌트) 400. 모두 {n}문제, 팀 점수 낮은 팀이 다 같이 마셔요.
+          </>
+        }
+      />
+    )
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🎬" title={title} />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🎬" sub={p.note === 'nokey' ? '영화·드라마 사진은 TMDB 키가 없어서 이번엔 노래만!' : '노래는 듣고, 영화·드라마는 보고!'} />
+  if ((ph.phase === 'q' || ph.phase === 'gap') && r) {
+    const asking = ph.phase === 'q'
+    const cat = MQ_CATS[item?.c] || MQ_CATS.movie
+    const server = mqAnswerOf(p, q, me)
+    const myAns = server || (mine[q] != null ? { ms: mine[q], ...mqPointsAt(mine[q]) } : null)
+    const shownQ = asking ? q : q + 1
+    const myTotal = Array.from({ length: shownQ }, (_, k) => mqAnswerOf(p, k, me)?.pts || (k === q && myAns ? myAns.pts : 0)).reduce((a, b) => a + b, 0)
+    const myTeam = teamOf(room, me)
+    const mates = teamMembers(room, myTeam)
+    const solved = (pid) => answeredNow(p, q, pid, ph.at, now) || (pid === me && !!myAns)
+    const solvers = Object.keys(room.players || {})
+      .filter((pid) => room.players[pid]?.name && solved(pid))
+      .map((pid) => ({ pid, ...(pid === me && myAns ? myAns : mqAnswerOf(p, q, pid)) }))
+      .sort((a, b) => a.ms - b.ms)
+    const clipOn = asking ? t >= MQ_STAGE_AT[stage] && t < MQ_STAGE_AT[stage] + MQ_CLIP_MS[stage] : now - ph.at - MQ_ANSWER_MS < MQ_REVEAL_CLIP_MS
+    const nextIn = asking && stage < 2 ? Math.ceil((MQ_STAGE_AT[stage + 1] - t) / 1000) : 0
+    const submit = async (e) => {
+      e?.preventDefault?.()
+      const text = val.trim()
+      if (!asking || !text || myAns || sending.current || !item) return
+      if (isTitleAnswer(text, item)) {
+        setMine((x) => ({ ...x, [q]: Math.max(0, Math.round(serverNow() - ph.at)) }))
+        setVal('')
+        buzz([30, 30, 90])
+      } else {
+        setWrong((x) => ({ ...x, [q]: text }))
+        setShake(true)
+        clearTimeout(shakeT.current)
+        shakeT.current = setTimeout(() => setShake(false), 450)
+        setVal('')
+        buzz([70, 40, 70])
+      }
+      sending.current = true
+      try {
+        await mqAnswer(code, room, q, text)
+      } finally {
+        sending.current = false
+      }
+    }
+    const wrongs = Object.entries(p.wrong?.[`r${q}`] || {})
+      .filter(([pid, w]) => w && room.players[pid]?.name)
+      .slice(0, 5)
+    const name = (pid) => room.players[pid]?.name || ''
+    return (
+      <div className="ai-overlay tg mq">
+        <div className="tg-box">
+          <div className="tg-head">
+            <span>
+              🎬 {q + 1}/{n}
+              <em className="mq-cat">
+                {cat.emoji} {cat.name}
+              </em>
+            </span>
+            <span className="tg-score">내 점수 {myTotal.toLocaleString('ko-KR')}</span>
+          </div>
+          <div className={`tg-timer ${asking ? '' : 'done'}`}>{asking && <i style={{ width: `${Math.max(0, ((MQ_ANSWER_MS - t) / MQ_ANSWER_MS) * 100)}%` }} />}</div>
+          <MqStages k={r.k} stage={stage} done={!asking} />
+          {!asking && <MqAnswer item={item} big />}
+          {r.k === 'v' ? (
+            <div className={`mq-pic ${asking ? '' : 'clear'}`}>
+              <img src={r.u} alt="" draggable={false} style={{ filter: asking ? `blur(${MQ_BLUR[stage]}px)` : 'none' }} />
+            </div>
+          ) : (
+            <div className="mq-sound">
+              <MqWave on={clipOn} />
+              <div className="mq-sound-text">
+                {asking
+                  ? clipOn
+                    ? `🔊 ${MQ_CLIP_MS[stage] / 1000}초 듣는 중…`
+                    : stage < 2
+                      ? `${nextIn}초 뒤에 ${MQ_CLIP_MS[stage + 1] / 1000}초 들려줘요`
+                      : '마지막! 생각나면 바로 써요'
+                  : clipOn
+                    ? '🎵 정답 곡 듣는 중'
+                    : ''}
+              </div>
+              {!isDj && asking && <div className="mq-sound-sub">소리는 {djName} 폰에서 나와요</div>}
+              {isDj && blocked && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setBlocked(false)
+                    mqPlay(r.u, MQ_CLIP_FROM, asking ? MQ_CLIP_MS[stage] : MQ_REVEAL_CLIP_MS, () => setBlocked(true))
+                  }}
+                >
+                  🔊 소리가 안 나면 눌러 주세요
+                </button>
+              )}
+            </div>
+          )}
+          {asking ? (
+            <>
+              <div className="mq-hint">{stage === 2 ? <>초성 <b>{chosungHint(item?.t)}</b></> : r.k === 'a' ? '노래 제목을 써요' : `${cat.name} 제목을 써요`}</div>
+              {myAns ? (
+                <div className="ct-fb ok">🎉 정답! +{myAns.pts}</div>
+              ) : (
+                <form className={`mq-form ${shake ? 'shake' : ''}`} onSubmit={submit}>
+                  <input
+                    className="field mq-input"
+                    value={val}
+                    onChange={(e) => setVal(e.target.value)}
+                    placeholder="제목"
+                    maxLength={40}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    enterKeyHint="send"
+                  />
+                  {/* 누를 때 입력창 포커스를 안 뺏어서 휴대폰 키보드가 안 닫힘 */}
+                  <button className="btn btn-primary mq-send" type="submit" disabled={!val.trim()} onMouseDown={(e) => e.preventDefault()}>
+                    확인
+                  </button>
+                </form>
+              )}
+              {!myAns && <div className={`mq-fb ${wrong[q] ? 'no' : ''}`}>{wrong[q] ? `땡! "${wrong[q]}" 아니에요 — 다시!` : `우리 팀 ${mates.filter(solved).length}/${mates.length}명 맞힘`}</div>}
+            </>
+          ) : (
+            <div className={`ct-fb ${myAns ? 'ok' : 'no'}`}>{myAns ? `+${myAns.pts}점 (${myAns.st + 1}단계)` : '못 맞혔어요 0점'}</div>
+          )}
+          {solvers.length > 0 && (
+            <div className="mq-solvers">
+              {solvers.map((s) => (
+                <span key={s.pid} style={{ '--tc': TEAM_INFO[teamOf(room, s.pid)]?.color }}>
+                  🎉 {name(s.pid)}
+                  {!asking && <b> +{s.pts}</b>}
+                </span>
+              ))}
+            </div>
+          )}
+          {!asking && wrongs.length > 0 && (
+            <div className="mq-wrongs">
+              😂 오답{' '}
+              {wrongs.map(([pid, w]) => (
+                <span key={pid}>
+                  {name(pid)} "{w}"
+                </span>
+              ))}
+            </div>
+          )}
+          {!asking && (
+            <div className="mq-credit">
+              {r.l ? (
+                <a href={r.l} target="_blank" rel="noreferrer">
+                  {MQ_SRC[r.s] || '출처'}
+                </a>
+              ) : (
+                MQ_SRC[r.s] || ''
+              )}
+              {' · '}
+              {q + 1 < n ? '다음 문제…' : '결과 공개!'}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+  const res = mqResult(room, p)
+  const name = (pid) => room.players[pid]?.name || ''
+  return (
+    <TeamResult
+      room={room}
+      p={p}
+      ctl={ctl}
+      code={code}
+      emoji="🎬"
+      title={title}
+      losers={res.losers}
+      tie={res.tie}
+      rows={pointRows(room, res)}
+      extra={
+        <div className="pg-best">
+          {rounds.map((x, k) => {
+            const it = TITLES[x?.i]
+            const first = Object.keys(p.answers?.[`r${k}`] || {})
+              .filter((pid) => room.players[pid]?.name)
+              .map((pid) => ({ pid, ...mqAnswerOf(p, k, pid) }))
+              .sort((a, b) => a.ms - b.ms)
+            const cat = MQ_CATS[it?.c] || MQ_CATS.movie
+            return (
+              <div key={k} className="pg-best-row">
+                <span>
+                  {cat.emoji} {it?.t}
+                </span>
+                <b>{it?.c === 'song' ? it?.by : it?.y}</b>
+                <em>{first.length ? `🎯 ${name(first[0].pid)} 가장 빨리 (${first.length}명 맞힘)` : '아무도 못 맞힘'}</em>
+              </div>
+            )
+          })}
+        </div>
+      }
+      note={res.byAvg ? '팀 인원이 달라서 1인 평균으로 비교해요' : res.mvp && res.mvp.total > 0 ? `🏅 MVP ${name(res.mvp.pid)} ${res.mvp.total.toLocaleString('ko-KR')}점` : ''}
     />
   )
 }
