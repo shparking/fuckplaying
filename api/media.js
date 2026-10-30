@@ -1,12 +1,10 @@
-// Vercel 서버 함수 — 드라마·영화·노래 맞히기 문제의 소리·사진 찾기
-//   GET /api/media?i=문제번호(src/game/titles.js 순서)
-//     → { ok: true, kind: 'audio', url, src: 'deezer'|'apple', link, name, artist }   노래: 30초 미리듣기
-//     → { ok: true, kind: 'image', url, urls, src: 'tmdb', link, name, year }        영화·드라마: 글자 없는 장면 사진
-//     → { ok: false, why: 'notfound'|'nokey'|'badkey'|'bad'|'error' }
+// Vercel 서버 함수 — 드라마·영화·노래 맞히기 노래 문제의 30초 미리듣기 찾기
+//   GET /api/media?i=문제번호(src/game/titles.js 순서, 노래만 — 영화·드라마는 10/31부터 이모지 문제라 'bad')
+//     → { ok: true, kind: 'audio', url, src: 'deezer'|'apple', link, name, artist }
+//     → { ok: false, why: 'notfound'|'bad'|'error' }
 //   ?debug=1 이면 찾아본 검색어·후보도 같이 (확인 화면 ?mediacheck=1 용)
-//   ?ping=1 → { ok: true, ping: true, tmdb: 'set'|'none' } (서버 함수가 살아 있는지 + TMDB 키를 넣었는지만, 밖으로는 안 부름)
-// 노래는 Deezer 먼저 (키 없음, 약관: 비상업·사적 이용), 없으면 Apple(iTunes) 미리듣기
-// 사진은 TMDB (비상업 무료, 출처 표시) — Vercel 환경 변수 TMDB_TOKEN(API 읽기 액세스 토큰) 또는 TMDB_KEY(API 키). 없으면 nokey
+//   ?ping=1 → { ok: true, ping: true } (서버 함수가 살아 있는지만, 밖으로는 안 부름)
+// Deezer 먼저 (키 없음, 약관: 비상업·사적 이용), 없으면 Apple(iTunes) 미리듣기
 // 번호로만 찾음 (아무 검색어나 대신 찾아 주는 통로가 되지 않게)
 import { TITLES } from '../src/game/titles.js'
 import { normTitle } from '../src/game/mediaquiz.js'
@@ -14,7 +12,7 @@ import { normTitle } from '../src/game/mediaquiz.js'
 const UA = 'juruyut/1.0 (+https://fuckplaying.vercel.app)'
 // 같은 서버 인스턴스 안에서 잠깐 기억 (확인 화면처럼 한꺼번에 부를 때 덜 부르게)
 const memo = new Map()
-const MEMO_MS = { audio: 4 * 60 * 1000, image: 6 * 60 * 60 * 1000, miss: 60 * 1000 }
+const MEMO_MS = { audio: 4 * 60 * 1000, miss: 60 * 1000 }
 
 // 서버 함수 하나가 너무 오래 걸리지 않게: 문제 하나에 8초까지 (화면은 9초 기다림). fetchFn.deadline = 끝 시각
 const BUDGET_MS = 8000
@@ -99,75 +97,16 @@ async function fromApple(item, f, dbg) {
   return null
 }
 
-function tmdbAuth(env) {
-  const tok = String(env.TMDB_TOKEN || '').trim()
-  const key = String(env.TMDB_KEY || '').trim()
-  if (tok.length > 40) return { headers: { authorization: `Bearer ${tok}` }, qs: '' } // 읽기 액세스 토큰 (긴 것)
-  const k = key || tok // 짧은 것은 API 키
-  return k ? { headers: {}, qs: `&api_key=${encodeURIComponent(k)}` } : null
-}
-const yearOf = (x) => Number(String(x?.release_date || x?.first_air_date || '').slice(0, 4)) || 0
-function bestShow(list, item) {
-  const names = titleNames(item)
-  let best = null
-  let bs = 0
-  list.slice(0, 12).forEach((x, k) => {
-    const ts = Math.max(0, ...[x.title, x.original_title, x.name, x.original_name].filter(Boolean).map((n) => titleScore(n, names)))
-    if (!ts) return
-    const yr = yearOf(x)
-    const ys = item.y && yr ? (yr === item.y ? 2 : Math.abs(yr - item.y) === 1 ? 1 : -2) : 0
-    const sc = ts * 3 + ys * 2 + (k === 0 ? 1 : 0)
-    if (sc > bs) {
-      bs = sc
-      best = x
-    }
-  })
-  return best
-}
-const textless = (b) => b && b.file_path && (b.iso_639_1 == null || b.iso_639_1 === 'xx')
-async function fromTmdb(item, f, env, dbg) {
-  const auth = tmdbAuth(env)
-  if (!auth) return { ok: false, why: 'nokey' }
-  const type = item.c === 'drama' ? 'tv' : 'movie'
-  const yk = type === 'tv' ? 'first_air_date_year' : 'year'
-  const tries = [[item.t, item.y], [item.t, 0], item.en ? [item.en, item.y] : null, item.en ? [item.en, 0] : null].filter(Boolean)
-  const base = 'https://api.themoviedb.org/3'
-  for (const [q, y] of tries) {
-    const j = await getJson(f, `${base}/search/${type}?query=${encodeURIComponent(q)}&language=ko-KR&include_adult=false${y ? `&${yk}=${y}` : ''}${auth.qs}`, auth.headers)
-    if (j?._status === 401) return { ok: false, why: 'badkey' }
-    const list = Array.isArray(j?.results) ? j.results : []
-    const hit = bestShow(list, item)
-    dbg?.push({ src: 'tmdb', q, y: y || undefined, n: list.length, err: j?._status || j?._error || undefined, top: list.slice(0, 3).map((x) => `${x.title || x.name} (${yearOf(x) || '?'})`), hit: hit ? `${hit.title || hit.name} (${yearOf(hit) || '?'})` : undefined })
-    if (!hit) continue
-    // 글자 없는(언어 없는) 장면 사진, 표 많은 순 4장 (없으면 기본 배경 1장)
-    let im = await getJson(f, `${base}/${type}/${hit.id}/images?include_image_language=null${auth.qs}`, auth.headers)
-    let bd = (Array.isArray(im?.backdrops) ? im.backdrops : []).filter(textless)
-    if (!bd.length) {
-      im = await getJson(f, `${base}/${type}/${hit.id}/images?${auth.qs.slice(1)}`, auth.headers)
-      bd = (Array.isArray(im?.backdrops) ? im.backdrops : []).filter(textless)
-    }
-    bd.sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0) || (b.vote_average || 0) - (a.vote_average || 0))
-    const paths = bd.length ? uniq(bd.slice(0, 4).map((b) => b.file_path)) : hit.backdrop_path ? [hit.backdrop_path] : []
-    dbg?.push({ src: 'tmdb-images', id: hit.id, n: bd.length })
-    if (!paths.length) continue
-    const urls = paths.map((p) => `https://image.tmdb.org/t/p/w780${p}`)
-    return { ok: true, kind: 'image', url: urls[0], urls, src: 'tmdb', link: `https://www.themoviedb.org/${type}/${hit.id}`, name: hit.title || hit.name || '', year: yearOf(hit) || undefined }
-  }
-  return null
-}
-
-// 문제 하나의 소리·사진 찾기 (시험할 때 fetch·env 를 바꿔 넣을 수 있게 따로)
-export async function findMedia(i, { fetch: f = globalThis.fetch, env = process.env, debug = false, now = Date.now() } = {}) {
+// 노래 하나의 미리듣기 찾기 (시험할 때 fetch 를 바꿔 넣을 수 있게 따로)
+export async function findMedia(i, { fetch: f = globalThis.fetch, debug = false, now = Date.now() } = {}) {
   const item = Number.isInteger(i) && i >= 0 ? TITLES[i] : null
-  if (!item || item.off) return { ok: false, why: 'bad' }
+  if (!item || item.off || item.c !== 'song') return { ok: false, why: 'bad' }
   const key = `${i}`
   const hit = !debug && memo.get(key)
   if (hit && hit.until > now) return hit.v
   const dbg = debug ? [] : null
   const fb = Object.assign((u, o) => f(u, o), { deadline: Date.now() + BUDGET_MS }) // 이 문제만의 시간 제한 (동시에 여러 개 찾아도 따로)
-  let out
-  if (item.c === 'song') out = (await fromDeezer(item, fb, dbg)) || (await fromApple(item, fb, dbg)) || { ok: false, why: 'notfound' }
-  else out = (await fromTmdb(item, fb, env, dbg)) || { ok: false, why: 'notfound' }
+  let out = (await fromDeezer(item, fb, dbg)) || (await fromApple(item, fb, dbg)) || { ok: false, why: 'notfound' }
   if (dbg) out = { ...out, debug: dbg }
   else if (out.ok || out.why === 'notfound') memo.set(key, { v: out, until: now + (out.ok ? MEMO_MS[out.kind] : MEMO_MS.miss) })
   return out
@@ -183,11 +122,11 @@ export default async function handler(req, res) {
     res.setHeader('cache-control', cache)
     res.end(JSON.stringify(body))
   }
-  if (u.searchParams.has('ping')) return send({ ok: true, ping: true, tmdb: tmdbAuth(process.env) ? 'set' : 'none' }, 'no-store')
+  if (u.searchParams.has('ping')) return send({ ok: true, ping: true }, 'no-store')
   try {
     const out = await findMedia(i, { debug })
-    // 미리듣기 주소는 시간이 지나면 막힐 수 있어서 잠깐만, 사진은 하루 캐시
-    const cache = debug || out.why === 'nokey' || out.why === 'badkey' || out.why === 'bad' ? 'no-store' : out.ok ? (out.kind === 'audio' ? 'public, s-maxage=240' : 'public, s-maxage=86400, stale-while-revalidate=604800') : 'public, s-maxage=60'
+    // 미리듣기 주소는 시간이 지나면 막힐 수 있어서 잠깐만
+    const cache = debug || out.why === 'bad' ? 'no-store' : out.ok ? 'public, s-maxage=240' : 'public, s-maxage=60'
     send(out, cache)
   } catch {
     send({ ok: false, why: 'error' }, 'no-store')

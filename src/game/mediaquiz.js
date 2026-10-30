@@ -1,6 +1,6 @@
 // 드라마·영화·노래 맞히기 (팀 대결, 주관식) — 화면·서버 함수가 같이 쓰는 것 (브라우저 전용 코드 없음)
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요'를 누르면 3초 → 5초(+초성 힌트), 가장 빨리 맞힌 사람이 정답.
-// 영화는 같은 방식으로 장면 사진이 흐릿 → 조금 선명 → 선명(+초성), 드라마는 10/31 사용자 요청으로 이모지 → + 글자 수 → + 초성.
+// 영화·드라마는 10/31 사용자 요청으로 이모지 → + 글자 수 → + 초성 (사진 안 씀).
 // 맞힌 사람 팀 +1, 맞힌 문제가 적은 팀이 마심
 import { TITLES } from './titles.js'
 export { TITLES }
@@ -13,22 +13,21 @@ export const MQ_CATS = {
 }
 
 // ---------- 진행 ----------
-export const MQ_ROUNDS = 5 // 한 게임 문제 수 (미리듣기·사진을 못 찾으면 줄어듦)
+export const MQ_ROUNDS = 5 // 한 게임 문제 수 (노래 미리듣기를 못 찾으면 이모지 문제로 채움)
 export const MQ_MIN_ROUNDS = 3 // 이보다 적게 찾으면 시작 안 함
-export const MQ_STAGES = 3 // 1초 · 3초 · 5초(+초성) / 흐릿 · 조금 선명 · 선명(+초성) / 이모지 · +글자 수 · +초성
+export const MQ_STAGES = 3 // 노래 1초 · 3초 · 5초(+초성) / 영화·드라마 이모지 · +글자 수 · +초성
 export const MQ_CLIP_MS = [1000, 3000, 5000] // 단계별로 들려주는 길이
 export const MQ_CLIP_FROM = 0 // 미리듣기 처음부터 (10/30 사용자)
 export const MQ_STAGE_TIMEOUT_MS = 25000 // 안 누르는 사람이 있어도 한 단계에 25초 지나면 다음 단계로 (마지막 단계면 정답 공개)
 export const MQ_GAP_MS = 6500 // 정답 공개
 export const MQ_REVEAL_CLIP_MS = 5500 // 정답 공개 때 들려주는 길이
-export const MQ_BLUR = [26, 13, 5] // 단계별 사진 흐림 (px)
-// 문제 종류 k: 'a' 노래(소리) · 'v' 영화(사진) · 'e' 드라마(이모지)
-export const MQ_STAGE_NAMES = { a: ['1초', '3초', '5초 + 초성'], v: ['흐릿', '조금 선명', '선명 + 초성'], e: ['이모지', '+ 글자 수', '+ 초성'] }
-export const MQ_STAGE_SHORT = { a: ['1초', '3초', '5초'], v: ['흐릿', '조금 선명', '선명'], e: ['이모지', '글자 수', '초성'] }
-export const MQ_WIN_TEXT = { a: ['1초 듣고 맞힘', '3초 듣고 맞힘', '5초 듣고 맞힘'], v: ['흐릿할 때 맞힘', '조금 선명할 때 맞힘', '선명할 때 맞힘'], e: ['이모지만 보고 맞힘', '글자 수 보고 맞힘', '초성 보고 맞힘'] }
-export const mqKindOf = (item) => (item?.c === 'song' ? 'a' : item?.c === 'drama' ? 'e' : 'v')
+// 문제 종류 k: 'a' 노래(소리) · 'e' 영화·드라마(이모지)
+export const MQ_STAGE_NAMES = { a: ['1초', '3초', '5초 + 초성'], e: ['이모지', '+ 글자 수', '+ 초성'] }
+export const MQ_STAGE_SHORT = { a: ['1초', '3초', '5초'], e: ['이모지', '글자 수', '초성'] }
+export const MQ_WIN_TEXT = { a: ['1초 듣고 맞힘', '3초 듣고 맞힘', '5초 듣고 맞힘'], e: ['이모지만 보고 맞힘', '글자 수 보고 맞힘', '초성 보고 맞힘'] }
+export const mqKindOf = (item) => (item?.c === 'song' ? 'a' : 'e')
 
-// pending (stage 'play'): startAt = 첫 문제 시작(3·2·1 뒤), n = 문제 수, rounds = [{ i, k: 'a'|'v', u, s, l }]
+// pending (stage 'play'): startAt = 첫 문제 시작(3·2·1 뒤), n = 문제 수, rounds = [{ i, k: 'a', u: 미리듣기, s: 출처, l: 링크 } | { i, k: 'e' }]
 //   rs/r{q} = { s1, s2: 단계가 바뀐 시각, end: 문제가 끝난 시각 } (걸린 사람 폰이 씀)
 //   answers/r{q}/{pid} = { at: 맞힌 시각, st: 그때 단계 } (맞힌 것만) — 가장 빠른 at 이 정답
 //   pass/r{q}/s{단계}/{pid} = true ('잘 모르겠어요'), wrong/r{q}/{pid} = 마지막 오답 (공개 때 보여 줌)
@@ -155,8 +154,8 @@ function shuffled(list, rand) {
   }
   return a
 }
-// 미리듣기·사진을 찾아볼 후보: 노래 7곡 + 영화 3편 + 드라마 3편 (한 판 안에서 나온 건 빼고, 다 썼으면 처음부터)
-// 몇 개는 못 찾을 수 있어서 넉넉하게 → arrangeMediaRounds 가 찾은 것 중에서 5문제를 만듦
+// 후보: 미리듣기를 찾아볼 노래 7곡 (몇 곡은 못 찾을 수 있어서 넉넉하게) + 이모지 문제 영화 3편 · 드라마 3편
+// (한 판 안에서 나온 건 빼고, 다 썼으면 처음부터) → arrangeMediaRounds 가 5문제를 만듦
 export function pickMediaCandidates(used = [], rand = Math.random, list = TITLES) {
   const u = new Set((used || []).map(Number))
   const pool = (c) => {
@@ -166,8 +165,8 @@ export function pickMediaCandidates(used = [], rand = Math.random, list = TITLES
   }
   return { songs: pool('song').slice(0, 7), screens: [...pool('movie').slice(0, 3), ...pool('drama').slice(0, 3)] }
 }
-// 찾은 것들 → 문제 순서 (노래 3 + 영화·드라마 2, 또는 반대, 번갈아). 한쪽이 모자라면 다른 쪽으로 채움
-// songs·screens: [[번호, 미디어], ...] (앞에서부터 씀)
+// 문제 순서 (노래 3 + 영화·드라마 2, 또는 반대, 번갈아). 노래를 못 찾아서 모자라면 영화·드라마로 채움
+// songs: 미리듣기를 찾은 노래 [[번호, 미디어], ...] (앞에서부터 씀) · screens: 영화·드라마 [[번호, null], ...] (섞어서 씀)
 export function arrangeMediaRounds(songs, screens, n = MQ_ROUNDS, rand = Math.random) {
   const V0 = shuffled(screens, rand)
   let ns = rand() < 0.5 ? Math.ceil(n / 2) : Math.floor(n / 2)

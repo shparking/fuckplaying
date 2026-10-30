@@ -508,7 +508,7 @@ function makePending(room, playerId, pos, kind, title) {
     p.qs = pickSyncQuestions(room)
   }
   if (['tapWar', 'teamReact', 'colorTrap', 'circle', 'priceGuess', 'timeSum', 'mapPin', 'worldPin', 'mediaQuiz'].includes(kind)) p.stage = 'ready'
-  if (kind === 'mediaQuiz') p.mq = newId() // 시작할 때 소리·사진을 찾는 동안 다른 게임으로 바뀌었는지 확인용
+  if (kind === 'mediaQuiz') p.mq = newId() // 시작할 때 노래 미리듣기를 찾는 동안 다른 게임으로 바뀌었는지 확인용
   if (kind === 'circle') {
     // 완벽한 도형 그리기: 게임마다 원·정삼각형~정육각형 중 하나 (바로 전 도형은 빼고). 데모: &shape=5 처럼 고정 (테스트용)
     const forced = DEMO ? parseInt(new URLSearchParams(window.location.search).get('shape'), 10) : NaN
@@ -2053,7 +2053,7 @@ function fakeWorldAnswers(room, rounds) {
 
 // --- 드라마·영화·노래 맞히기 (kind 'mediaQuiz', 주관식) ---
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요' 누르면 3초 → 5초(+초성), 가장 빨리 맞힌 사람이 정답 (그 팀 +1).
-// 영화도 같은 방식 (흐릿 → 조금 선명 → 선명 + 초성), 드라마는 10/31 이모지 → + 글자 수 → + 초성. 마지막 단계에서도 모두 모르면 정답 공개.
+// 영화·드라마는 10/31부터 이모지 → + 글자 수 → + 초성. 마지막 단계에서도 모두 모르면 정답 공개.
 // 진행(단계 넘기기·문제 끝내기)은 걸린 사람 폰(mqDrive, 연결 끊기면 방장)이 하고, 소리도 그 폰에서만 남. 상태 모양은 game/mediaquiz.js 위 설명
 export { mqPhase, mqN, mqWinner }
 // '잘 모르겠어요'를 눌러야 하는 사람: 팀에 있고 연결된 사람 전부 (혼자 연습은 연습봇까지)
@@ -2181,7 +2181,7 @@ export async function mqDrive(code, room) {
     if (Object.keys(upd).length) await roomUpdate(code, upd)
   }
 }
-// 문제 하나의 소리·사진 주소 (서버 함수 api/media.js). 실패하면 null
+// 노래 하나의 미리듣기 주소 (서버 함수 api/media.js). 실패하면 null
 async function fetchMedia(i) {
   const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null
   const timer = setTimeout(() => ctl?.abort(), 9000)
@@ -2195,25 +2195,17 @@ async function fetchMedia(i) {
     clearTimeout(timer)
   }
 }
-// 후보(노래 7 · 영화 3 · 드라마 3)의 소리·사진을 한꺼번에 찾고 → 찾은 것으로 5문제 (노래·화면 번갈아)
-// 드라마는 이모지 문제라 찾을 게 없음 (10/31) — 영화 사진(TMDB 키)이 없어도 드라마는 나옴
+// 후보(노래 7 · 영화 3 · 드라마 3) 중 노래만 미리듣기를 한꺼번에 찾고 → 5문제 (노래·이모지 번갈아)
+// 영화·드라마는 10/31부터 이모지 문제라 찾을 게 없음
 async function prepareMediaRounds(room) {
   const { songs, screens } = pickMediaCandidates(arr(room.usedTitles))
-  const got = await Promise.all(
-    [...songs, ...screens].map(async (i) => [i, mqKindOf(TITLES[i]) === 'e' ? { ok: true, kind: 'emoji', url: 'emoji' } : await fetchMedia(i)])
-  )
-  const good = got.filter(([, m]) => m?.ok && m.url)
-  const isSong = ([i]) => TITLES[i]?.c === 'song'
-  const nokey = got.some(([i, m]) => TITLES[i]?.c === 'movie' && (m?.why === 'nokey' || m?.why === 'badkey'))
-  const picked = arrangeMediaRounds(good.filter(isSong), good.filter((x) => !isSong(x)), MQ_ROUNDS)
-  const rounds = picked.map(([i, m]) => {
-    if (m.kind === 'emoji') return { i, k: 'e' }
-    const urls = Array.isArray(m.urls) && m.urls.length ? m.urls : [m.url]
-    return { i, k: m.kind === 'image' ? 'v' : 'a', u: urls[Math.floor(Math.random() * urls.length)], s: m.src || '', l: m.link || '' }
-  })
-  // 노래·영화를 하나도 못 불러왔으면 (인터넷·서버 문제) 드라마 이모지만으로 — 화면에 안내
-  const note = rounds.length && rounds.every((r) => r.k === 'e') ? 'nomedia' : nokey ? 'nokey' : null
-  return { rounds, nokey, note }
+  const got = await Promise.all(songs.map(async (i) => [i, await fetchMedia(i)]))
+  const good = got.filter(([i, m]) => mqKindOf(TITLES[i]) === 'a' && m?.ok && m.kind === 'audio' && m.url)
+  const picked = arrangeMediaRounds(good, screens.map((i) => [i, null]), MQ_ROUNDS)
+  const rounds = picked.map(([i, m]) => (m ? { i, k: 'a', u: m.url, s: m.src || '', l: m.link || '' } : { i, k: 'e' }))
+  // 노래를 하나도 못 불러왔으면 (인터넷·서버 문제) 영화·드라마 이모지만으로 — 화면에 안내
+  const note = rounds.length && rounds.every((r) => r.k === 'e') ? 'nomedia' : null
+  return { rounds, note }
 }
 
 // ---------- 혼자 연습 게임 (홈 → 연습 게임, ?practice=) ----------
@@ -2229,7 +2221,7 @@ export const PRACTICE_GAMES = [
   ['timeSum', '🕰️', '팀 시간 합치기', '팀원 누른 시간 합이 30초에 가깝게'],
   ['mapPin', '🗺️', '지도 찍기', '한국 지도에 장소 핀 꽂기'],
   ['worldPin', '🌍', '세계 지도 찍기', '세계 지도에 도시·명소 핀 꽂기'],
-  ['mediaQuiz', '🎬', MQ_GAME, '노래는 1초 듣고, 영화는 흐릿한 장면, 드라마는 이모지 보고 제목 쓰기 — 가장 빨리 맞힌 사람이 정답'],
+  ['mediaQuiz', '🎬', MQ_GAME, '노래는 1초 듣고, 영화·드라마는 이모지 보고 제목 쓰기 — 가장 빨리 맞힌 사람이 정답'],
 ]
 function fakeRate(pid) {
   let h = 7
@@ -2324,9 +2316,9 @@ async function resolveTeamGame(code, room, p, action, target) {
       upd.usedWorld = [...arr(room.usedWorld), ...rounds].slice(-300) // 이번 판에 나온 곳: 판이 끝날 때까지 다시 안 나옴 (판 시작 때 비움)
     }
     if (p.kind === 'mediaQuiz') {
-      // 소리·사진을 먼저 찾고 (1~3초) 시작. 못 찾으면 시작 안 하고 { ok: false } → 안내 화면에서 다시 누르기
+      // 노래 미리듣기를 먼저 찾고 (1~3초) 시작. 문제가 모자라면 시작 안 하고 { ok: false } → 안내 화면에서 다시 누르기
       const prep = await prepareMediaRounds(room)
-      if (prep.rounds.length < MQ_MIN_ROUNDS) return { ok: false, why: 'media', nokey: prep.nokey }
+      if (prep.rounds.length < MQ_MIN_ROUNDS) return { ok: false, why: 'media' }
       const cur = await dbGet(`${roomPath(code)}/pending`) // 찾는 동안 차례가 넘어갔으면 안 씀
       if (!cur || cur.kind !== 'mediaQuiz' || cur.stage !== 'ready' || cur.mq !== p.mq) return { ok: false, why: 'gone' }
       Object.assign(upd, {
@@ -2334,7 +2326,7 @@ async function resolveTeamGame(code, room, p, action, target) {
         'pending/startAt': serverNow() + TEAM_LEAD_MS,
         'pending/rounds': prep.rounds,
         'pending/n': prep.rounds.length,
-        'pending/note': prep.note, // 'nokey': 영화 사진은 TMDB 키가 있어야 나옴 · 'nomedia': 노래·영화를 못 불러와서 드라마만
+        'pending/note': prep.note, // 'nomedia': 노래를 못 불러와서 영화·드라마 이모지만
         'pending/rs': null,
         'pending/answers': null,
         'pending/pass': null,
