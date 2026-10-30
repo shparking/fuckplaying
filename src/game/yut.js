@@ -131,6 +131,9 @@ const SHIELD = { emoji: '🛡️', text: '방패 +1', type: 'shield' }
 const MAGNET = { emoji: '🧲', text: '자석', type: 'magnet', range: 2 }
 // 지하철 게임: 3·2·1 → 서울 지하철 노선(1~9호선 + 수인분당선·경의중앙선 등) 중 하나 → 그 노선 역 이름을 돌아가며 (오프라인, 훈민정음처럼)
 const SUBWAY = { emoji: '🚇', text: '지하철\n게임', type: 'subway' }
+// 노래 맞히기 · 이모지 영화 맞히기 (팀 대결, 10/31 사용자: 판 3번·5번에)
+const SONGQ = { emoji: '🎵', text: '노래\n맞히기', type: 'songQuiz' }
+const MOVIEQ = { emoji: '🎬', text: '이모지 영화\n맞히기', type: 'movieQuiz' }
 // 단어 노래: 3·2·1 → 단어 → 그 단어가 들어간 노래를 돌아가며 한 소절씩 (오프라인, 막히면 마셔)
 const SONG = { emoji: '🎶', text: '단어 노래\n부르기', type: 'wordSong' }
 // 소주 보관소: '소주 +1' 칸에 걸릴 때마다 보관소에 한 잔씩 모아 두고, 가운데(40번) 보관소에 도착한 팀이 모인 술을 의리주로 마심
@@ -139,6 +142,7 @@ const SOJU_BANK = { emoji: '🏺', text: '소주\n보관소', type: 'sojuBank', 
 // (지금 판에 없는 칸 — 나중에 다시 쓸 수 있게 남겨 둠. 10/16 개인전 게임(밸런스·라이어·다수결·지목·개인 반응속도·개인 폭탄)은 코드와 함께 지움)
 export const SPARE_CELLS = {
   WORLD: WORLDPIN, // 10/16 50번에서 자석으로 바뀜 (게임 선택권·혼자 연습에는 있음)
+  ALL, // 10/31 3번에서 노래 맞히기로 바뀜 (운명의 카드 '다 같이 마셔!'는 그대로)
   C1: { emoji: '🍶', text: '한 잔 마셔', drink: 'self' },
   LOVE: { emoji: '🥂', text: '옆 사람과\n러브샷', drink: 'self' },
   SON: { emoji: '🖐️', text: '손병호\n게임' },
@@ -151,7 +155,8 @@ export const DEFAULT_YUT_CELLS = {
   o0: { emoji: '🏁', text: '출발·골인', type: 'home', locked: true },
   // 오른쪽 변 (출발 → 위로) 1~8
   // (10/16) 자주 걸리는 앞쪽에 새 게임: 5 지하철(← 45) · 8 단어 노래(← 43), 반응 속도·완벽한 원은 45·43으로
-  o1: HUNMIN, o2: SOJU_ADD, o3: ALL, o4: TBOMB, o5: SUBWAY, o6: CHOOSE, o7: PRICE, o8: SONG,
+  // (10/31 사용자) 3 다 같이 마셔 → 노래 맞히기 · 5 지하철 → 이모지 영화 맞히기 (지하철은 49번으로)
+  o1: HUNMIN, o2: SOJU_ADD, o3: SONGQ, o4: TBOMB, o5: MOVIEQ, o6: CHOOSE, o7: PRICE, o8: SONG,
   o9: NOP, // 9 오른쪽 위 모서리
   // 위 변 (→ 왼쪽) 10~17
   o10: MAPPIN, o11: BUNNY, o12: SOJU_ADD, o13: TEAM, o14: THEIRS, o15: GAMBLE, o16: TIMESUM, o17: CHOOSE,
@@ -167,7 +172,7 @@ export const DEFAULT_YUT_CELLS = {
   a5: ONLY_SH, a6: MAGNET, a7: CIRCLE, a8: SHIELD, // 42 자석 · 43 완벽한 원 · 44 방패
   // 대각선 B (왼쪽 위 → 가운데 → 골인) 45~52
   b1: TREACT, b2: SHIELD, b3: EXCEPT_SH, b4: TWOTOUCH, // 45 반응 속도 · 46 방패
-  b5: CHOOSE, b6: MAGNET, b7: SHIELD, b8: ALLOPT, // 50 자석 · 51 방패 (세계 지도 찍기는 판에서 빠지고 게임 선택권·혼자 연습에 남음)
+  b5: SUBWAY, b6: MAGNET, b7: SHIELD, b8: ALLOPT, // 49 지하철 (10/31 게임 선택권 → 지하철) · 50 자석 · 51 방패 (세계 지도 찍기는 게임 선택권·혼자 연습에만)
 }
 
 // ---------- 윷 던지기 ----------

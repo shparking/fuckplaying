@@ -1,6 +1,6 @@
 // 노래 맞히기 · 이모지 영화 맞히기 (팀 대결, 주관식) — 화면·서버 함수가 같이 쓰는 것 (브라우저 전용 코드 없음)
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요'를 누르면 3초 → 5초(+초성 힌트), 가장 빨리 맞힌 사람이 정답.
-// 10/31 사용자: 노래·영화는 다른 게임으로 (드라마는 뺌). 노래 5곡 중 4곡은 지금 Apple Music 한국 차트(Top 100)에서,
+// 10/31 사용자: 노래·영화는 다른 게임으로 (드라마는 지움). 노래 5곡 중 4곡은 지금 Apple Music 한국 차트(Top 100)에서,
 // 영화는 이모지 6~8개 → + 연도·주연 → + 초성 (사진 안 씀). 맞힌 사람 팀 +1, 맞힌 문제가 적은 팀이 마심
 import { TITLES } from './titles.js'
 export { TITLES }
@@ -14,7 +14,6 @@ export const MQ_INFO = { songQuiz: { emoji: '🎵', title: SONG_GAME }, movieQui
 export const MQ_CATS = {
   song: { emoji: '🎵', name: '노래' },
   movie: { emoji: '🎬', name: '영화' },
-  drama: { emoji: '📺', name: '드라마' },
 }
 
 // ---------- 진행 ----------

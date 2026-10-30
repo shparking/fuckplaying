@@ -1,5 +1,5 @@
 // Vercel 서버 함수 — 노래 맞히기의 30초 미리듣기 찾기
-//   GET /api/media?i=문제번호(src/game/titles.js 순서, 노래만 — 영화·드라마는 이모지 문제라 'bad')
+//   GET /api/media?i=문제번호(src/game/titles.js 순서, 노래만 — 영화는 이모지 문제라 'bad')
 //     → { ok: true, kind: 'audio', url, src: 'deezer'|'apple', link, name, artist }
 //     → { ok: false, why: 'notfound'|'bad'|'error' }
 //   GET /api/media?chart=1 (10/31) → { ok: true, songs: [{ id, rank, name, artist, y, url, link }] }
