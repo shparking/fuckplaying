@@ -1,11 +1,13 @@
-// Vercel 서버 함수 — 드라마·영화·노래 맞히기 노래 문제의 30초 미리듣기 찾기
-//   GET /api/media?i=문제번호(src/game/titles.js 순서, 노래만 — 영화·드라마는 10/31부터 이모지 문제라 'bad')
+// Vercel 서버 함수 — 노래 맞히기의 30초 미리듣기 찾기
+//   GET /api/media?i=문제번호(src/game/titles.js 순서, 노래만 — 영화·드라마는 이모지 문제라 'bad')
 //     → { ok: true, kind: 'audio', url, src: 'deezer'|'apple', link, name, artist }
 //     → { ok: false, why: 'notfound'|'bad'|'error' }
+//   GET /api/media?chart=1 (10/31) → { ok: true, songs: [{ id, rank, name, artist, y, url, link }] }
+//     지금 Apple Music 한국 '많이 듣는 곡' Top 100 (RSS) + iTunes 로 미리듣기를 한꺼번에. 30분 캐시
 //   ?debug=1 이면 찾아본 검색어·후보도 같이 (확인 화면 ?mediacheck=1 용)
 //   ?ping=1 → { ok: true, ping: true } (서버 함수가 살아 있는지만, 밖으로는 안 부름)
 // Deezer 먼저 (키 없음, 약관: 비상업·사적 이용), 없으면 Apple(iTunes) 미리듣기
-// 번호로만 찾음 (아무 검색어나 대신 찾아 주는 통로가 되지 않게)
+// 번호·정해진 차트로만 찾음 (아무 검색어나 대신 찾아 주는 통로가 되지 않게)
 import { TITLES } from '../src/game/titles.js'
 import { normTitle } from '../src/game/mediaquiz.js'
 
@@ -97,6 +99,36 @@ async function fromApple(item, f, dbg) {
   return null
 }
 
+// ---------- 지금 차트 (10/31 사용자: 아주 최근 노래도) ----------
+const CHART_URL = 'https://rss.marketingtools.apple.com/api/v2/kr/music/most-played/100/songs.json'
+const CHART_MEMO_MS = 30 * 60 * 1000
+let chartMemo = null
+export async function findChart({ fetch: f = globalThis.fetch, now = Date.now(), fresh = false } = {}) {
+  if (!fresh && chartMemo && chartMemo.until > now) return chartMemo.v
+  const fb = Object.assign((u, o) => f(u, o), { deadline: Date.now() + BUDGET_MS })
+  const j = await getJson(fb, CHART_URL, {}, 5000)
+  const list = (Array.isArray(j?.feed?.results) ? j.feed.results : []).filter((x) => x && x.id && x.name && x.artistName).slice(0, 100)
+  if (!list.length) return { ok: false, why: 'chart', err: j?._status || j?._error || undefined }
+  // 미리듣기 주소: iTunes 에 번호로 한꺼번에 (50개씩)
+  const parts = []
+  for (let k = 0; k < list.length; k += 50) parts.push(list.slice(k, k + 50))
+  const looks = await Promise.all(parts.map((ps) => getJson(fb, `https://itunes.apple.com/lookup?id=${ps.map((x) => encodeURIComponent(String(x.id))).join(',')}&country=KR`, {}, 5000)))
+  const byId = new Map()
+  for (const lk of looks) for (const r of Array.isArray(lk?.results) ? lk.results : []) if (r && r.trackId && r.previewUrl) byId.set(String(r.trackId), r)
+  const songs = list
+    .map((x, k) => {
+      const r = byId.get(String(x.id))
+      if (!r) return null
+      const y = Number(String(x.releaseDate || r.releaseDate || '').slice(0, 4))
+      return { id: String(x.id), rank: k + 1, name: String(x.name), artist: String(x.artistName), y: y > 1900 ? y : 0, url: r.previewUrl, link: r.trackViewUrl || x.url || '' }
+    })
+    .filter(Boolean)
+  if (!songs.length) return { ok: false, why: 'chart', n: list.length, err: looks.map((lk) => lk?._status || lk?._error).filter(Boolean).join(',') || undefined }
+  const out = { ok: true, songs, n: list.length, updated: String(j?.feed?.updated || '') }
+  chartMemo = { v: out, until: now + CHART_MEMO_MS }
+  return out
+}
+
 // 노래 하나의 미리듣기 찾기 (시험할 때 fetch 를 바꿔 넣을 수 있게 따로)
 export async function findMedia(i, { fetch: f = globalThis.fetch, debug = false, now = Date.now() } = {}) {
   const item = Number.isInteger(i) && i >= 0 ? TITLES[i] : null
@@ -123,6 +155,14 @@ export default async function handler(req, res) {
     res.end(JSON.stringify(body))
   }
   if (u.searchParams.has('ping')) return send({ ok: true, ping: true }, 'no-store')
+  if (u.searchParams.has('chart')) {
+    try {
+      const out = await findChart({ fresh: debug })
+      return send(out, out.ok && !debug ? 'public, s-maxage=1800, stale-while-revalidate=43200' : out.ok ? 'no-store' : 'public, s-maxage=60')
+    } catch {
+      return send({ ok: false, why: 'error' }, 'no-store')
+    }
+  }
   try {
     const out = await findMedia(i, { debug })
     // 미리듣기 주소는 시간이 지나면 막힐 수 있어서 잠깐만

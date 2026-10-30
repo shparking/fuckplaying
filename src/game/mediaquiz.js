@@ -1,11 +1,16 @@
-// 드라마·영화·노래 맞히기 (팀 대결, 주관식) — 화면·서버 함수가 같이 쓰는 것 (브라우저 전용 코드 없음)
+// 노래 맞히기 · 이모지 영화 맞히기 (팀 대결, 주관식) — 화면·서버 함수가 같이 쓰는 것 (브라우저 전용 코드 없음)
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요'를 누르면 3초 → 5초(+초성 힌트), 가장 빨리 맞힌 사람이 정답.
-// 영화·드라마는 10/31 사용자 요청으로 이모지 → + 글자 수 → + 초성 (사진 안 씀).
-// 맞힌 사람 팀 +1, 맞힌 문제가 적은 팀이 마심
+// 10/31 사용자: 노래·영화는 다른 게임으로 (드라마는 뺌). 노래 5곡 중 4곡은 지금 Apple Music 한국 차트(Top 100)에서,
+// 영화는 이모지 6~8개 → + 연도·주연 → + 초성 (사진 안 씀). 맞힌 사람 팀 +1, 맞힌 문제가 적은 팀이 마심
 import { TITLES } from './titles.js'
 export { TITLES }
 
-export const MQ_GAME = '드라마·영화·노래 맞히기'
+export const SONG_GAME = '노래 맞히기'
+export const MOVIE_GAME = '이모지 영화 맞히기'
+// 게임 종류 (pending.kind) — 진행·답·결과는 둘이 같은 방식
+export const MQ_KINDS = ['songQuiz', 'movieQuiz']
+export const isMqKind = (kind) => MQ_KINDS.includes(kind)
+export const MQ_INFO = { songQuiz: { emoji: '🎵', title: SONG_GAME }, movieQuiz: { emoji: '🎬', title: MOVIE_GAME } }
 export const MQ_CATS = {
   song: { emoji: '🎵', name: '노래' },
   movie: { emoji: '🎬', name: '영화' },
@@ -13,21 +18,35 @@ export const MQ_CATS = {
 }
 
 // ---------- 진행 ----------
-export const MQ_ROUNDS = 5 // 한 게임 문제 수 (노래 미리듣기를 못 찾으면 이모지 문제로 채움)
+export const MQ_ROUNDS = 5 // 한 게임 문제 수 (노래는 미리듣기를 못 찾으면 줄어듦)
+export const MQ_CHART_PICK = 4 // 노래 5곡 중 지금 차트에서 (10/31 사용자: 최근 곡을 더 많이), 나머지는 목록에서
 export const MQ_MIN_ROUNDS = 3 // 이보다 적게 찾으면 시작 안 함
-export const MQ_STAGES = 3 // 노래 1초 · 3초 · 5초(+초성) / 영화·드라마 이모지 · +글자 수 · +초성
+export const MQ_STAGES = 3 // 노래 1초 · 3초 · 5초(+초성) / 영화 이모지 · +연도·주연 · +초성
 export const MQ_CLIP_MS = [1000, 3000, 5000] // 단계별로 들려주는 길이
 export const MQ_CLIP_FROM = 0 // 미리듣기 처음부터 (10/30 사용자)
 export const MQ_STAGE_TIMEOUT_MS = 25000 // 안 누르는 사람이 있어도 한 단계에 25초 지나면 다음 단계로 (마지막 단계면 정답 공개)
 export const MQ_GAP_MS = 6500 // 정답 공개
 export const MQ_REVEAL_CLIP_MS = 5500 // 정답 공개 때 들려주는 길이
-// 문제 종류 k: 'a' 노래(소리) · 'e' 영화·드라마(이모지)
-export const MQ_STAGE_NAMES = { a: ['1초', '3초', '5초 + 초성'], e: ['이모지', '+ 글자 수', '+ 초성'] }
-export const MQ_STAGE_SHORT = { a: ['1초', '3초', '5초'], e: ['이모지', '글자 수', '초성'] }
-export const MQ_WIN_TEXT = { a: ['1초 듣고 맞힘', '3초 듣고 맞힘', '5초 듣고 맞힘'], e: ['이모지만 보고 맞힘', '글자 수 보고 맞힘', '초성 보고 맞힘'] }
+// 문제 종류 k: 'a' 노래(소리) · 'e' 영화(이모지)
+export const MQ_STAGE_NAMES = { a: ['1초', '3초', '5초 + 초성'], e: ['이모지', '+ 연도·주연', '+ 초성'] }
+export const MQ_STAGE_SHORT = { a: ['1초', '3초', '5초'], e: ['이모지', '연도·주연', '초성'] }
+export const MQ_WIN_TEXT = { a: ['1초 듣고 맞힘', '3초 듣고 맞힘', '5초 듣고 맞힘'], e: ['이모지만 보고 맞힘', '연도·주연 보고 맞힘', '초성 보고 맞힘'] }
 export const mqKindOf = (item) => (item?.c === 'song' ? 'a' : 'e')
+// 문제의 제목 정보: 목록 번호(i) 또는 차트 곡이면 문제에 같이 저장한 x { c: 'song', t, by, a, y, id, rank }
+export const mqItem = (r) => (r?.x && typeof r.x === 'object' ? r.x : TITLES[r?.i]) || null
+// 이모지를 하나씩 (👨‍👧·1️⃣·🇰🇷 처럼 여러 글자로 된 것도 하나로). 못 나누는 옛 브라우저면 null → 통째로 보여 줌
+export function emojiList(s) {
+  try {
+    if (typeof Intl === 'undefined' || !Intl.Segmenter) return null
+    return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(String(s || ''))].map((x) => x.segment).filter((x) => x.trim())
+  } catch {
+    return null
+  }
+}
+// 영화 2단계 힌트: 2016년 · 공유 · 정유미 · 마동석
+export const movieHint = (item) => [item?.y ? `${item.y}년` : '', item?.h || ''].filter(Boolean).join(' · ')
 
-// pending (stage 'play'): startAt = 첫 문제 시작(3·2·1 뒤), n = 문제 수, rounds = [{ i, k: 'a', u: 미리듣기, s: 출처, l: 링크 } | { i, k: 'e' }]
+// pending (stage 'play'): startAt = 첫 문제 시작(3·2·1 뒤), n = 문제 수, rounds = [{ i, k: 'a', u: 미리듣기, s: 출처, l: 링크, x?: 차트 곡 } | { i, k: 'e' }]
 //   rs/r{q} = { s1, s2: 단계가 바뀐 시각, end: 문제가 끝난 시각 } (걸린 사람 폰이 씀)
 //   answers/r{q}/{pid} = { at: 맞힌 시각, st: 그때 단계 } (맞힌 것만) — 가장 빠른 at 이 정답
 //   pass/r{q}/s{단계}/{pid} = true ('잘 모르겠어요'), wrong/r{q}/{pid} = 마지막 오답 (공개 때 보여 줌)
@@ -154,39 +173,77 @@ function shuffled(list, rand) {
   }
   return a
 }
-// 후보: 미리듣기를 찾아볼 노래 7곡 (몇 곡은 못 찾을 수 있어서 넉넉하게) + 이모지 문제 영화 3편 · 드라마 3편
-// (한 판 안에서 나온 건 빼고, 다 썼으면 처음부터) → arrangeMediaRounds 가 5문제를 만듦
-export function pickMediaCandidates(used = [], rand = Math.random, list = TITLES) {
+// 노래 후보 (목록에서): 미리듣기를 못 찾는 곡이 있을 수 있어서 넉넉하게 7곡 (한 판 안에서 나온 건 빼고, 다 썼으면 처음부터)
+const pool = (c, used, list) => {
   const u = new Set((used || []).map(Number))
-  const pool = (c) => {
-    const all = list.map((x, i) => i).filter((i) => list[i] && !list[i].off && list[i].c === c)
-    const fresh = all.filter((i) => !u.has(i))
-    return shuffled(fresh.length >= 3 ? fresh : all, rand)
-  }
-  return { songs: pool('song').slice(0, 7), screens: [...pool('movie').slice(0, 3), ...pool('drama').slice(0, 3)] }
+  const all = list.map((x, i) => i).filter((i) => list[i] && !list[i].off && list[i].c === c)
+  const fresh = all.filter((i) => !u.has(i))
+  return fresh.length >= MQ_ROUNDS ? fresh : all
 }
-// 문제 순서 (노래 3 + 영화·드라마 2, 또는 반대, 번갈아). 노래를 못 찾아서 모자라면 영화·드라마로 채움
-// songs: 미리듣기를 찾은 노래 [[번호, 미디어], ...] (앞에서부터 씀) · screens: 영화·드라마 [[번호, null], ...] (섞어서 씀)
-export function arrangeMediaRounds(songs, screens, n = MQ_ROUNDS, rand = Math.random) {
-  const V0 = shuffled(screens, rand)
-  let ns = rand() < 0.5 ? Math.ceil(n / 2) : Math.floor(n / 2)
-  let nv = n - ns
-  if (V0.length < nv) {
-    nv = V0.length
-    ns = Math.min(songs.length, n - nv)
-  }
-  if (songs.length < ns) {
-    ns = songs.length
-    nv = Math.min(V0.length, n - ns)
-  }
-  const S = songs.slice(0, ns)
-  const V = V0.slice(0, nv)
+export function pickSongCandidates(used = [], rand = Math.random, n = 7, list = TITLES) {
+  return shuffled(pool('song', used, list), rand).slice(0, n)
+}
+// 영화 5문제 (번호)
+export function pickMovieRounds(used = [], rand = Math.random, n = MQ_ROUNDS, list = TITLES) {
+  return shuffled(pool('movie', used, list).filter((i) => list[i].e), rand).slice(0, n)
+}
+
+// ---------- 지금 차트 (Apple Music 한국 Top 100, /api/media?chart=1) ----------
+// 제목 정리: 괄호 속 feat.·버전 표시는 빼고 (삐그덕 (feat. 아이유) → 삐그덕), 괄호 속 다른 이름은 정답으로도 (한시 오분 (1:05) → 1:05)
+const TAG = /\b(feat|ft|with|prod|narr|from|ver|version|remix|mix|live|acoustic|inst|instrumental|sped|slowed|edit|korean|english|japanese|chinese|original|soundtrack|ost|remaster(ed)?)\b|버전|리믹스/i
+export function chartTitle(name) {
+  const raw = String(name || '').replace(/\s+/g, ' ').trim()
+  const alt = []
+  let t = raw.replace(/\s*[([]([^)\]]*)[)\]]/g, (m, inner) => {
+    const x = inner.trim()
+    if (x && !TAG.test(x)) alt.push(x)
+    return ' '
+  })
+  t = t.replace(/\s+-\s+(from|feat|ft|remaster|live|remix|prod)\b.*$/i, '').replace(/\s+/g, ' ').trim()
+  if (!normTitle(t)) t = raw
+  const nt = normTitle(t)
+  return { t, a: [raw, ...alt].filter((x, i, arr) => normTitle(x) && normTitle(x) !== nt && arr.indexOf(x) === i) }
+}
+// 가수가 같은지 (A2O & A2O LITE ⊃ A2O LITE, 아이유 = IU 처럼 목록에 적어 둔 이름 중 하나)
+function sameArtist(chartArtist, item) {
+  const f = normTitle(chartArtist)
+  if (!f) return false
+  return [item.by, ...(item.s || [])].map(normTitle).some((n) => n && n.length >= 2 && (f.includes(n) || n.includes(f)))
+}
+// 차트 곡 { id, rank, name, artist, y, url, link } → 문제 정보 x { c: 'song', t, by, a, y?, id, rank, j? }
+// 목록에 같은 곡이 있으면(j) 그 곡의 영어 제목·별칭도 정답 (NEON → 네온)
+export function chartItem(song, list = TITLES) {
+  const { t, a } = chartTitle(song?.name)
+  const nt = normTitle(t)
+  const j = list.findIndex((x) => x && x.c === 'song' && titleAnswers(x).includes(nt) && sameArtist(song?.artist, x))
+  const twin = j >= 0 ? list[j] : null
+  const alias = [...a, ...(twin ? [twin.t, twin.en, ...(twin.a || [])] : [])].filter((x, i, arr) => x && normTitle(x) !== nt && arr.findIndex((y) => normTitle(y) === normTitle(x)) === i)
+  const x = { c: 'song', t, by: String(song?.artist || '').trim(), a: alias, id: String(song?.id || ''), rank: Number(song?.rank) || 0 }
+  if (Number(song?.y) > 0) x.y = Number(song.y)
+  if (j >= 0) x.j = j
+  return x
+}
+// 차트에서 n곡: 위쪽일수록 자주 (가중치 1/(순위+15)), 한 판 안에서 나온 곡('c<id>' 또는 목록 번호)은 빼고
+export function pickChartSongs(chart, used = [], n = MQ_CHART_PICK, rand = Math.random, list = TITLES) {
+  const u = new Set((used || []).map(String))
+  const cand = (Array.isArray(chart) ? chart : [])
+    .filter((s) => s && s.id && s.url && s.name && !u.has(`c${s.id}`))
+    .map((s) => ({ s, x: chartItem(s, list), w: 1 / ((Number(s.rank) || 100) + 15) }))
+    .filter(({ x }) => normTitle(x.t) && !(x.j != null && u.has(String(x.j))))
   const out = []
-  let turnS = ns >= nv
-  while (S.length || V.length) {
-    if ((turnS && S.length) || !V.length) out.push(S.shift())
-    else out.push(V.shift())
-    turnS = !turnS
+  const seen = new Set()
+  while (out.length < n && cand.length) {
+    let r = rand() * cand.reduce((acc, c) => acc + c.w, 0)
+    let k = 0
+    for (; k < cand.length - 1; k++) {
+      r -= cand[k].w
+      if (r <= 0) break
+    }
+    const [c] = cand.splice(k, 1)
+    const key = `${normTitle(c.x.t)}|${normTitle(c.x.by)}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(c)
   }
-  return out
+  return out.map(({ s, x }) => ({ x, url: s.url, link: s.link || '' }))
 }

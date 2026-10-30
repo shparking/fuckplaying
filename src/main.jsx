@@ -4,7 +4,7 @@ import App from './App'
 import '@fontsource/black-han-sans'
 import './styles.css'
 
-// ?mediacheck=1: 드라마·영화·노래 맞히기 노래 미리듣기 확인 화면 (게임과 따로)
+// ?mediacheck=1: 노래·영화 맞히기 확인 화면 — 노래 미리듣기·지금 차트·영화 이모지 (게임과 따로)
 const MediaCheck = React.lazy(() => import('./components/MediaCheck'))
 const check = new URLSearchParams(window.location.search).has('mediacheck')
 

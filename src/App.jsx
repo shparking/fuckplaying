@@ -72,7 +72,7 @@ import {
   liveTeams,
 } from './room'
 import { SyncPanel, TapWarPanel, TeamReactPanel, TeamBombPanel, ColorTrapPanel, CirclePanel, PricePanel, TimeSumPanel, MapPinPanel, WorldPinPanel, MediaQuizPanel } from './components/TeamGames'
-import { MQ_GAME } from './game/mediaquiz'
+import { SONG_GAME, MOVIE_GAME, isMqKind } from './game/mediaquiz'
 import { autoEmoji } from './game/emoji'
 import { beep, ding, boom, tick as tickSound } from './sound'
 import { subwayLine } from './game/subway'
@@ -115,7 +115,8 @@ const KIND_LABEL = {
   timeSum: '팀 시간 합치기',
   mapPin: '지도 찍기',
   worldPin: '세계 지도 찍기',
-  mediaQuiz: MQ_GAME,
+  songQuiz: SONG_GAME,
+  movieQuiz: MOVIE_GAME,
   allOptions: '모든 옵션 On',
   sojuAdd: '소주 +1 적립',
   sojuBank: '소주 보관소',
@@ -140,7 +141,8 @@ const KIND_DESC = {
   bunny: '오프라인 게임: 바니바니 게임을 하고, 걸린 사람이 마셔요. 끝나면 던진 사람이 수행 완료. 게임 선택권에서도 고를 수 있어요.',
   wordSong: '3, 2, 1 → 단어가 하나 나와요. 그 단어가 들어간 노래를 돌아가며 한 소절씩 부르고, 막히거나 이미 나온 노래를 부르면 마셔요.',
   worldPin: '팀 대결: 세계 지도에 도시·명소 핀 꽂기 (두 손가락으로 확대). 5문제, 가까울수록 점수, 팀 점수 낮은 팀이 마셔요.',
-  mediaQuiz: "팀 대결: 노래는 걸린 사람 폰에서 처음 1초, 모두 '잘 모르겠어요'면 3초 → 5초 + 초성. 영화·드라마는 이모지 → 글자 수 → 초성. 제목을 써서 가장 먼저 맞힌 사람이 정답, 맞힌 문제가 적은 팀이 마셔요.",
+  songQuiz: "팀 대결: 걸린 사람 폰에서 노래를 처음 1초, 모두 '잘 모르겠어요'면 3초 → 5초 + 초성. 5곡 중 4곡은 지금 차트 곡. 제목을 써서 가장 먼저 맞힌 사람이 정답, 맞힌 문제가 적은 팀이 마셔요.",
+  movieQuiz: "팀 대결: 이모지 6~8개 보고 영화 제목 쓰기. 모두 '잘 모르겠어요'면 연도·주연 → 초성 힌트. 가장 먼저 맞힌 사람이 정답, 맞힌 문제가 적은 팀이 마셔요.",
 }
 // 받침이 있으면 a, 없으면 b (사랑이 / 비가)
 const josa = (word, a, b) => {
@@ -159,7 +161,8 @@ const CHOOSE_TEAM = [
   ['timeSum', '🕰️', '팀 시간 합치기'],
   ['mapPin', '🗺️', '지도 찍기'],
   ['worldPin', '🌍', '세계 지도 찍기'],
-  ['mediaQuiz', '🎬', MQ_GAME],
+  ['songQuiz', '🎵', SONG_GAME],
+  ['movieQuiz', '🎬', MOVIE_GAME],
 ]
 const CHOOSE_OFFLINE = [
   ['hunmin', '📝', '훈민정음 게임'],
@@ -1174,7 +1177,7 @@ function DebugPanel({ room, code, me, connected }) {
       rollsSinceMission: room.rollsSinceMission,
       usedPlaces: room.usedPlaces, // 이번 판에 지도 찍기로 나온 곳 (판마다 비움)
       usedWorld: room.usedWorld,
-      usedTitles: room.usedTitles, // 이번 판에 드라마·영화·노래 맞히기로 나온 제목 번호
+      usedTitles: room.usedTitles, // 이번 판에 노래·영화 맞히기로 나온 문제 (목록 번호, 차트 곡은 'c<번호>')
       event: room.event?.text,
     },
     errors: errLog.slice(-20),
@@ -2473,7 +2476,7 @@ export default function App() {
       {room && showPending && pending.kind === 'timeSum' && <TimeSumPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
       {room && showPending && pending.kind === 'mapPin' && <MapPinPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
       {room && showPending && pending.kind === 'worldPin' && <WorldPinPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
-      {room && showPending && pending.kind === 'mediaQuiz' && <MediaQuizPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
+      {room && showPending && isMqKind(pending.kind) && <MediaQuizPanel room={room} pending={pending} me={me} ctl={ctlTeam} code={code} />}
 
       {/* ---------- 소주 보관소 (가운데 40번) ---------- */}
       {room && showPending && pending.kind === 'sojuBank' && <SojuBankPanel room={room} pending={pending} iAct={iAct} code={code} />}

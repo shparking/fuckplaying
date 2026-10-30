@@ -79,7 +79,7 @@ import {
   mqDrive,
   mqResult,
 } from '../room'
-import { TITLES, MQ_GAME, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, mqRounds, isTitleAnswer, chosungHint, blanksHint } from '../game/mediaquiz'
+import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_CHART_PICK, mqRounds, mqItem, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
 import { mqUnlock, mqPlay, mqPrime, mqStop } from '../game/mqaudio'
 import { WORLD_PLACES, worldPoints } from '../game/worldplaces'
 import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
@@ -149,7 +149,7 @@ function CountScreen({ left, emoji, sub }) {
 }
 
 // 시작 전 안내 (모든 폰). 진행자(도착한 사람·방장)가 시작
-// onStart: 시작 버튼을 따로 처리할 때 (드라마·영화·노래 맞히기: 소리 잠금 풀기 + 노래 미리듣기 찾기), busy: 찾는 중이면 버튼 막기
+// onStart: 시작 버튼을 따로 처리할 때 (노래·영화 맞히기: 소리 잠금 풀기 + 노래 미리듣기 찾기), busy: 찾는 중이면 버튼 막기
 function ReadyModal({ room, p, ctl, emoji, title, headline, rules, startLabel, code, extra, onStart, busy }) {
   const actor = room.players[p.playerId]
   return (
@@ -2031,9 +2031,10 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
   )
 }
 
-// ---------- 드라마·영화·노래 맞히기 (주관식) ----------
+// ---------- 노래 맞히기 · 이모지 영화 맞히기 (주관식) ----------
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요' 누르면 3초 → 5초 + 초성.
-// 10/31 사용자: 영화·드라마는 이모지 → + 글자 수 → + 초성 (사진 안 씀).
+// 10/31 사용자: 노래·영화는 다른 게임 (드라마는 뺌). 노래 5곡 중 4곡은 지금 차트(Apple Music 한국 Top 100),
+// 영화는 이모지 6~8개 → + 연도·주연 → + 초성 (사진 안 씀).
 // 제목을 써서 가장 먼저 맞힌 사람이 정답 (그 팀 +1, 바로 공개). 맞힌 문제가 적은 팀이 마심.
 // 진행·소리는 한 폰에서만: 걸린 사람 (연결 끊기면 방장)
 const mqDj = (room, p) => (SOLO ? myId() : room.players?.[p.playerId]?.online !== false ? p.playerId : room.hostId)
@@ -2066,9 +2067,21 @@ function MqAnswer({ item }) {
   return (
     <div className="mq-answer">
       <b>{item.t}</b>
-      <em>
-        {cat.emoji} {item.c === 'song' ? item.by : `${cat.name} · ${item.y}`}
-      </em>
+      <em>{item.c === 'song' ? `${cat.emoji} ${item.by}${item.rank ? ` · 🔥 지금 차트 ${item.rank}위` : ''}` : `${cat.emoji} ${movieHint(item)}`}</em>
+    </div>
+  )
+}
+// 이모지 문제: 6개 넘으면 두 줄 (한 줄에 절반씩), 하나씩 뿅
+function MqEmoji({ text }) {
+  const list = emojiList(text)
+  if (!list || list.length < 2) return <div className="mq-emoji">{text}</div>
+  return (
+    <div className="mq-emoji grid" style={{ '--cols': list.length > 5 ? Math.ceil(list.length / 2) : list.length }}>
+      {list.map((g, i) => (
+        <span key={i} style={{ '--i': i }}>
+          {g}
+        </span>
+      ))}
     </div>
   )
 }
@@ -2086,10 +2099,13 @@ function MqScore({ res }) {
   )
 }
 export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
+  const song = p.kind === 'songQuiz'
+  const info = MQ_INFO[p.kind] || MQ_INFO.songQuiz
+  const emoji = info.emoji
   const live = p.stage === 'play'
   const now = useNow(live, 100)
   const ph = mqPhase(p, now)
-  const title = p.title || MQ_GAME
+  const title = p.title || info.title
   const rounds = mqRounds(p)
   const n = mqN(p)
   const dj = mqDj(room, p)
@@ -2109,7 +2125,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
   useEffect(() => () => clearTimeout(shakeT.current), [])
   const q = ph.q
   const r = q != null ? rounds[q] : null
-  const item = r ? TITLES[r.i] : null
+  const item = mqItem(r)
   const st = ph.phase === 'q' ? ph.st : MQ_STAGES - 1
   // 새 문제: 입력 비우기 + 진동
   useEffect(() => {
@@ -2123,9 +2139,9 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
   useEffect(() => {
     if (isDj && ph.phase === 'q') mqDrive(code, room)
   }, [isDj, now])
-  // 소리: 걸린 사람 폰만 — 단계가 바뀔 때마다 처음부터 1초·3초·5초, 정답 공개 때 5.5초. 쉬는 동안 다음 노래를 미리 받아 둠
+  // 소리 (노래만): 걸린 사람 폰만 — 단계가 바뀔 때마다 처음부터 1초·3초·5초, 정답 공개 때 5.5초. 쉬는 동안 다음 노래를 미리 받아 둠
   useEffect(() => {
-    if (!isDj) return
+    if (!isDj || !song) return
     const nextSong = (from) => rounds.slice(from).find((x) => x?.k === 'a')?.u
     if (ph.phase === 'count') {
       const u = nextSong(0)
@@ -2135,7 +2151,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
     if (ph.phase === 'final') return mqStop()
     if (ph.phase !== 'q' && ph.phase !== 'gap') return
     if (r?.k === 'a') {
-      const blockedNow = () => setBlocked(true) // 브라우저가 소리를 막으면 '소리 켜기' 버튼
+      const blockedNow = () => setBlocked(true) // 브라우저가 소리를 막거나 화면을 꺼서 끊기면 '소리 켜기' 버튼
       if (ph.phase === 'q') {
         // 늦게 들어온 폰(다시 연결 등)은 단계가 바뀌고 2.5초 안일 때만 틈
         if (serverNow() - ph.stAt < 2500) {
@@ -2157,10 +2173,10 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
     if (busy) return
     setErr('')
     setBusy(true)
-    mqUnlock() // 누르는 순간에 해야 이 폰에서 소리가 남
+    if (song) mqUnlock() // 누르는 순간에 해야 이 폰에서 소리가 남
     try {
       const res = await resolvePending(code, room, 'start')
-      if (res && res.ok === false && res.why !== 'gone') setErr('문제를 못 만들었어요. 인터넷을 확인하고 다시 눌러 주세요.')
+      if (res && res.ok === false && res.why !== 'gone') setErr(song ? '노래를 못 불러왔어요. 인터넷을 확인하고 다시 눌러 주세요.' : '문제를 못 만들었어요. 다시 눌러 주세요.')
     } finally {
       setBusy(false)
     }
@@ -2172,36 +2188,45 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
         p={p}
         ctl={ctl}
         code={code}
-        emoji="🎬"
+        emoji={emoji}
         title={title}
-        headline="노래는 듣고, 영화·드라마는 이모지 보고 맞혀요!"
-        startLabel={busy ? '🔍 노래 찾는 중…' : '🎬 시작'}
+        headline={song ? '1초 듣고 노래 제목 맞히기!' : '이모지 보고 영화 제목 맞히기!'}
+        startLabel={busy ? '🔍 노래 찾는 중…' : `${emoji} 시작`}
         onStart={start}
         busy={busy}
         extra={
           <>
             <div className="pg-scale">
-              <span>
-                🎵 <b>1초</b> → 3초 → 5초 + 초성
-              </span>
-              <span>
-                🎬📺 <b>이모지</b> → + 글자 수 → + 초성
-              </span>
+              {song ? (
+                <span>
+                  🎵 <b>1초</b> → 3초 → 5초 + 초성
+                </span>
+              ) : (
+                <span>
+                  🎬 <b>이모지</b> → + 연도·주연 → + 초성
+                </span>
+              )}
             </div>
-            <div className="mq-dj">🔊 소리는 {djName} 폰에서 나와요 — 소리를 키워 주세요</div>
+            {song && <div className="mq-dj">🔊 소리는 {djName} 폰에서 나와요 — 소리를 키워 주세요</div>}
             {err && <div className="mq-err">{err}</div>}
-            <div className="mq-credit">미리듣기 Deezer · Apple Music</div>
+            {song && <div className="mq-credit">5곡 중 {MQ_CHART_PICK}곡은 지금 Apple Music 한국 차트 · 미리듣기 Deezer · Apple Music</div>}
           </>
         }
         rules={
-          <>
-            🎵 <b>노래</b>는 {djName} 폰에서 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. 🎬 <b>영화</b>·📺 <b>드라마</b>는 <b>이모지</b>가 나오고, 같은 식으로 모두 누르면 <b>글자 수</b> → <b>초성 힌트</b>가 나와요. 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}문제, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
-          </>
+          song ? (
+            <>
+              🎵 {djName} 폰에서 노래 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. 5곡 중 {MQ_CHART_PICK}곡은 <b>🔥 지금 차트</b> 곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
+            </>
+          ) : (
+            <>
+              🎬 <b>이모지</b> 6~8개를 보고 영화 제목을 맞혀요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>개봉 연도·주연</b>, 또 모두 누르면 <b>초성 힌트</b>. 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}문제, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
+            </>
+          )
         }
       />
     )
-  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji="🎬" title={title} />
-  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji="🎬" sub={p.note === 'nomedia' ? '노래를 못 불러와서 이번엔 영화·드라마 이모지만!' : '노래는 듣고, 영화·드라마는 이모지 보고!'} />
+  if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji={emoji} title={title} />
+  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji={emoji} sub={song ? (p.note === 'nochart' ? '차트를 못 불러와서 이번엔 목록 곡만!' : '소리 키우고, 1초 듣고 맞혀요!') : '이모지 보고 영화 제목을 맞혀요!'} />
   const res = mqResult(room, p)
   const name = (pid) => room.players[pid]?.name || ''
   if ((ph.phase === 'q' || ph.phase === 'gap') && r) {
@@ -2244,15 +2269,14 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       .filter(([pid, x]) => x && room.players[pid]?.name)
       .slice(0, 5)
     const winTeam = w ? teamOf(room, w.pid) : null
+    const latin = item && !/[\p{Script=Hangul}]/u.test(item.t) // 영어 제목이면 영어로 쓰라고
     return (
       <div className="ai-overlay tg mq">
         <div className="tg-box">
           <div className="tg-head">
             <span>
-              🎬 {q + 1}/{n}
-              <em className="mq-cat">
-                {cat.emoji} {cat.name}
-              </em>
+              {emoji} {q + 1}/{n}
+              <em className={`mq-cat ${item?.rank ? 'hot' : ''}`}>{item?.rank ? '🔥 지금 차트' : `${cat.emoji} ${cat.name}`}</em>
             </span>
             <MqScore res={res} />
           </div>
@@ -2260,7 +2284,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
           {!asking && <MqAnswer item={item} />}
           {r.k !== 'a' ? (
             <div className="mq-emoji-box">
-              <div className="mq-emoji">{item?.e}</div>
+              <MqEmoji text={item?.e} />
             </div>
           ) : (
             <div className="mq-sound">
@@ -2283,16 +2307,23 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
           {asking && !w ? (
             <>
               <div className="mq-hint">
-                {st === MQ_STAGES - 1 ? (
+                {r.k !== 'a' && st >= 1 ? (
                   <>
-                    초성 <b>{chosungHint(item?.t)}</b>
+                    <span className="mq-hint-line">
+                      🎬 <b className="mq-info">{movieHint(item)}</b>
+                    </span>
+                    {st === MQ_STAGES - 1 && (
+                      <span className="mq-hint-line">
+                        초성 <b className="mq-ch">{chosungHint(item?.t)}</b>
+                      </span>
+                    )}
                   </>
-                ) : r.k !== 'a' && st === 1 ? (
+                ) : st === MQ_STAGES - 1 ? (
                   <>
-                    글자 수 <b>{blanksHint(item?.t)}</b>
+                    초성 <b className="mq-ch">{chosungHint(item?.t)}</b>
                   </>
                 ) : (
-                  `${cat.name} 제목을 써요 — 가장 먼저 맞히면 정답!`
+                  `${cat.name} 제목을 써요${song && latin ? ' (영어 제목은 영어로)' : ''} — 가장 먼저 맞히면 정답!`
                 )}
               </div>
               <form className={`mq-form ${shake ? 'shake' : ''}`} onSubmit={submit}>
@@ -2374,7 +2405,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       p={p}
       ctl={ctl}
       code={code}
-      emoji="🎬"
+      emoji={emoji}
       title={title}
       losers={res.losers}
       tie={res.tie}
@@ -2382,13 +2413,13 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       extra={
         <div className="pg-best">
           {rounds.map((x, k) => {
-            const it = TITLES[x?.i]
+            const it = mqItem(x)
             const ww = res.wins[k]
             const cat = MQ_CATS[it?.c] || MQ_CATS.movie
             return (
               <div key={k} className="pg-best-row">
                 <span>
-                  {cat.emoji} {it?.t}
+                  {it?.rank ? '🔥' : cat.emoji} {it?.t}
                 </span>
                 <b>{it?.c === 'song' ? it?.by : it?.y}</b>
                 <em>{ww ? `🎉 ${name(ww.pid)} (${(MQ_STAGE_SHORT[x.k] || MQ_STAGE_SHORT.e)[ww.st]})` : '아무도 못 맞힘'}</em>
