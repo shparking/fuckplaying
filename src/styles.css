@@ -4474,6 +4474,11 @@ textarea {
   font-size: 14px;
   font-weight: 700;
 }
+.mc-ping {
+  margin-top: 10px;
+  font-size: 14px;
+  font-weight: 800;
+}
 .mc-list {
   display: flex;
   flex-direction: column;

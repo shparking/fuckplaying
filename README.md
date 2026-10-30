@@ -21,7 +21,7 @@
 
 이 저장소를 Vercel 에서 Import 하면 끝이에요. Framework 는 Vite 로 자동 인식되고, Build Command `npm run build`, Output `dist` 가 기본값이에요. main 브랜치에 push 할 때마다 자동으로 다시 배포돼요.
 
-**드라마·영화·노래 맞히기**는 Vercel 서버 함수 `api/media.js` 가 문제마다 소리·사진을 찾아요 (`/api/media?i=번호`). 노래 30초 미리듣기(Deezer → 없으면 Apple)는 키가 필요 없고, 영화·드라마 장면 사진(TMDB)은 **TMDB 키**가 있어야 나와요: themoviedb.org 무료 가입 → 설정 → API → **API 읽기 액세스 토큰**(긴 것)을 Vercel → 프로젝트 → Settings → Environment Variables 에 `TMDB_TOKEN` 으로 넣고 다시 배포 (짧은 API 키는 `TMDB_KEY`). 키가 없으면 노래만 나와요. 배포한 뒤 `/?mediacheck=1` 에서 문제마다 소리·사진을 찾는지 한 번에 확인할 수 있어요 (못 찾은 것만 복사 버튼).
+**드라마·영화·노래 맞히기**는 Vercel 서버 함수 `api/media.js` 가 문제마다 소리·사진을 찾아요 (`/api/media?i=번호`). 노래 30초 미리듣기(Deezer → 없으면 Apple)는 키가 필요 없고, 영화·드라마 장면 사진(TMDB)은 **TMDB 키**가 있어야 나와요: themoviedb.org 무료 가입 → 설정 → API → **API 읽기 액세스 토큰**(긴 것)을 Vercel → 프로젝트 → Settings → Environment Variables 에 `TMDB_TOKEN` 으로 넣고 다시 배포 (짧은 API 키는 `TMDB_KEY`). 키가 없으면 노래만 나와요. 배포한 뒤 `/?mediacheck=1` 에서 문제마다 소리·사진을 찾는지 한 번에 확인할 수 있어요 (맨 위에 서버 함수·TMDB 키 상태 — `/api/media?ping=1`, 못 찾은 것만 복사 버튼).
 
 ## 3. 실행 (내 컴퓨터)
 

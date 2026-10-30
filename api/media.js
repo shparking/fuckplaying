@@ -4,6 +4,7 @@
 //     → { ok: true, kind: 'image', url, urls, src: 'tmdb', link, name, year }        영화·드라마: 글자 없는 장면 사진
 //     → { ok: false, why: 'notfound'|'nokey'|'badkey'|'bad'|'error' }
 //   ?debug=1 이면 찾아본 검색어·후보도 같이 (확인 화면 ?mediacheck=1 용)
+//   ?ping=1 → { ok: true, ping: true, tmdb: 'set'|'none' } (서버 함수가 살아 있는지 + TMDB 키를 넣었는지만, 밖으로는 안 부름)
 // 노래는 Deezer 먼저 (키 없음, 약관: 비상업·사적 이용), 없으면 Apple(iTunes) 미리듣기
 // 사진은 TMDB (비상업 무료, 출처 표시) — Vercel 환경 변수 TMDB_TOKEN(API 읽기 액세스 토큰) 또는 TMDB_KEY(API 키). 없으면 nokey
 // 번호로만 찾음 (아무 검색어나 대신 찾아 주는 통로가 되지 않게)
@@ -182,6 +183,7 @@ export default async function handler(req, res) {
     res.setHeader('cache-control', cache)
     res.end(JSON.stringify(body))
   }
+  if (u.searchParams.has('ping')) return send({ ok: true, ping: true, tmdb: tmdbAuth(process.env) ? 'set' : 'none' }, 'no-store')
   try {
     const out = await findMedia(i, { debug })
     // 미리듣기 주소는 시간이 지나면 막힐 수 있어서 잠깐만, 사진은 하루 캐시

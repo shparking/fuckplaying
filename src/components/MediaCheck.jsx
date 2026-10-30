@@ -1,6 +1,6 @@
 // 확인 화면 (?mediacheck=1): 드라마·영화·노래 맞히기 문제마다 미리듣기·사진을 실제로 찾아봄 (배포된 사이트에서, 2개씩 천천히 — 300개면 3~5분)
 // 못 찾은 것만 모아서 복사 → Claude 에게 붙여 주면 제목·검색어를 고침
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { TITLES, MQ_CATS } from '../game/mediaquiz'
 import { mqUnlock, mqPlay, mqStop } from '../game/mqaudio'
 
@@ -12,6 +12,13 @@ export default function MediaCheck() {
   const [onlyBad, setOnlyBad] = useState(false)
   const [copied, setCopied] = useState(false)
   const stop = useRef(false)
+  const [ping, setPing] = useState(null) // 서버 함수 상태: { tmdb: 'set'|'none' } | { down: true }
+  useEffect(() => {
+    fetch('/api/media?ping=1')
+      .then((r) => r.json())
+      .then((j) => setPing(j?.ping ? j : { down: true }))
+      .catch(() => setPing({ down: true }))
+  }, [])
   const list = useMemo(() => TITLES.map((x, i) => ({ ...x, i })).filter((x) => !x.off && (filter === 'all' || (filter === 'song' ? x.c === 'song' : x.c !== 'song'))), [filter])
   const done = list.filter((x) => res[x.i])
   const good = done.filter((x) => res[x.i].ok)
@@ -53,6 +60,9 @@ export default function MediaCheck() {
         <h2>🎬 미리듣기·사진 확인</h2>
         <div className="muted">
           드라마·영화·노래 맞히기 문제 {TITLES.length}개를 하나씩 찾아봐요. 노래는 Deezer → Apple 미리듣기, 영화·드라마는 TMDB 사진 (Vercel 환경 변수 TMDB_TOKEN 필요). ▶ 를 누르면 그 곡을 3초 들어 봐요.
+        </div>
+        <div className="mc-ping">
+          {!ping ? '서버 함수 확인 중…' : ping.down ? '❌ 서버 함수(/api/media)가 안 돼요 — 배포가 끝났는지 확인해 주세요' : ping.tmdb === 'set' ? '✅ 서버 함수 OK · TMDB 키 있음' : '✅ 서버 함수 OK · ❌ TMDB 키 없음 (영화·드라마 사진이 안 나와요 — Vercel 환경 변수 TMDB_TOKEN)'}
         </div>
         <div className="mc-bar">
           {[
