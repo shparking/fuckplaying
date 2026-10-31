@@ -112,6 +112,18 @@ const CHART_URL = 'https://rss.marketingtools.apple.com/api/v2/kr/music/most-pla
 const CHART_MEMO_MS = 30 * 60 * 1000
 const CHART_STALE_MS = 24 * 60 * 60 * 1000
 let chartMemo = null // { v, at }
+// 10/31 사용자 '지금 차트는 국내 것만, 실제로 많이 검색되는 걸로': Apple Music 한국 차트엔 외국 팝과
+// 오래전 곡(2000년대 발라드·2019년 힙합 등 Apple 쓰는 사람만 많이 듣는 곡)도 섞여 있어서
+//  - 국내 곡만: 장르에 K-Pop 이 있거나 가수·제목에 한글이 있는 곡
+//  - 요즘 곡만: 올해·작년·재작년에 나온 곡 (차트에 오래 남은 옛 곡은 노래 맞히기의 목록·옛날 노래 칸으로)
+//  - 그렇게 해서 12곡이 안 되면 국내 곡 전체, 그래도 모자라면 전부 (순위는 원래 순위 그대로)
+const HANGUL = /[\u3131-\u318E\uAC00-\uD7A3]/
+export const isKoreanChartSong = (x) => (Array.isArray(x?.genres) && x.genres.some((g) => /k-?pop/i.test(String(g?.name || '')) || String(g?.genreId) === '51')) || HANGUL.test(String(x?.artistName || '')) || HANGUL.test(String(x?.name || ''))
+export function chartPick(ranked, year) {
+  const kr = ranked.filter(({ x }) => isKoreanChartSong(x))
+  const fresh = kr.filter(({ x }) => Number(String(x.releaseDate || '').slice(0, 4)) >= year - 2)
+  return fresh.length >= 12 ? fresh : kr.length >= 12 ? kr : ranked
+}
 // 곡 번호로 iTunes 에 한꺼번에 (50개씩) → Map(번호 → 결과)
 async function lookupPreviews(fb, ids, cc) {
   const by = new Map()
@@ -129,21 +141,23 @@ export async function findChart({ fetch: f = globalThis.fetch, now = Date.now(),
   if (!fresh && chartMemo && now - chartMemo.at < CHART_MEMO_MS) return chartMemo.v
   const fb = Object.assign((u, o) => f(u, o), { deadline: Date.now() + BUDGET_MS })
   const j = await getJson(fb, CHART_URL, {}, 3500)
-  const list = (Array.isArray(j?.feed?.results) ? j.feed.results : []).filter((x) => x && /^\d{1,15}$/.test(String(x.id)) && x.name && x.artistName).slice(0, 100)
-  if (!list.length) {
+  const all = (Array.isArray(j?.feed?.results) ? j.feed.results : []).filter((x) => x && /^\d{1,15}$/.test(String(x.id)) && x.name && x.artistName).slice(0, 100)
+  if (!all.length) {
     if (chartMemo && now - chartMemo.at < CHART_STALE_MS) return { ...chartMemo.v, stale: true }
     return { ok: false, why: 'chart', err: String(j?._status || j?._error || 'empty') }
   }
-  const ids = list.map((x) => String(x.id))
+  const ranked = all.map((x, k) => ({ x, rank: k + 1 }))
+  const list = chartPick(ranked, new Date(now).getFullYear())
+  const ids = list.map(({ x }) => String(x.id))
   const [kr, us] = await Promise.all([lookupPreviews(fb, ids, 'KR'), lookupPreviews(fb, ids, 'US')])
-  const songs = list.map((x, k) => {
+  const songs = list.map(({ x, rank }) => {
     const r = kr.by.get(String(x.id)) || us.by.get(String(x.id))
     const y = Number(String(x.releaseDate || r?.releaseDate || '').slice(0, 4))
-    return { id: String(x.id), rank: k + 1, name: String(x.name), artist: String(x.artistName), y: y > 1900 ? y : 0, url: r?.previewUrl || '', link: r?.trackViewUrl || x.url || '' }
+    return { id: String(x.id), rank, name: String(x.name), artist: String(x.artistName), y: y > 1900 ? y : 0, url: r?.previewUrl || '', link: r?.trackViewUrl || x.url || '' }
   })
   const withUrl = songs.filter((x) => x.url).length
   const errs = [...kr.errs, ...us.errs]
-  const out = { ok: true, songs, n: list.length, withUrl, kr: kr.by.size, us: us.by.size, updated: String(j?.feed?.updated || ''), ...(errs.length ? { err: errs.join(',') } : {}) }
+  const out = { ok: true, songs, n: songs.length, all: all.length, withUrl, kr: kr.by.size, us: us.by.size, updated: String(j?.feed?.updated || ''), ...(errs.length ? { err: errs.join(',') } : {}) }
   // 미리듣기를 많이 못 받았으면 오래 기억하지 않음 (다음에 다시 물어봄)
   if (withUrl >= 10 || !chartMemo) chartMemo = { v: out, at: withUrl >= 10 ? now : now - CHART_MEMO_MS + 2 * 60 * 1000 }
   return out

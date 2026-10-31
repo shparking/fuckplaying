@@ -1,4 +1,4 @@
-// 확인 화면 (?mediacheck=1): 노래 맞히기의 목록 곡마다 미리듣기를 실제로 찾아봄 (배포된 사이트에서, 2개씩 천천히 — 210곡이면 4분쯤)
+// 확인 화면 (?mediacheck=1): 노래 맞히기의 목록 곡마다 미리듣기를 실제로 찾아봄 (배포된 사이트에서, 2개씩 천천히 — 209곡이면 4분쯤)
 // '📼 옛날' = 옛날 노래(90~2000년대)만, '🔥 지금 차트' = 게임에 섞이는 Apple Music 한국 Top 100 (/api/media?chart=1),
 // 서버가 미리듣기를 못 받은 차트 곡은 ▶ 를 누르면 이 폰에서 Apple 에 직접 찾아봄 (게임 때와 같이), '영화' = 이모지 영화 맞히기 문제 보기
 // 못 찾은 것만 모아서 복사 → Claude 에게 붙여 주면 제목·검색어를 고침
@@ -86,7 +86,7 @@ export default function MediaCheck() {
       <div className="card card-pad">
         <h2>🎵 미리듣기 확인</h2>
         <div className="muted">
-          '노래'는 목록 곡마다 Deezer → Apple 미리듣기를 찾아봐요 ('📼 옛날'은 90~2000년대 곡만). '🔥 지금 차트'는 게임에 섞이는 Apple Music 한국 Top 100 (노래 3곡 중 1곡 — 미리듣기가 없는 곡은 ▶ 를 누르면 이 폰에서 찾아봐요), '영화'는 이모지 문제예요. ▶ 를 누르면 처음부터 3초 들어 봐요.
+          '노래'는 목록 곡마다 Deezer → Apple 미리듣기를 찾아봐요 ('📼 옛날'은 90~2000년대 곡만). '🔥 지금 차트'는 게임에 섞이는 Apple Music 한국 Top 100 중 국내·요즘 곡 (노래 3곡 중 1곡 — 미리듣기가 없는 곡은 ▶ 를 누르면 이 폰에서 찾아봐요), '영화'는 이모지 문제예요. ▶ 를 누르면 처음부터 3초 들어 봐요.
         </div>
         <div className="mc-ping">{!ping ? '서버 함수 확인 중…' : ping.down ? '❌ 서버 함수(/api/media)가 안 돼요 — 배포가 끝났는지 확인해 주세요' : '✅ 서버 함수 OK'}</div>
         <div className="mc-bar">
@@ -126,7 +126,7 @@ export default function MediaCheck() {
               )}
             </>
           ) : filter === 'chart' ? (
-            !chart ? '차트 불러오는 중…' : chart.ok ? `서버가 찾은 미리듣기 ${chart.withUrl ?? chart.songs.filter((s) => s.url).length}/${chart.n || chart.songs.length}곡${chart.stale ? ' · 예전 차트' : ''}${chart.err ? ` · ${chart.err}` : ''}` : `❌ ${WHY[chart.why] || chart.why}${chart.err ? ` (${chart.err})` : ''}`
+            !chart ? '차트 불러오는 중…' : chart.ok ? `국내·요즘 곡 ${chart.songs.length}/${chart.all || chart.songs.length}곡 · 서버가 찾은 미리듣기 ${chart.withUrl ?? chart.songs.filter((s) => s.url).length}곡${chart.stale ? ' · 예전 차트' : ''}${chart.err ? ` · ${chart.err}` : ''}` : `❌ ${WHY[chart.why] || chart.why}${chart.err ? ` (${chart.err})` : ''}`
           ) : (
             `${MQ_CATS.movie.name} ${list.length}개 — 이모지 문제 (2단계 힌트: 연도 · 주연)`
           )}

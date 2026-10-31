@@ -249,13 +249,14 @@ export function chartItem(song, list = TITLES) {
   if (j >= 0) x.j = j
   return x
 }
-// 차트에서 n곡: 위쪽일수록 자주 (가중치 1/(순위+15)), 한 판 안에서 나온 곡('c<id>' 또는 목록 번호)은 빼고
+// 차트에서 n곡: 위쪽일수록 자주 (가중치 1/(순위+8) — 10/31 사용자 '실제로 많이 검색되는 걸로' 1/(순위+15) 에서 더 위쪽으로), 한 판 안에서 나온 곡('c<id>' 또는 목록 번호)은 빼고
+// 서버(api/media.js chartPick)가 국내 곡·요즘 곡(올해~재작년)만 보냄
 // 미리듣기 주소(url)는 없을 수도 있음 (서버가 못 받았으면 폰에서 직접 — itunes.js)
 export function pickChartSongs(chart, used = [], n = MQ_CHART_PICK, rand = Math.random, list = TITLES) {
   const u = new Set((used || []).map(String))
   const cand = (Array.isArray(chart) ? chart : [])
     .filter((s) => s && s.id && s.name && !u.has(`c${s.id}`))
-    .map((s) => ({ s, x: chartItem(s, list), w: 1 / ((Number(s.rank) || 100) + 15) }))
+    .map((s) => ({ s, x: chartItem(s, list), w: 1 / ((Number(s.rank) || 100) + 8) }))
     .filter(({ x }) => normTitle(x.t) && !(x.j != null && u.has(String(x.j))))
   const out = []
   const seen = new Set()

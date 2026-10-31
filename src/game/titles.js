@@ -159,7 +159,7 @@ export const TITLES = [
   S('야생화', '박효신', ['Park Hyo Shin', '박효신'], 'Wild Flower'),
   S('아주 NICE', '세븐틴', SVT, 'VERY NICE', ['아주 나이스']),
   S('손오공', '세븐틴', SVT, 'Super'),
-  S('神메뉴', '스트레이 키즈', SKZ, "God's Menu", ['신메뉴']),
+  off(S('神메뉴', '스트레이 키즈', SKZ, "God's Menu", ['신메뉴'])), // 10/31 사용자: 안 유명해서 뺌
   S('특', '스트레이 키즈', SKZ, 'S-Class'),
   O(2008, '미쳤어', '손담비', ['Son Dam Bi', '손담비'], 'Crazy'),
   O(2009, 'Abracadabra', '브라운아이드걸스', ['Brown Eyed Girls', '브라운아이드걸스'], '', ['아브라카다브라']),
