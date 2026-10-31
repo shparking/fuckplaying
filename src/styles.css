@@ -4611,6 +4611,8 @@ textarea {
   place-items: center;
   min-height: 150px;
   padding: 16px 10px;
+  grid-template-columns: minmax(0, 1fr); /* 한 줄이 길어도 상자가 안 늘어나게 (그래야 재서 줄임) */
+  container-type: inline-size; /* 이모지 한 줄 크기를 상자 너비에 맞춤 (cqw) */
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.05);
   border: 1.5px solid rgba(255, 255, 255, 0.14);
@@ -4623,17 +4625,22 @@ textarea {
   word-break: break-all;
   animation: pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-/* 10/31 이모지 6~8개: 한 줄에 4개씩 두 줄 (줄거리 순서대로 하나씩 뿅) */
-.mq-emoji.grid {
-  display: grid;
-  grid-template-columns: repeat(var(--cols, 4), auto);
+/* 10/31 이모지 6~8개: 한 줄로 (사용자: 두 줄 말고 한 줄), 상자 너비에 맞게 크기 — 줄거리 순서대로 하나씩 뿅 */
+.mq-emoji.row {
+  display: flex;
+  flex-wrap: nowrap;
   justify-content: center;
-  gap: 4px 12px;
-  font-size: clamp(34px, 11vw, 48px);
+  gap: 2px;
+  width: 100%;
+  white-space: nowrap;
   letter-spacing: 0;
+  line-height: 1.2;
+  /* 첫 크기 (이모지 하나 ≈ 1.3글자) — 그래도 넘치면 화면에서 재서 줄임 (MqEmoji) */
+  font-size: min(48px, calc((100vw - 72px) / (var(--n, 8) * 1.32))); /* cqw 를 모르는 옛 브라우저 */
+  font-size: min(48px, calc(100cqw / (var(--n, 8) * 1.32)));
   animation: none;
 }
-.mq-emoji.grid > span {
+.mq-emoji.row > span {
   display: inline-block;
   animation: pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   animation-delay: calc(var(--i, 0) * 70ms);

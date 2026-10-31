@@ -1,7 +1,7 @@
 // 팀 대결 미니게임 화면: 팀 이구동성 · 연타 줄다리기 · 팀 반응속도 · 폭탄 돌리기 팀전 · 색깔 함정 · 완벽한 원 · 얼마게요 · 팀 시간 합치기 · 지도 찍기 · 세계 지도 찍기
 // 모두 자기 폰으로 동시에 참여하고, 진 팀 전원이 마심. 동점이면 룰렛.
 // 시간은 서버 시각(serverNow) 기준이라 모든 폰이 같은 순간에 같은 화면을 봄
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { SOLO, PRACTICE } from '../db'
 import { TEAM_INFO } from '../game/yut'
 import { SYNC_QUESTIONS, CT_COLORS } from '../game/teamgames'
@@ -2071,12 +2071,38 @@ function MqAnswer({ item }) {
     </div>
   )
 }
-// 이모지 문제: 6개 넘으면 두 줄 (한 줄에 절반씩), 하나씩 뿅
+// 이모지 문제: 한 줄로 (10/31 사용자: 두 줄 말고 한 줄 — 개수에 맞게 크기), 하나씩 뿅
 function MqEmoji({ text }) {
   const list = emojiList(text)
+  const ref = useRef(null)
+  // 폰마다 이모지 폭이 달라서: 한 줄이 상자보다 길면 글자 크기를 줄여 맞춤 (화면 돌리면 다시)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const fit = () => {
+      el.style.fontSize = ''
+      for (let k = 0; k < 5; k++) {
+        const kids = [...el.children]
+        const gap = parseFloat(getComputedStyle(el).columnGap) || 0
+        const need = kids.reduce((a, c) => a + c.offsetWidth, 0) + gap * Math.max(0, kids.length - 1)
+        const room = el.clientWidth
+        if (!(room > 0 && need > room)) break
+        el.style.fontSize = `${Math.max(14, parseFloat(getComputedStyle(el).fontSize) * (room / need) * 0.97).toFixed(1)}px`
+      }
+    }
+    fit()
+    // 이모지 글꼴이 늦게 오면 폭이 바뀌어서 한 번 더
+    const t = setTimeout(fit, 300)
+    document.fonts?.ready?.then(fit)
+    addEventListener('resize', fit)
+    return () => {
+      clearTimeout(t)
+      removeEventListener('resize', fit)
+    }
+  }, [text])
   if (!list || list.length < 2) return <div className="mq-emoji">{text}</div>
   return (
-    <div className="mq-emoji grid" style={{ '--cols': list.length > 5 ? Math.ceil(list.length / 2) : list.length }}>
+    <div ref={ref} className="mq-emoji row" style={{ '--n': list.length }}>
       {list.map((g, i) => (
         <span key={i} style={{ '--i': i }}>
           {g}
