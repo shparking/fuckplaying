@@ -1,17 +1,23 @@
-// 노래 맞히기: 걸린 사람 폰에서 미리듣기를 1초·3초·5초씩 틀기 (소리는 이 폰 하나에서만 나옴)
-// 휴대폰 브라우저는 사람이 누르는 순간에 한 번 소리를 내야 그 뒤에도 소리를 낼 수 있음 → 시작 버튼을 누를 때 mqUnlock()
-// <audio> 하나를 계속 씀 (주소만 바꿈). 무음 모드에서도 나오는 미디어 소리
-// 10/31 사용자 '노래가 가끔 오류로 계속 나옴' → 멈추는 길을 여러 개로:
+// 노래 맞히기 소리 — 10/31 사용자 '노래는 참가자 모든 폰에서 나오도록': 모든 폰이 같은 서버 시각에 미리듣기의 같은 곳을 틂
+//  - 클립 = { url, from: 미리듣기 몇 초부터, at: 그 소리가 들려야 하는 서버 시각(ms), ms: 길이 } — 모든 폰이 같은 값 (mediaquiz.js mqClip)
+//  - 늦게 준비된 폰은 늦은 만큼 뒤에서부터 틀어서 다른 폰과 맞춤 (끝나는 때는 다 같음), 거의 다 지났으면 안 틂
+//  - 휴대폰 브라우저(특히 아이폰)는 사람이 누르는 순간에 한 번 소리를 내야 그 뒤에도 소리를 낼 수 있음
+//    → 시작 버튼 · '이 폰 소리 켜기' · 게임 화면에서 처음 누를 때 mqUnlock(). 그래도 막히면 onBlocked → '소리가 안 나면 눌러 주세요'
+//  - <audio> 하나를 계속 씀 (주소만 바꿈). 무음 모드에서도 나오는 미디어 소리
+// 10/31 '노래가 가끔 오류로 계속 나옴' → 멈추는 길을 여러 개로:
 //   ① 재생 위치가 끝 지점을 넘으면 멈춤 (timeupdate — play() 약속이 안 끝나거나 실패해도)
-//   ② 실제로 소리가 난 순간(playing)부터 길이만큼 타이머
-//   ③ 무슨 일이 있어도 '길이 + 8초' 뒤엔 멈춤
-//   ④ 화면을 끄거나 다른 앱으로 가면 바로 멈춤 (그동안은 타이머가 안 돌 수 있음) → 돌아오면 '다시 듣기' 버튼
-//   ⑤ 잠금 화면·알림의 재생 버튼으로는 다시 안 틀어짐
+//   ② 소리가 실제로 나기 시작한 순간 끝 지점까지 남은 만큼 타이머 + 구간이 끝나는 시각(+0.5초)에 한 번 더 (틀 클립을 받는 순간 켬)
+//   ③ 화면을 끄거나 다른 앱으로 가면 바로 멈춤 → 돌아왔을 때 아직 구간 안이면 그 위치부터 이어서
+//   ④ 잠금 화면·알림의 재생 버튼으로는 다시 안 틀어짐
 let el = null
 let curUrl = ''
-let token = 0
 let silent = ''
-let clip = null // 지금 트는 것 { my, until(재생 위치 초), ms, onCut, wall, hard }
+let unlocked = false // 이 폰에서 소리가 난 적 있음 (잠금 풀림)
+const unlockFns = new Set()
+let clip = null // 지금 틀(또는 트는) 클립 { key, url, from, at, ms, now, onBlocked, end, going, timer, wall, endT, go }
+let want = null // 마지막으로 틀어 달라고 한 클립 (화면을 다시 켜거나 소리를 켜면 이어서)
+const MIN_LEFT_MS = 250 // 남은 게 이보다 짧으면 안 틂
+const RESYNC_S = 0.2 // 들려야 할 위치와 이보다 많이 어긋나면 위치를 맞춤
 
 // 0.1초짜리 무음 wav (잠금 풀기용)
 function silentWav() {
@@ -37,16 +43,59 @@ function silentWav() {
   buf.forEach((b) => (s += String.fromCharCode(b)))
   return 'data:audio/wav;base64,' + btoa(s)
 }
+function markUnlocked() {
+  if (unlocked) return
+  unlocked = true
+  unlockFns.forEach((f) => {
+    try {
+      f()
+    } catch {}
+  })
+}
+// 이 폰 소리가 켜졌는지 (화면의 '이 폰 소리 켜기' 버튼용)
+export const mqUnlocked = () => unlocked
+export function mqOnUnlock(f) {
+  unlockFns.add(f)
+  return () => unlockFns.delete(f)
+}
+const keyOf = (c) => `${c.url}|${c.from}|${c.at}|${c.ms}`
+// 지금 들려야 하는 위치 (초)
+const posOf = (c) => c.from + Math.max(0, c.now() - c.at) / 1000
+const lastPos = (c) => c.from + (c.ms - MIN_LEFT_MS) / 1000
 // 지금 클립 끝내기 (타이머 정리 + 멈춤)
 function endClip() {
   if (clip) {
+    clearTimeout(clip.timer)
     clearTimeout(clip.wall)
-    clearTimeout(clip.hard)
+    clearTimeout(clip.endT)
   }
   clip = null
   try {
     el?.pause()
   } catch {}
+}
+// 소리가 늦게 나기 시작했으면 (받는 데 오래 걸림) 다른 폰과 같은 위치로 + 끝 지점 타이머
+function resync() {
+  const c = clip
+  if (!c?.going || !el) return
+  const pos = posOf(c)
+  if (pos > lastPos(c)) return endClip()
+  if (Math.abs(el.currentTime - pos) > RESYNC_S) {
+    try {
+      el.currentTime = pos
+    } catch {}
+  }
+  // ② 끝 지점까지 남은 만큼 (조금 늦게 시작한 폰도 1초는 다 들림, 많이 늦으면 위에서 위치를 맞춰서 다른 폰과 같이 끝남)
+  //    소리가 실제로 나가기까지 조금 걸려서 타이머가 먼저 울리면 남은 만큼 한 번 더 (멈춰 있으면 바로 끝)
+  clearTimeout(c.endT)
+  const until = c.from + c.ms / 1000
+  const tick = () => {
+    if (clip !== c) return
+    const left = (until - el.currentTime) / (el.playbackRate || 1)
+    if (left > 0.05 && !el.paused) c.endT = setTimeout(tick, left * 1000)
+    else endClip()
+  }
+  c.endT = setTimeout(tick, Math.max(0, ((until - el.currentTime) / (el.playbackRate || 1)) * 1000))
 }
 export function mqAudio() {
   if (!el && typeof Audio !== 'undefined') {
@@ -56,45 +105,61 @@ export function mqAudio() {
     el.setAttribute('playsinline', '')
     // ① 재생 위치로 멈춤
     el.addEventListener('timeupdate', () => {
-      if (clip && el.currentTime >= clip.until - 0.04) endClip()
+      if (clip?.going && el.currentTime >= clip.from + clip.ms / 1000 - 0.04) endClip()
     })
-    // ② 실제로 소리가 나기 시작한 순간부터 길이만큼
-    el.addEventListener('playing', () => clip?.arm())
+    el.addEventListener('loadedmetadata', resync)
+    el.addEventListener('playing', () => {
+      if (!clip?.going) return
+      markUnlocked()
+      resync()
+    })
     // 클립이 없는데 소리가 나면 (잠금 화면 재생 버튼 등) 바로 멈춤
     el.addEventListener('play', () => {
-      if (!clip && curUrl) setTimeout(() => !clip && el && !el.paused && el.pause(), 0)
+      if (!clip?.going && curUrl) setTimeout(() => !clip?.going && el && !el.paused && el.pause(), 0)
     })
-    // ④ 화면을 끄거나 다른 앱으로 가면 멈춤
+    // ③ 화면을 끄거나 다른 앱으로 가면 멈춤, 돌아오면 아직 구간 안일 때 그 위치부터
     if (typeof document !== 'undefined') {
-      const hide = () => {
-        if (!clip) return
-        const cut = clip.onCut
-        endClip()
-        cut?.()
-      }
-      document.addEventListener('visibilitychange', () => document.hidden && hide())
+      const hide = () => clip && endClip()
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) hide()
+        else if (want && !clip) playClip(want)
+      })
       addEventListener('pagehide', hide)
     }
-    // ⑤ 잠금 화면·알림의 재생 버튼은 아무것도 안 함, 멈춤 버튼은 멈춤
+    // ④ 잠금 화면·알림의 재생 버튼은 아무것도 안 함, 멈춤 버튼은 멈춤
     try {
       navigator.mediaSession?.setActionHandler?.('play', () => {})
-      navigator.mediaSession?.setActionHandler?.('pause', () => endClip())
+      navigator.mediaSession?.setActionHandler?.('pause', () => {
+        want = null
+        endClip()
+      })
     } catch {}
   }
   return el
 }
-// 시작 버튼을 누르는 순간 (사람이 누른 그 처리 안에서) 부르기
+// 사람이 누른 그 처리 안에서 부르기 → 이 폰에서 소리가 나게 (시작 버튼, '이 폰 소리 켜기', 게임 화면에서 처음 누를 때)
+// 막혔던 클립이 아직 구간 안이면 바로 그 위치부터 틂
 export function mqUnlock() {
   const a = mqAudio()
-  if (!a) return
+  if (!a || clip?.going) return
   try {
+    const w = want
+    if (w && w.now() >= w.at && posOf(w) <= lastPos(w)) {
+      if (clip && clip.key === keyOf(w)) clip.go()
+      else playClip(w)
+      return
+    }
+    if (curUrl) {
+      // 미리 받아 둔 노래로: play 하자마자 pause (소리는 안 나고, 받아 둔 것도 그대로)
+      const pr = a.play()
+      a.pause()
+      pr?.then?.(markUnlocked, (e) => e?.name === 'AbortError' && markUnlocked())
+      return
+    }
     if (!silent) silent = silentWav()
-    token++
-    endClip()
-    curUrl = ''
     a.src = silent
     const pr = a.play()
-    pr?.catch?.(() => {})
+    pr?.then?.(markUnlocked, () => {})
   } catch {}
 }
 function load(url) {
@@ -115,29 +180,32 @@ function hideTitle() {
     if ('mediaSession' in navigator && typeof MediaMetadata !== 'undefined') navigator.mediaSession.metadata = new MediaMetadata({ title: '🎵 노래 맞히기', artist: '주루윷놀이' })
   } catch {}
 }
-// url 을 from 초부터 ms 동안 틀기. 브라우저가 소리를 막거나 (화면을 꺼서) 중간에 끊기면 onBlocked() → '소리 켜기·다시 듣기' 버튼
-export function mqPlay(url, from, ms, onBlocked) {
-  const a = load(url)
-  if (!a) return
-  const my = ++token
-  if (clip) {
-    clearTimeout(clip.wall)
-    clearTimeout(clip.hard)
+function playClip(c) {
+  const a = mqAudio()
+  if (!a || !c?.url) return
+  want = c
+  const key = keyOf(c)
+  if (clip && clip.key === key) return // 이미 틀 예정이거나 트는 중
+  if (clip) endClip() // 다른 클립 (단계·문제가 바뀜): 앞 소리는 멈춤
+  const t = c.now()
+  if (posOf(c) > lastPos(c)) {
+    // 이미 지난 구간 (늦게 들어온 폰·화면을 늦게 다시 켬): 아무것도 안 함 (미리 받아 둔 다음 노래도 그대로)
+    want = null
+    return
   }
-  const c = { my, until: from + ms / 1000, ms, onCut: onBlocked, wallSet: false, wall: null, hard: null }
-  c.arm = () => {
-    if (clip !== c || c.wallSet) return
-    c.wallSet = true
-    clearTimeout(c.wall)
-    c.wall = setTimeout(() => clip === c && endClip(), ms)
-  }
-  clip = c
-  // ③ 무슨 일이 있어도 (불러오는 시간 포함) 길이 + 8초 뒤엔 멈춤
-  c.hard = setTimeout(() => clip === c && endClip(), ms + 8000)
-  const go = () => {
-    if (my !== token || clip !== c) return
+  load(c.url)
+  const me = { ...c, key, end: c.at + c.ms, going: false, timer: null, wall: null }
+  clip = me
+  // ② 구간이 끝나는 시각(+0.5초)엔 무슨 일이 있어도 멈춤 (소리가 안 나기 시작해도)
+  me.wall = setTimeout(() => clip === me && endClip(), me.end + 500 - t)
+  me.go = () => {
+    if (clip !== me || me.going) return
+    clearTimeout(me.timer)
+    const pos = posOf(me)
+    if (pos > lastPos(me)) return endClip()
+    me.going = true
     try {
-      a.currentTime = from
+      if (Math.abs(a.currentTime - pos) > 0.05) a.currentTime = pos
     } catch {}
     hideTitle()
     let pr
@@ -145,42 +213,44 @@ export function mqPlay(url, from, ms, onBlocked) {
       pr = a.play()
     } catch (e) {
       endClip()
-      onBlocked?.(e)
+      me.onBlocked?.(e)
       return
     }
-    // 이미 틀고 있던 소리면 playing 이 다시 안 옴 → 약속이 끝나면 타이머. 약속이 실패해도 ①·③ 이 지켜 줌
-    // 진짜로 막힌 것(NotAllowed 등)만 버튼, 우리가 끊은 것(AbortError)은 조용히
-    if (pr && pr.then)
-      pr.then(c.arm, (e) => {
-        if (clip !== c || e?.name === 'AbortError') return
-        endClip()
-        onBlocked?.(e)
-      })
-    else c.arm()
+    // 진짜로 막힌 것(NotAllowed 등)만 버튼, 우리가 끊은 것(AbortError)은 조용히. 약속이 안 끝나도 ①·② 가 멈춰 줌
+    if (pr?.then)
+      pr.then(
+        () => {
+          if (clip !== me) return
+          markUnlocked()
+          resync()
+        },
+        (e) => {
+          if (clip !== me || e?.name === 'AbortError') return
+          endClip()
+          me.onBlocked?.(e)
+        }
+      )
   }
-  if (a.readyState >= 1) go()
-  else {
-    const h = () => {
-      a.removeEventListener('loadedmetadata', h)
-      go()
-    }
-    a.addEventListener('loadedmetadata', h)
-    // 3초 안에 준비가 안 되면 그냥 틀어 봄
-    setTimeout(() => {
-      if (my === token && a.readyState < 1) {
-        a.removeEventListener('loadedmetadata', h)
-        go()
-      }
-    }, 3000)
-  }
+  if (c.at > t) me.timer = setTimeout(me.go, c.at - t)
+  else me.go()
 }
-// 쉬는 동안 다음 노래를 미리 받아 둠 (틀고 있으면 안 건드림)
+// url 의 from 초 지점이 서버 시각 at 에 들리게 ms 동안 (모든 폰이 같이). now = 서버 시각 함수
+// 같은 클립을 여러 번 불러도 한 번만 틂. 막히면 onBlocked()
+export function mqPlayAt(url, from, at, ms, now, onBlocked) {
+  playClip({ url, from, at, ms, now: now || Date.now, onBlocked })
+}
+// 지금 바로 from 초부터 ms 동안 (확인 화면 ▶)
+export function mqPlay(url, from, ms, onBlocked) {
+  playClip({ url, from, at: Date.now(), ms, now: Date.now, onBlocked })
+}
+// 쉬는 동안 다음 노래를 미리 받아 둠 (틀고 있거나 틀 예정인 다른 노래가 있으면 안 건드림)
 export function mqPrime(url) {
   const a = mqAudio()
-  if (!a || !url || clip || (!a.paused && !a.ended)) return
+  if (!a || !url || (clip && (clip.going || clip.url !== url))) return
+  if (!a.paused && !a.ended) return
   load(url)
 }
 export function mqStop() {
-  token++
+  want = null
   endClip()
 }

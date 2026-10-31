@@ -4457,6 +4457,25 @@ textarea {
   font-weight: 800;
   color: var(--text-2);
 }
+/* 10/31 모든 폰에서 노래: 이 폰 소리 켜기 (아이폰은 한 번 눌러야 소리가 남) */
+.mq-unlock {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  min-height: 44px;
+}
+.mq-on {
+  display: block;
+  margin-top: 6px;
+  color: #6be39a;
+}
+.ai-sub .mq-tap {
+  display: block;
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffd166;
+}
 .mq-err {
   margin-top: 8px;
   padding: 8px 10px;
@@ -4575,7 +4594,7 @@ textarea {
   color: rgba(255, 255, 255, 0.6);
   min-height: 18px;
 }
-/* 10/31 노래 정답 공개: 모두 확인할 때까지 노래 → 확인 버튼 */
+/* 10/31 노래 정답 공개: 걸린 사람이 확인을 누를 때까지 정답 곡 → 확인 버튼 (다른 폰은 기다림 문구) */
 .mq-ok {
   width: 100%;
   min-height: 52px;
@@ -4583,11 +4602,13 @@ textarea {
   font-size: 17px;
   font-weight: 800;
 }
-.mq-ok.done {
-  opacity: 0.75;
-  color: #fff;
-  background: rgba(76, 201, 240, 0.12);
-  border: 1.5px solid rgba(76, 201, 240, 0.6);
+.mq-wait.mq-next-wait {
+  padding: 12px 10px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.06);
 }
 .mq-win {
   display: flex;

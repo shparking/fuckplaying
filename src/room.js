@@ -23,7 +23,7 @@ import { WORLD_W, WORLD_H, WORLD_LAT, toWorldXY, worldToLatLon } from './game/wo
 import { pickSongWord } from './game/songwords'
 import { pickBombTopic } from './game/bomb'
 import { SYNC_QUESTIONS, makeColorRounds } from './game/teamgames'
-import { TITLES, SONG_GAME, MOVIE_GAME, isMqKind, MQ_ROUNDS, MQ_MIN_ROUNDS, MQ_STAGES, MQ_STAGE_TIMEOUT_MS, MQ_HOLD_MAX_MS, mqPhase, mqN, mqRounds, mqWinner, mqItem, isTitleAnswer, pickSongCandidates, pickMovieRounds, pickChartSongs } from './game/mediaquiz'
+import { TITLES, SONG_GAME, MOVIE_GAME, isMqKind, MQ_ROUNDS, MQ_MIN_ROUNDS, MQ_STAGES, MQ_STAGE_TIMEOUT_MS, mqPhase, mqN, mqRounds, mqWinner, mqItem, mqClip, isTitleAnswer, pickSongCandidates, pickMovieRounds, pickChartSongs } from './game/mediaquiz'
 import { drawMission, MISSION_CHANCE, MISSION_MIN_GAP } from './game/missions'
 import { autoEmoji } from './game/emoji'
 
@@ -2055,7 +2055,8 @@ function fakeWorldAnswers(room, rounds) {
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요' 누르면 3초 → 5초(+초성), 가장 빨리 맞힌 사람이 정답 (그 팀 +1).
 // 10/31 사용자: 노래·영화를 다른 게임으로 (드라마는 지움, 판 3번 노래 · 5번 영화). 영화는 이모지 6~8개 → + 연도·주연 → + 초성. 마지막 단계에서도 모두 모르면 정답 공개.
 // 노래 3곡 중 2곡은 지금 Apple Music 한국 차트(Top 100), 1곡은 목록에서 (10/31 사용자: 문제 5 → 3).
-// 진행(단계 넘기기·문제 끝내기)은 걸린 사람 폰(mqDrive, 연결 끊기면 방장)이 하고, 소리도 그 폰에서만 남. 상태 모양은 game/mediaquiz.js 위 설명
+// 진행(단계 넘기기·문제 끝내기·정답 공개 뒤 다음 곡)은 걸린 사람 폰(mqDrive·mqNext, 연결 끊기면 방장)이 하고,
+// 소리는 모든 폰에서 같은 시각에 (10/31 사용자 '노래는 참가자 모든 폰에서', game/mqaudio.js). 상태 모양은 game/mediaquiz.js 위 설명
 export { mqPhase, mqN, mqWinner }
 // '잘 모르겠어요'를 눌러야 하는 사람: 팀에 있고 연결된 사람 전부 (혼자 연습은 연습봇까지)
 export function mqVoters(room) {
@@ -2069,12 +2070,8 @@ export function mqPassInfo(room, p, q, st) {
   const voters = mqVoters(room)
   return { voters, done: voters.filter((pid) => pressed[pid]), left: voters.filter((pid) => !pressed[pid]) }
 }
-// 노래 맞히기 정답 공개: '확인'을 누른 사람 / 안 누른 사람 (모두 누르면 다음 곡)
-export function mqOkInfo(room, p, q) {
-  const pressed = p?.ok?.[`r${q}`] || {}
-  const voters = mqVoters(room)
-  return { voters, done: voters.filter((pid) => pressed[pid]), left: voters.filter((pid) => !pressed[pid]) }
-}
+// 진행·'확인 → 다음 곡'을 맡는 사람: 걸린 사람 (연결 끊기면 방장), 혼자 연습은 나
+export const mqDriver = (room, p) => (SOLO ? myId() : room?.players?.[p?.playerId]?.online !== false ? p?.playerId : room?.hostId)
 // 팀별 맞힌 문제 수 → 적은 팀이 마심 (동점이면 룰렛). per: 사람별 맞힌 수
 export function mqResult(room, p) {
   const n = mqN(p)
@@ -2119,16 +2116,15 @@ export async function mqPass(code, room, q, st) {
   if (p.pass?.[`r${q}`]?.[`s${st}`]?.[id]) return
   await roomUpdate(code, { [`pending/pass/r${q}/s${st}/${id}`]: true })
 }
-// 정답 공개 때 '확인' (노래 맞히기 — 모두 누르면 다음 곡)
-export async function mqConfirm(code, room, q) {
+// 정답 공개 때 '✅ 확인' → 다음 곡 (마지막이면 결과). 노래 맞히기: 10/31 사용자 '자동으로 넘어가지 말고 말에 걸린 사람이 확인을 누르면'
+export async function mqNext(code, room, q) {
   const p = room.pending
   if (!p || !isMqKind(p.kind) || p.stage !== 'play' || !p.hold) return
-  const ph = mqPhase(p, serverNow())
-  if (ph.phase !== 'gap' || ph.q !== q) return
-  const id = myId()
-  if (!SOLO && !room.players?.[id]?.name) return
-  if (p.ok?.[`r${q}`]?.[id]) return
-  await roomUpdate(code, { [`pending/ok/r${q}/${id}`]: true })
+  const nowMs = serverNow()
+  const ph = mqPhase(p, nowMs)
+  if (ph.phase !== 'gap' || ph.q !== q || mqDriver(room, p) !== myId()) return
+  if (!mqOnce(`next:${p.mq}:${q}`, 2000)) return
+  await roomUpdate(code, { [`pending/rs/r${q}/next`]: nowMs })
 }
 // 같은 쓰기를 잠깐 사이에 두 번 안 하게 (화면이 0.1초마다 진행을 확인해서)
 const mqSent = new Map()
@@ -2162,7 +2158,7 @@ function mqBotUpdates(room, p, ph, nowMs, me) {
     const knows = !onlyPass && r() < [0.15, 0.35, 0.6][ph.st]
     const delay = onlyPass ? 600 + r() * 900 : 1800 + r() * 4200
     const wrongFirst = !onlyPass && r() < 0.35
-    if (nowMs - ph.stAt < delay) return
+    if (nowMs - (mqClip(p, ph)?.at ?? ph.stAt) < delay) return // 노래는 소리가 나온 뒤부터 셈
     if (knows) {
       if (!p.answers?.[`r${q}`]?.[pid] && mqOnce(`bot-a:${p.mq}:${q}:${pid}`)) out[`pending/answers/r${q}/${pid}`] = { at: nowMs, st: ph.st }
       return
@@ -2177,33 +2173,12 @@ function mqBotUpdates(room, p, ph, nowMs, me) {
   return out
 }
 // 진행 (걸린 사람 폰이 0.1초마다): 누가 맞히면 문제 끝 → 모두 '잘 모르겠어요'(또는 25초)면 다음 단계, 마지막 단계면 문제 끝
-// 노래 맞히기(hold) 정답 공개: 모두 '확인'(또는 30초)이면 다음 곡 — 혼자 연습이면 연습봇도 확인
+// 노래 맞히기(hold) 정답 공개 뒤에는 걸린 사람이 '✅ 확인'을 누를 때만 다음 곡 (mqNext, 자동으로 안 넘어감)
 export async function mqDrive(code, room) {
   const p = room.pending
   if (!p || !isMqKind(p.kind) || p.stage !== 'play') return
   const nowMs = serverNow()
   const ph = mqPhase(p, nowMs)
-  if (ph.phase === 'gap' && ph.hold) {
-    const q = ph.q
-    const info = mqOkInfo(room, p, q)
-    if ((info.voters.length && !info.left.length) || nowMs - ph.end >= MQ_HOLD_MAX_MS) {
-      if (mqOnce(`next:${p.mq}:${q}`)) await roomUpdate(code, { [`pending/rs/r${q}/next`]: nowMs })
-      return
-    }
-    if (SOLO) {
-      // 연습봇: 1.5~4초 뒤 확인 (&mqbot=pass 면 0.6~1.5초)
-      const fast = DEMO && new URLSearchParams(window.location.search).get('mqbot') === 'pass'
-      const upd = {}
-      for (const pid of info.left) {
-        if (pid === myId()) continue
-        const r = mqRand(`${p.mq}|ok|${q}|${pid}`)
-        const delay = fast ? 600 + r() * 900 : 1500 + r() * 2500
-        if (nowMs - ph.end >= delay && mqOnce(`bot-ok:${p.mq}:${q}:${pid}`)) upd[`pending/ok/r${q}/${pid}`] = true
-      }
-      if (Object.keys(upd).length) await roomUpdate(code, upd)
-    }
-    return
-  }
   if (ph.phase !== 'q') return
   const q = ph.q
   const base = `pending/rs/r${q}`
@@ -2392,8 +2367,7 @@ async function resolveTeamGame(code, room, p, action, target) {
         'pending/rounds': prep.rounds,
         'pending/n': prep.rounds.length,
         'pending/note': prep.note, // 'nochart': 차트를 못 불러와서 목록 곡만
-        'pending/hold': song ? true : null, // 노래: 정답 공개 때 모두 '확인'할 때까지 노래 (10/31)
-        'pending/ok': null,
+        'pending/hold': song ? true : null, // 노래: 정답 공개 뒤 걸린 사람이 '확인'을 누를 때까지 정답 곡 (10/31)
         'pending/rs': null,
         'pending/answers': null,
         'pending/pass': null,

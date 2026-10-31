@@ -78,11 +78,11 @@ import {
   mqPassInfo,
   mqDrive,
   mqResult,
-  mqConfirm,
-  mqOkInfo,
+  mqNext,
+  mqDriver,
 } from '../room'
-import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_HOLD_MAX_MS, MQ_ROUNDS, MQ_CHART_PICK, mqRounds, mqItem, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
-import { mqUnlock, mqPlay, mqPrime, mqStop } from '../game/mqaudio'
+import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_ROUNDS, MQ_CHART_PICK, mqRounds, mqItem, mqClip, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
+import { mqUnlock, mqUnlocked, mqOnUnlock, mqPlayAt, mqPrime, mqStop } from '../game/mqaudio'
 import { WORLD_PLACES, worldPoints } from '../game/worldplaces'
 import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
 
@@ -2058,8 +2058,8 @@ export function WorldPinPanel({ room, pending: p, me, ctl, code }) {
 // 10/31 사용자: 노래·영화는 다른 게임 (드라마는 지움). 판: 3번 노래 맞히기 · 5번 이모지 영화 맞히기. 노래 5곡 중 4곡은 지금 차트(Apple Music 한국 Top 100),
 // 영화는 이모지 6~8개 → + 연도·주연 → + 초성 (사진 안 씀).
 // 제목을 써서 가장 먼저 맞힌 사람이 정답 (그 팀 +1, 바로 공개). 맞힌 문제가 적은 팀이 마심.
-// 진행·소리는 한 폰에서만: 걸린 사람 (연결 끊기면 방장)
-const mqDj = (room, p) => (SOLO ? myId() : room.players?.[p.playerId]?.online !== false ? p.playerId : room.hostId)
+// 진행(단계·정답 공개 뒤 '✅ 확인 → 다음 곡')은 걸린 사람 폰 (연결 끊기면 방장) = mqDriver
+// 소리는 모든 폰에서 같은 시각에 (10/31 사용자 '노래는 참가자 모든 폰에서') — 아이폰은 한 번 눌러야 소리가 나서 '이 폰 소리 켜기'
 const MQ_SRC = { deezer: 'Deezer', apple: 'Apple Music' }
 const mqStageName = (k, st) => (MQ_STAGE_NAMES[k] || MQ_STAGE_NAMES.e)[st]
 function MqWave({ on }) {
@@ -2156,18 +2156,19 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
   const title = p.title || info.title
   const rounds = mqRounds(p)
   const n = mqN(p)
-  const dj = mqDj(room, p)
-  const isDj = live && dj === me
-  const djName = room.players[dj]?.name || '걸린 사람'
+  const driver = mqDriver(room, p)
+  const isDriver = live && driver === me
+  const driverName = room.players[driver]?.name || '걸린 사람'
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [blocked, setBlocked] = useState(false)
+  const [blocked, setBlocked] = useState(false) // 이 폰 소리가 막힘 → '소리가 안 나면 눌러 주세요'
+  const [soundOn, setSoundOn] = useState(mqUnlocked()) // 이 폰에서 소리가 난 적 있음
+  const [nexted, setNexted] = useState({}) // '✅ 확인' 누른 문제 (서버 반영 전에도 바로)
   const [val, setVal] = useState('')
   const [wrong, setWrong] = useState({}) // 문제별 내 마지막 오답
   const [late, setLate] = useState({}) // 문제별: 맞혔는데 다른 사람이 먼저
   const [shake, setShake] = useState(false) // 틀리면 입력창 흔들기 (입력창은 그대로 둬서 키보드가 안 닫힘)
   const [passed, setPassed] = useState({}) // 'q:단계' → 눌렀음 (서버 반영 전에도 바로)
-  const [oked, setOked] = useState({}) // 정답 공개 때 '확인' 누른 문제 (노래, 서버 반영 전에도 바로)
   const qRef = useRef(null)
   const sending = useRef(false)
   const shakeT = useRef(null)
@@ -2184,13 +2185,16 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       buzz(50)
     }
   }, [ph.phase, ph.q])
-  // 진행: 걸린 사람 폰이 0.1초마다 (누가 맞히면 공개, 모두 '잘 모르겠어요'면 다음 단계, 노래 공개 때 모두 '확인'이면 다음 곡, 혼자 연습이면 연습봇도)
+  // 진행: 걸린 사람 폰이 0.1초마다 (누가 맞히면 공개, 모두 '잘 모르겠어요'면 다음 단계, 혼자 연습이면 연습봇도). 정답 공개 뒤 다음 곡은 '✅ 확인'으로만
   useEffect(() => {
-    if (isDj && (ph.phase === 'q' || (ph.phase === 'gap' && ph.hold))) mqDrive(code, room)
-  }, [isDj, now])
-  // 소리 (노래만): 걸린 사람 폰만 — 단계가 바뀔 때마다 처음부터 1초·3초·5초, 정답 공개 때는 모두 '확인'할 때까지 (10/31). 쉬는 동안 다음 노래를 미리 받아 둠
+    if (isDriver && ph.phase === 'q') mqDrive(code, room)
+  }, [isDriver, now])
+  // 소리 (노래만): 모든 폰이 같은 서버 시각에 같은 곳을 (mqClip) — 단계마다 처음부터 1·3·5초, 정답 공개 땐 정답 곡 30초
+  // 3·2·1 동안 첫 곡을, 정답 곡이 끝나면 다음 곡을 미리 받아 둠
+  const clip = song && live ? mqClip(p, ph) : null
+  const clipKey = clip ? `${clip.url}|${clip.at}|${clip.ms}` : ''
   useEffect(() => {
-    if (!isDj || !song) return
+    if (!song || !live) return
     const nextSong = (from) => rounds.slice(from).find((x) => x?.k === 'a')?.u
     if (ph.phase === 'count') {
       const u = nextSong(0)
@@ -2198,25 +2202,26 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       return
     }
     if (ph.phase === 'final') return mqStop()
-    if (ph.phase !== 'q' && ph.phase !== 'gap') return
-    if (r?.k === 'a') {
-      const blockedNow = () => setBlocked(true) // 브라우저가 소리를 막거나 화면을 꺼서 끊기면 '소리 켜기' 버튼
-      if (ph.phase === 'q') {
-        // 늦게 들어온 폰(다시 연결 등)은 단계가 바뀌고 2.5초 안일 때만 틈
-        if (serverNow() - ph.stAt < 2500) {
-          setBlocked(false)
-          mqPlay(r.u, MQ_CLIP_FROM, MQ_CLIP_MS[ph.st], blockedNow)
-        }
-      } else {
-        setBlocked(false)
-        mqPlay(r.u, MQ_CLIP_FROM, ph.hold ? MQ_HOLD_MAX_MS : MQ_REVEAL_CLIP_MS, blockedNow)
+    if (!clip) return
+    mqPlayAt(clip.url, clip.from, clip.at, clip.ms, serverNow, () => setBlocked(true))
+    if (ph.phase === 'gap') {
+      const u = nextSong(q + 1)
+      if (u) {
+        const t = setTimeout(() => mqPrime(u), Math.max(0, clip.at + clip.ms - serverNow()) + 300)
+        return () => clearTimeout(t)
       }
-      return
     }
-    const u = nextSong(q + 1)
-    if (u) mqPrime(u)
-  }, [isDj, ph.phase, ph.q, st])
+  }, [song, live, ph.phase, clipKey])
   useEffect(() => () => mqStop(), [])
+  // 이 폰 소리 켜기: 소리가 한 번 나면 버튼 숨김. 그 전엔 화면 어디를 눌러도 켜 봄 (아이폰은 사람이 눌러야 소리가 남)
+  useEffect(() => mqOnUnlock(() => (setSoundOn(true), setBlocked(false))), [])
+  useEffect(() => {
+    if (!song || soundOn) return
+    const h = () => mqUnlock()
+    const evs = ['click', 'touchend', 'keydown']
+    evs.forEach((e) => document.addEventListener(e, h, true))
+    return () => evs.forEach((e) => document.removeEventListener(e, h, true))
+  }, [song, soundOn])
 
   const start = async () => {
     if (busy) return
@@ -2256,7 +2261,19 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
                 </span>
               )}
             </div>
-            {song && <div className="mq-dj">🔊 소리는 {djName} 폰에서 나와요 — 소리를 키워 주세요</div>}
+            {song && (
+              <div className="mq-dj">
+                🔊 노래는 <b>모든 폰</b>에서 같이 나와요 — 소리를 키워 주세요
+                {!ctl &&
+                  (soundOn ? (
+                    <span className="mq-on">✅ 이 폰 소리 켜짐</span>
+                  ) : (
+                    <button className="btn btn-sm btn-primary mq-unlock" onClick={() => mqUnlock()}>
+                      🔊 이 폰 소리 켜기
+                    </button>
+                  ))}
+              </div>
+            )}
             {err && <div className="mq-err">{err}</div>}
             {song && <div className="mq-credit">{MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 지금 Apple Music 한국 차트 · 미리듣기 Deezer · Apple Music</div>}
           </>
@@ -2264,7 +2281,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
         rules={
           song ? (
             <>
-              🎵 {djName} 폰에서 노래 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. {MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 <b>🔥 지금 차트</b> 곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 정답 공개 때는 <b>모두 ✅ 확인</b>을 누를 때까지 그 곡을 들려줘요. 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
+              🎵 <b>모든 폰</b>에서 노래 미리듣기를 <b>처음부터 1초</b> 같이 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. {MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 <b>🔥 지금 차트</b> 곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 정답 공개 때는 그 곡을 들려주고, <b>{driverName}</b>이(가) <b>✅ 확인</b>을 누르면 다음 곡으로 넘어가요 (자동으로 안 넘어가요). 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
             </>
           ) : (
             <>
@@ -2275,7 +2292,23 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       />
     )
   if (p.stage === 'roulette') return <TeamRoulette room={room} p={p} ctl={ctl} code={code} emoji={emoji} title={title} />
-  if (ph.phase === 'count') return <CountScreen left={ph.left} emoji={emoji} sub={song ? (p.note === 'nochart' ? '차트를 못 불러와서 이번엔 목록 곡만!' : '소리 키우고, 1초 듣고 맞혀요!') : '이모지 보고 영화 제목을 맞혀요!'} />
+  if (ph.phase === 'count')
+    return (
+      <CountScreen
+        left={ph.left}
+        emoji={emoji}
+        sub={
+          song ? (
+            <>
+              {p.note === 'nochart' ? '차트를 못 불러와서 이번엔 목록 곡만!' : '소리 키우고, 1초 듣고 맞혀요!'}
+              {!soundOn && <span className="mq-tap">🔊 화면을 한 번 눌러 주세요 (이 폰 소리 켜기)</span>}
+            </>
+          ) : (
+            '이모지 보고 영화 제목을 맞혀요!'
+          )
+        }
+      />
+    )
   const res = mqResult(room, p)
   const name = (pid) => room.players[pid]?.name || ''
   if ((ph.phase === 'q' || ph.phase === 'gap') && r) {
@@ -2285,7 +2318,9 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
     const pi = asking ? mqPassInfo(room, p, q, st) : null
     const iPassed = asking && (pi.done.includes(me) || passed[`${q}:${st}`])
     const waitingFor = asking ? pi.left.filter((pid) => !(pid === me && iPassed)) : []
-    const clipOn = asking ? now - ph.stAt < MQ_CLIP_MS[st] : now - ph.end < (ph.hold ? MQ_HOLD_MAX_MS : MQ_REVEAL_CLIP_MS)
+    // 소리 구간 (모든 폰 같은 시각): 곧 / 나오는 중 / 끝
+    const clipSoon = !!clip && now < clip.at
+    const clipOn = !!clip && now >= clip.at && now < clip.at + clip.ms
     const autoIn = asking ? Math.ceil((MQ_STAGE_TIMEOUT_MS - (now - ph.stAt)) / 1000) : 0
     const nextName = st < MQ_STAGES - 1 ? mqStageName(r.k, st + 1) : '정답 공개'
     const submit = async (e) => {
@@ -2308,8 +2343,9 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
         sending.current = false
       }
     }
+    // 노래는 소리가 나오기 시작한 뒤에 '잘 모르겠어요' (듣기도 전에 다 같이 눌러서 그 단계 소리가 안 나오는 일 없게)
     const pass = () => {
-      if (!asking || iPassed || w) return
+      if (!asking || iPassed || w || clipSoon) return
       setPassed((x) => ({ ...x, [`${q}:${st}`]: true }))
       buzz(30)
       mqPass(code, room, q, st)
@@ -2319,15 +2355,14 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       .slice(0, 5)
     const winTeam = w ? teamOf(room, w.pid) : null
     const latin = item && !/[\p{Script=Hangul}]/u.test(item.t) // 영어 제목이면 영어로 쓰라고
-    // 노래 정답 공개: 모두 '확인'할 때까지 (안 누르는 사람이 있어도 30초 지나면 다음 곡)
-    const oi = !asking && ph.hold ? mqOkInfo(room, p, q) : null
-    const iOk = !!oi && (oi.done.includes(me) || !!oked[q])
-    const okLeft = oi ? oi.left.filter((pid) => !(pid === me && iOk)) : []
-    const confirm = () => {
-      if (!oi || iOk) return
-      setOked((x) => ({ ...x, [q]: true }))
+    // 노래 정답 공개 → 걸린 사람이 '✅ 확인'을 누를 때만 다음 곡 (10/31 사용자: 자동으로 안 넘어감). 안 넘어가면 3초 뒤 다시 누를 수 있게
+    const holdNext = !asking && !!ph.hold
+    const nextBusy = now - (nexted[q] || 0) < 3000
+    const goNext = () => {
+      if (!isDriver || nextBusy) return
+      setNexted((x) => ({ ...x, [q]: serverNow() }))
       buzz(30)
-      mqConfirm(code, room, q)
+      mqNext(code, room, q)
     }
     return (
       <div className="ai-overlay tg mq">
@@ -2348,14 +2383,14 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
           ) : (
             <div className="mq-sound">
               <MqWave on={clipOn} />
-              <div className="mq-sound-text">{asking ? (clipOn ? `🔊 ${MQ_CLIP_MS[st] / 1000}초 듣는 중…` : `🎧 ${MQ_CLIP_MS[st] / 1000}초 들었어요`) : clipOn ? '🎵 정답 곡 듣는 중' : ''}</div>
-              {!isDj && asking && <div className="mq-sound-sub">소리는 {djName} 폰에서 나와요</div>}
-              {isDj && blocked && (
+              <div className="mq-sound-text">{asking ? (clipSoon ? '🎧 곧 나와요…' : clipOn ? `🔊 ${MQ_CLIP_MS[st] / 1000}초 듣는 중…` : `🎧 ${MQ_CLIP_MS[st] / 1000}초 들었어요`) : clipOn ? '🎵 정답 곡 듣는 중' : ''}</div>
+              {/* 이 폰 소리가 막히면 (아이폰은 한 번 눌러야 소리가 남): 누르면 다른 폰과 같은 위치부터 */}
+              {blocked && (
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={() => {
                     setBlocked(false)
-                    mqPlay(r.u, MQ_CLIP_FROM, asking ? MQ_CLIP_MS[st] : ph.hold ? MQ_HOLD_MAX_MS : MQ_REVEAL_CLIP_MS, () => setBlocked(true))
+                    mqUnlock()
                   }}
                 >
                   🔊 소리가 안 나면 눌러 주세요
@@ -2404,7 +2439,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
                 </button>
               </form>
               {wrong[q] && <div className="mq-fb no">땡! "{wrong[q]}" 아니에요 — 다시!</div>}
-              <button className={`btn mq-pass ${iPassed ? 'done' : ''}`} disabled={iPassed} onClick={pass} onMouseDown={(e) => e.preventDefault()}>
+              <button className={`btn mq-pass ${iPassed ? 'done' : ''}`} disabled={iPassed || clipSoon} onClick={pass} onMouseDown={(e) => e.preventDefault()}>
                 {iPassed ? `🙏 다른 사람 기다리는 중 (${pi.voters.length - waitingFor.length}/${pi.voters.length})` : `🤷 잘 모르겠어요 → ${nextName}`}
               </button>
               <div className="mq-wait">
@@ -2441,17 +2476,16 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
               ))}
             </div>
           )}
-          {oi && (
-            <>
-              <button className={`btn mq-ok ${iOk ? 'done' : 'btn-primary'}`} disabled={iOk} onClick={confirm}>
-                {iOk ? `🙏 다른 사람 기다리는 중 (${oi.voters.length - okLeft.length}/${oi.voters.length})` : q + 1 < n ? '✅ 확인 → 다음 곡' : '✅ 확인 → 결과 보기'}
+          {holdNext &&
+            (isDriver ? (
+              <button className="btn btn-primary mq-ok" disabled={nextBusy} onClick={goNext}>
+                {q + 1 < n ? '✅ 확인 → 다음 곡' : '✅ 확인 → 결과 보기'}
               </button>
-              <div className="mq-wait">
-                {okLeft.length > 0 && `${okLeft.map(name).join(' · ')} 안 누름`}
-                {ph.left <= 10000 && `${okLeft.length ? ' · ' : ''}${Math.max(0, Math.ceil(ph.left / 1000))}초 뒤 자동으로 넘어가요`}
+            ) : (
+              <div className="mq-wait mq-next-wait">
+                ⏳ {driverName}이(가) 확인하면 {q + 1 < n ? '다음 곡으로' : '결과로'} 넘어가요
               </div>
-            </>
-          )}
+            ))}
           {!asking && (
             <div className="mq-credit">
               {r.l ? (
@@ -2461,7 +2495,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
               ) : (
                 MQ_SRC[r.s] || ''
               )}
-              {!oi && `${MQ_SRC[r.s] || r.l ? ' · ' : ''}${q + 1 < n ? '다음 문제…' : '결과 공개!'}`}
+              {!holdNext && `${MQ_SRC[r.s] || r.l ? ' · ' : ''}${q + 1 < n ? '다음 문제…' : '결과 공개!'}`}
             </div>
           )}
         </div>
