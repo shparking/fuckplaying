@@ -70,7 +70,7 @@ export default function MediaCheck() {
       <div className="card card-pad">
         <h2>🎵 미리듣기 확인</h2>
         <div className="muted">
-          '노래'는 목록 곡마다 Deezer → Apple 미리듣기를 찾아봐요. '🔥 지금 차트'는 게임에 섞이는 Apple Music 한국 Top 100 (노래 5곡 중 4곡), '영화'는 이모지 문제예요. ▶ 를 누르면 처음부터 3초 들어 봐요.
+          '노래'는 목록 곡마다 Deezer → Apple 미리듣기를 찾아봐요. '🔥 지금 차트'는 게임에 섞이는 Apple Music 한국 Top 100 (노래 3곡 중 2곡), '영화'는 이모지 문제예요. ▶ 를 누르면 처음부터 3초 들어 봐요.
         </div>
         <div className="mc-ping">{!ping ? '서버 함수 확인 중…' : ping.down ? '❌ 서버 함수(/api/media)가 안 돼요 — 배포가 끝났는지 확인해 주세요' : '✅ 서버 함수 OK'}</div>
         <div className="mc-bar">

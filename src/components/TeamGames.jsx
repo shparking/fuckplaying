@@ -79,7 +79,7 @@ import {
   mqDrive,
   mqResult,
 } from '../room'
-import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_CHART_PICK, mqRounds, mqItem, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
+import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_ROUNDS, MQ_CHART_PICK, mqRounds, mqItem, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
 import { mqUnlock, mqPlay, mqPrime, mqStop } from '../game/mqaudio'
 import { WORLD_PLACES, worldPoints } from '../game/worldplaces'
 import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
@@ -831,7 +831,7 @@ export function ColorTrapPanel({ room, pending: p, me, ctl, code }) {
     const server = colorAnswerOf(p, q, me)
     const lp = local[q]
     const mine = server || (lp ? { c: lp.c, ok: lp.c === r.i, pts: colorPoints(lp.c === r.i, lp.ms) } : null)
-    // 내 점수 (지금 문제까지): 팀 점수는 5문제가 끝나야 공개
+    // 내 점수 (지금 문제까지): 팀 점수는 문제가 다 끝나야 공개
     const myTotal = Array.from({ length: q }, (_, k) => colorAnswerOf(p, k, me)?.pts || 0).reduce((a, b) => a + b, 0) + (mine?.pts || 0)
     const asking = ph.phase === 'q'
     const myTeam = teamOf(room, me)
@@ -1240,7 +1240,7 @@ const pointRows = (room, r) =>
   }))
 
 // ---------- 얼마게요 (편의점 가격) ----------
-// 5문제 × 15초, 숫자 키패드로 가격 입력 → 확인. 정답과 차이(%)가 작을수록 점수 (20% = 500점), 팀 점수 낮은 팀이 마심
+// 3문제 × 15초 (10/31 5 → 3), 숫자 키패드로 가격 입력 → 확인. 정답과 차이(%)가 작을수록 점수 (20% = 500점), 팀 점수 낮은 팀이 마심
 export function PricePanel({ room, pending: p, me, ctl, code }) {
   const live = p.stage === 'play'
   const now = useNow(live, 100)
@@ -2209,13 +2209,13 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
             </div>
             {song && <div className="mq-dj">🔊 소리는 {djName} 폰에서 나와요 — 소리를 키워 주세요</div>}
             {err && <div className="mq-err">{err}</div>}
-            {song && <div className="mq-credit">5곡 중 {MQ_CHART_PICK}곡은 지금 Apple Music 한국 차트 · 미리듣기 Deezer · Apple Music</div>}
+            {song && <div className="mq-credit">{MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 지금 Apple Music 한국 차트 · 미리듣기 Deezer · Apple Music</div>}
           </>
         }
         rules={
           song ? (
             <>
-              🎵 {djName} 폰에서 노래 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. 5곡 중 {MQ_CHART_PICK}곡은 <b>🔥 지금 차트</b> 곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
+              🎵 {djName} 폰에서 노래 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. {MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 <b>🔥 지금 차트</b> 곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
             </>
           ) : (
             <>

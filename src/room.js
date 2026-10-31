@@ -1526,8 +1526,8 @@ export const CT_WRONG = -300
 // 완벽한 도형 그리기: 15초 안에 손가락으로 원·정n각형 한 번 (0~100점), 팀 평균이 낮은 팀이 마심
 export const CIRCLE_MS = 15000
 export const CIRCLE_SETTLE_MS = 1200 // 시간이 끝나고 마지막 기록이 다 모일 때까지
-// 얼마게요: 편의점 가격 5문제 × 15초 (숫자 키패드), 정답 공개 3.5초
-export const PG_ROUNDS = 5
+// 얼마게요: 편의점 가격 3문제 × 15초 (숫자 키패드, 10/31 사용자: 5 → 3), 정답 공개 3.5초
+export const PG_ROUNDS = 3
 export const PG_ANSWER_MS = 15000
 export const PG_GAP_MS = 3500
 // 팀 시간 합치기: 각자 한 번 꾹, 팀 합계가 30초에 가장 가까운 팀 승 (45초 안에)
@@ -2054,7 +2054,7 @@ function fakeWorldAnswers(room, rounds) {
 // --- 노래 맞히기 (kind 'songQuiz') · 이모지 영화 맞히기 (kind 'movieQuiz') — 주관식, 진행 방식은 같음 ---
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요' 누르면 3초 → 5초(+초성), 가장 빨리 맞힌 사람이 정답 (그 팀 +1).
 // 10/31 사용자: 노래·영화를 다른 게임으로 (드라마는 지움, 판 3번 노래 · 5번 영화). 영화는 이모지 6~8개 → + 연도·주연 → + 초성. 마지막 단계에서도 모두 모르면 정답 공개.
-// 노래 5곡 중 4곡은 지금 Apple Music 한국 차트(Top 100), 1곡은 목록에서.
+// 노래 3곡 중 2곡은 지금 Apple Music 한국 차트(Top 100), 1곡은 목록에서 (10/31 사용자: 문제 5 → 3).
 // 진행(단계 넘기기·문제 끝내기)은 걸린 사람 폰(mqDrive, 연결 끊기면 방장)이 하고, 소리도 그 폰에서만 남. 상태 모양은 game/mediaquiz.js 위 설명
 export { mqPhase, mqN, mqWinner }
 // '잘 모르겠어요'를 눌러야 하는 사람: 팀에 있고 연결된 사람 전부 (혼자 연습은 연습봇까지)
@@ -2210,8 +2210,8 @@ async function fetchChart() {
     clearTimeout(timer)
   }
 }
-// 노래 5곡: 지금 차트에서 4곡 + 목록에서 (차트를 못 불러오면 목록에서 다) — 순서는 섞음
-// 목록 후보 7곡은 차트와 같이 찾아 둠 (못 찾는 곡이 있어도 채우게)
+// 노래 3곡: 지금 차트에서 2곡 + 목록에서 (차트를 못 불러오면 목록에서 다) — 순서는 섞음
+// 목록 후보 5곡은 차트와 같이 찾아 둠 (못 찾는 곡이 있어도 채우게)
 async function prepareSongRounds(room) {
   const used = arr(room.usedTitles)
   const [chart, got] = await Promise.all([fetchChart(), Promise.all(pickSongCandidates(used).map(async (i) => [i, await fetchMedia(i)]))])
@@ -2225,7 +2225,7 @@ async function prepareSongRounds(room) {
   // 차트를 못 불러왔으면 (서버·인터넷 문제) 목록 곡만 — 화면에 안내
   return { rounds, note: chart.length ? null : 'nochart' }
 }
-// 영화 5문제 (이모지라 찾을 게 없음)
+// 영화 3문제 (이모지라 찾을 게 없음)
 function prepareMovieRounds(room) {
   return { rounds: pickMovieRounds(arr(room.usedTitles)).map((i) => ({ i, k: 'e' })), note: null }
 }

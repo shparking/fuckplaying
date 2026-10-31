@@ -1,6 +1,6 @@
 // 노래 맞히기 · 이모지 영화 맞히기 (팀 대결, 주관식) — 화면·서버 함수가 같이 쓰는 것 (브라우저 전용 코드 없음)
 // 10/30 사용자: 노래는 처음부터 1초 → 모두 '잘 모르겠어요'를 누르면 3초 → 5초(+초성 힌트), 가장 빨리 맞힌 사람이 정답.
-// 10/31 사용자: 노래·영화는 다른 게임으로 (드라마는 지움). 노래 5곡 중 4곡은 지금 Apple Music 한국 차트(Top 100)에서,
+// 10/31 사용자: 노래·영화는 다른 게임으로 (드라마는 지움). 노래 3곡 중 2곡은 지금 Apple Music 한국 차트(Top 100)에서,
 // 영화는 이모지 6~8개 → + 연도·주연 → + 초성 (사진 안 씀). 맞힌 사람 팀 +1, 맞힌 문제가 적은 팀이 마심
 import { TITLES } from './titles.js'
 export { TITLES }
@@ -17,9 +17,9 @@ export const MQ_CATS = {
 }
 
 // ---------- 진행 ----------
-export const MQ_ROUNDS = 5 // 한 게임 문제 수 (노래는 미리듣기를 못 찾으면 줄어듦)
-export const MQ_CHART_PICK = 4 // 노래 5곡 중 지금 차트에서 (10/31 사용자: 최근 곡을 더 많이), 나머지는 목록에서
-export const MQ_MIN_ROUNDS = 3 // 이보다 적게 찾으면 시작 안 함
+export const MQ_ROUNDS = 3 // 한 게임 문제 수 (10/31 사용자: 5 → 3, 노래는 미리듣기를 못 찾으면 줄어듦)
+export const MQ_CHART_PICK = 2 // 노래 3곡 중 지금 차트에서 (10/31 사용자: 최근 곡을 더 많이), 나머지는 목록에서
+export const MQ_MIN_ROUNDS = 2 // 이보다 적게 찾으면 시작 안 함
 export const MQ_STAGES = 3 // 노래 1초 · 3초 · 5초(+초성) / 영화 이모지 · +연도·주연 · +초성
 export const MQ_CLIP_MS = [1000, 3000, 5000] // 단계별로 들려주는 길이
 export const MQ_CLIP_FROM = 0 // 미리듣기 처음부터 (10/30 사용자)
@@ -172,17 +172,17 @@ function shuffled(list, rand) {
   }
   return a
 }
-// 노래 후보 (목록에서): 미리듣기를 못 찾는 곡이 있을 수 있어서 넉넉하게 7곡 (한 판 안에서 나온 건 빼고, 다 썼으면 처음부터)
+// 노래 후보 (목록에서): 미리듣기를 못 찾는 곡이 있을 수 있어서 넉넉하게 5곡 (차트를 못 불러오면 3곡 다 여기서) (한 판 안에서 나온 건 빼고, 다 썼으면 처음부터)
 const pool = (c, used, list) => {
   const u = new Set((used || []).map(Number))
   const all = list.map((x, i) => i).filter((i) => list[i] && !list[i].off && list[i].c === c)
   const fresh = all.filter((i) => !u.has(i))
   return fresh.length >= MQ_ROUNDS ? fresh : all
 }
-export function pickSongCandidates(used = [], rand = Math.random, n = 7, list = TITLES) {
+export function pickSongCandidates(used = [], rand = Math.random, n = 5, list = TITLES) {
   return shuffled(pool('song', used, list), rand).slice(0, n)
 }
-// 영화 5문제 (번호)
+// 영화 문제 (번호, 3문제)
 export function pickMovieRounds(used = [], rand = Math.random, n = MQ_ROUNDS, list = TITLES) {
   return shuffled(pool('movie', used, list).filter((i) => list[i].e), rand).slice(0, n)
 }
