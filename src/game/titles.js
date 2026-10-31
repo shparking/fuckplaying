@@ -17,6 +17,8 @@ const S = (t, by, s, en, a) => ({ c: 'song', t, by, s, ...(en ? { en } : {}), ..
 const O = (y, t, by, s, en, a) => ({ ...S(t, by, s, en, a), y })
 // 아주 최근 곡 (지금 차트를 못 불러오면 그 자리에 대신)
 const H = (t, by, s, en, a) => ({ ...S(t, by, s, en, a), hot: true })
+// 뺀 곡 (번호는 그대로 둬야 해서 지우지 않고 off)
+const off = (x) => ({ ...x, off: true })
 const M = (t, y, en, a) => ({ c: 'movie', t, y, ...(en ? { en } : {}), ...(a ? { a } : {}) })
 
 const IU = ['IU', '아이유']
@@ -322,44 +324,45 @@ export const TITLES = [
   H('에피소드', '이무진', ['Lee Mujin', '이무진'], 'Episode'),
 
   // ---------- 옛날 노래 (266~322, 10/31 사용자: 차트 곡은 최근 곡이니 90~2000년대 노래도 같이) ----------
+  // 10/31 사용자 '잘 몰라서' 24곡은 off (서태지와 아이들·젝스키스·god·핑클·S.E.S.·터보·김건모 핑계·박진영·전람회·크라잉넛·클론·룰라·조성모·DJ DOC·자우림·비·휘성·이승기·테이)
   // 노래 3곡 = 지금 차트 1 · 옛날 노래 1 (y 1990~2009, 앞쪽 목록의 2000년대 곡 포함) · 2010년대 이후 1
-  O(1992, '난 알아요', '서태지와 아이들', TAIJI, 'I Know'),
-  O(1993, '하여가', '서태지와 아이들', TAIJI, 'Anyhow Song'),
-  O(1995, 'Come Back Home', '서태지와 아이들', TAIJI, '', ['컴백홈']),
+  off(O(1992, '난 알아요', '서태지와 아이들', TAIJI, 'I Know')),
+  off(O(1993, '하여가', '서태지와 아이들', TAIJI, 'Anyhow Song')),
+  off(O(1995, 'Come Back Home', '서태지와 아이들', TAIJI, '', ['컴백홈'])),
   O(1996, '캔디', 'H.O.T.', HOT, 'Candy'),
   O(1997, '행복', 'H.O.T.', HOT, 'Happiness'),
-  O(1998, '커플', '젝스키스', SECHS, 'Couple'),
-  O(1999, '어머님께', 'god', GOD, 'To Mother'),
-  O(2000, '거짓말', 'god', GOD, 'Lies'),
-  O(2001, '길', 'god', GOD, 'Road'),
-  O(1998, '내 남자친구에게', '핑클', FINKL, 'To My Boyfriend'),
-  O(1999, '영원한 사랑', '핑클', FINKL),
-  O(1997, "I'm Your Girl", 'S.E.S.', ['S.E.S.', '에스이에스', 'SES'], '', ['아임 유어 걸']),
+  off(O(1998, '커플', '젝스키스', SECHS, 'Couple')),
+  off(O(1999, '어머님께', 'god', GOD, 'To Mother')),
+  off(O(2000, '거짓말', 'god', GOD, 'Lies')),
+  off(O(2001, '길', 'god', GOD, 'Road')),
+  off(O(1998, '내 남자친구에게', '핑클', FINKL, 'To My Boyfriend')),
+  off(O(1999, '영원한 사랑', '핑클', FINKL)),
+  off(O(1997, "I'm Your Girl", 'S.E.S.', ['S.E.S.', '에스이에스', 'SES'], '', ['아임 유어 걸'])),
   O(1997, '해변의 여인', '쿨', ['COOL', '쿨']),
-  O(1996, '트위스트 킹', '터보', ['TURBO', '터보'], 'Twist King'),
+  off(O(1996, '트위스트 킹', '터보', ['TURBO', '터보'], 'Twist King')),
   O(1995, '잘못된 만남', '김건모', KGM, 'Wrongful Meeting'),
-  O(1993, '핑계', '김건모', KGM, 'Excuses'),
+  off(O(1993, '핑계', '김건모', KGM, 'Excuses')),
   O(1994, '서른 즈음에', '김광석', ['Kim Kwang Seok', '김광석', 'Kim Kwangseok']),
-  O(1994, '날 떠나지 마', '박진영', ['J.Y. Park', '박진영', 'Park Jin Young'], "Don't Leave Me"),
+  off(O(1994, '날 떠나지 마', '박진영', ['J.Y. Park', '박진영', 'Park Jin Young'], "Don't Leave Me")),
   O(1991, '이 밤이 지나면', '임재범', ['Lim Jae Beum', '임재범', 'Yim Jae Beom', 'Lim Jae Bum']),
-  O(1994, '기억의 습작', '전람회', ['Exhibition', '전람회']),
-  O(1998, '말달리자', '크라잉넛', ['Crying Nut', '크라잉넛']),
-  O(1996, '꿍따리 샤바라', '클론', ['CLON', '클론'], 'Kung Ddari Sha Bah Rah', ['쿵따리 샤바라']),
-  O(1995, '날개 잃은 천사', '룰라', ["Roo'Ra", '룰라', 'ROORA']),
+  off(O(1994, '기억의 습작', '전람회', ['Exhibition', '전람회'])),
+  off(O(1998, '말달리자', '크라잉넛', ['Crying Nut', '크라잉넛'])),
+  off(O(1996, '꿍따리 샤바라', '클론', ['CLON', '클론'], 'Kung Ddari Sha Bah Rah', ['쿵따리 샤바라'])),
+  off(O(1995, '날개 잃은 천사', '룰라', ["Roo'Ra", '룰라', 'ROORA'])),
   O(1994, '여름 안에서', '듀스', ['DEUX', '듀스'], 'In Summer'),
-  O(1998, 'To Heaven', '조성모', ['Jo Sung Mo', '조성모', 'Cho Sung Mo'], '', ['투 헤븐']),
+  off(O(1998, 'To Heaven', '조성모', ['Jo Sung Mo', '조성모', 'Cho Sung Mo'], '', ['투 헤븐'])),
   O(1998, '순정', '코요태', ['KOYOTE', '코요태']),
   O(1998, 'Poison', '엄정화', ['Uhm Jung Hwa', '엄정화', 'Um Jung Hwa'], '', ['포이즌']),
   O(1999, 'T.O.P', '신화', ['SHINHWA', '신화'], '', ['티오피']),
-  O(2000, 'Run to You', 'DJ DOC', ['DJ DOC', '디제이디오씨'], '', ['런 투 유']),
-  O(2000, '매직 카펫 라이드', '자우림', ['Jaurim', '자우림'], 'Magic Carpet Ride'),
+  off(O(2000, 'Run to You', 'DJ DOC', ['DJ DOC', '디제이디오씨'], '', ['런 투 유'])),
+  off(O(2000, '매직 카펫 라이드', '자우림', ['Jaurim', '자우림'], 'Magic Carpet Ride')),
   O(2002, '낭만고양이', '체리필터', ['Cherry Filter', '체리필터'], 'Romantic Cat'),
-  O(2002, '나쁜 남자', '비', ['Rain', '비'], 'Bad Guy'),
+  off(O(2002, '나쁜 남자', '비', ['Rain', '비'], 'Bad Guy')),
   O(2002, 'No.1', '보아', ['BoA', '보아'], '', ['넘버원']),
   O(2003, '10 Minutes', '이효리', LHR, '', ['텐 미닛']),
   O(2008, 'U-Go-Girl', '이효리', LHR, '', ['유고걸']),
-  O(2002, '안 되나요', '휘성', ['Wheesung', '휘성', 'Whee Sung']),
-  O(2004, '내 여자라니까', '이승기', ['Lee Seung Gi', '이승기'], "Because You're My Woman"),
+  off(O(2002, '안 되나요', '휘성', ['Wheesung', '휘성', 'Whee Sung'])),
+  off(O(2004, '내 여자라니까', '이승기', ['Lee Seung Gi', '이승기'], "Because You're My Woman")),
   O(2004, 'Hug', '동방신기', TVXQ, '', ['허그']),
   O(2008, '주문', '동방신기', TVXQ, 'MIROTIC', ['미로틱']),
   O(2005, '살다가', 'SG워너비', SGW),
@@ -379,7 +382,7 @@ export const TITLES = [
   O(2007, '사랑앓이', 'FT아일랜드', ['FTISLAND', 'FT아일랜드', 'FT Island'], 'Love Sick'),
   O(2009, '8282', '다비치', ['DAVICHI', '다비치'], '', ['팔이팔이']),
   O(2008, '이 노래', '2AM', ['2AM', '투에이엠'], 'This Song'),
-  O(2004, '같은 베개', '테이', ['Tei', '테이']),
+  off(O(2004, '같은 베개', '테이', ['Tei', '테이'])),
 
   // ---------- 노래 추가 (323~326, 10/31 사용자: 검정치마 · 호미들) ----------
   // Antifreeze 는 2008년 1집 '201' 곡이라 옛날 노래 칸, 한시 오분·EVERYTHING 은 2017년 3집 Part 1 (ko.wikipedia 검정치마)
