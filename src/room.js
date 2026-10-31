@@ -2117,7 +2117,7 @@ export async function mqPass(code, room, q, st) {
   if (p.pass?.[`r${q}`]?.[`s${st}`]?.[id]) return
   await roomUpdate(code, { [`pending/pass/r${q}/s${st}/${id}`]: true })
 }
-// 정답 공개 때 '✅ 확인' → 다음 곡 (마지막이면 결과). 노래 맞히기: 10/31 사용자 '자동으로 넘어가지 말고 말에 걸린 사람이 확인을 누르면'
+// 정답 공개 때 '✅ 확인' → 다음 문제 (마지막이면 결과). 10/31 사용자: 노래 '자동으로 넘어가지 말고 말에 걸린 사람이 확인을 누르면', 영화도 같이
 export async function mqNext(code, room, q) {
   const p = room.pending
   if (!p || !isMqKind(p.kind) || p.stage !== 'play' || !p.hold) return
@@ -2174,7 +2174,7 @@ function mqBotUpdates(room, p, ph, nowMs, me) {
   return out
 }
 // 진행 (걸린 사람 폰이 0.1초마다): 누가 맞히면 문제 끝 → 모두 '잘 모르겠어요'(또는 25초)면 다음 단계, 마지막 단계면 문제 끝
-// 노래 맞히기(hold) 정답 공개 뒤에는 걸린 사람이 '✅ 확인'을 누를 때만 다음 곡 (mqNext, 자동으로 안 넘어감)
+// 정답 공개(hold) 뒤에는 걸린 사람이 '✅ 확인'을 누를 때만 다음 문제 (mqNext, 자동으로 안 넘어감 — 노래·영화 둘 다)
 export async function mqDrive(code, room) {
   const p = room.pending
   if (!p || !isMqKind(p.kind) || p.stage !== 'play') return
@@ -2391,7 +2391,7 @@ async function resolveTeamGame(code, room, p, action, target) {
         'pending/rounds': prep.rounds,
         'pending/n': prep.rounds.length,
         'pending/note': prep.note, // 'nochart': 지금 차트 곡을 못 찾아서 목록 곡으로 채움 (확인용, 화면엔 안 보임)
-        'pending/hold': song ? true : null, // 노래: 정답 공개 뒤 걸린 사람이 '확인'을 누를 때까지 정답 곡 (10/31)
+        'pending/hold': true, // 정답 공개 뒤 걸린 사람이 '확인'을 누를 때까지 (노래 10/31, 영화도 10/31 사용자 '다음 버튼을 눌러서')
         'pending/rs': null,
         'pending/answers': null,
         'pending/pass': null,

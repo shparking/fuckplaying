@@ -2285,7 +2285,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
             </>
           ) : (
             <>
-              🎬 <b>이모지</b> 6~8개를 보고 영화 제목을 맞혀요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>개봉 연도·주연</b>, 또 모두 누르면 <b>초성 힌트</b>. 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}문제, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
+              🎬 <b>이모지</b> 6~8개를 보고 영화 제목을 맞혀요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>개봉 연도·주연</b>, 또 모두 누르면 <b>초성 힌트</b>. 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 정답 공개 뒤에는 <b>{driverName}</b>이(가) <b>✅ 확인</b>을 누르면 다음 문제로 넘어가요 (자동으로 안 넘어가요). 모두 {n}문제, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
             </>
           )
         }
@@ -2355,7 +2355,9 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       .slice(0, 5)
     const winTeam = w ? teamOf(room, w.pid) : null
     const latin = item && !/[\p{Script=Hangul}]/u.test(item.t) // 영어 제목이면 영어로 쓰라고
-    // 노래 정답 공개 → 걸린 사람이 '✅ 확인'을 누를 때만 다음 곡 (10/31 사용자: 자동으로 안 넘어감). 안 넘어가면 3초 뒤 다시 누를 수 있게
+    // 정답 공개 → 걸린 사람이 '✅ 확인'을 누를 때만 다음 문제 (10/31 사용자: 노래 자동으로 안 넘어감, 영화도). 안 넘어가면 3초 뒤 다시 누를 수 있게
+    const nextWord = song ? '다음 곡' : '다음 문제'
+    const nextTo = song ? '다음 곡으로' : '다음 문제로'
     const holdNext = !asking && !!ph.hold
     const nextBusy = now - (nexted[q] || 0) < 3000
     const goNext = () => {
@@ -2479,11 +2481,11 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
           {holdNext &&
             (isDriver ? (
               <button className="btn btn-primary mq-ok" disabled={nextBusy} onClick={goNext}>
-                {q + 1 < n ? '✅ 확인 → 다음 곡' : '✅ 확인 → 결과 보기'}
+                {q + 1 < n ? `✅ 확인 → ${nextWord}` : '✅ 확인 → 결과 보기'}
               </button>
             ) : (
               <div className="mq-wait mq-next-wait">
-                ⏳ {driverName}이(가) 확인하면 {q + 1 < n ? '다음 곡으로' : '결과로'} 넘어가요
+                ⏳ {driverName}이(가) 확인하면 {q + 1 < n ? nextTo : '결과로'} 넘어가요
               </div>
             ))}
           {!asking && (
