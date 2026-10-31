@@ -52,15 +52,17 @@ function artistOk(found, names) {
   return !!f && names.some((n) => n && (f === n || f.includes(n) || (f.length >= 2 && n.includes(f))))
 }
 const titleNames = (item) => uniq([item.t, item.en, ...(item.a || [])].map(normTitle))
-// 원곡이 아닌 것 (반주·리믹스·라이브 등)은 뒤로
-const NOT_ORIGINAL = /\b(inst|instrumental|mr|remix|live|acoustic|karaoke|sped|slowed|cover|demo|edit|ver\.?|version)\b/i
+// 원곡이 아닌 것 (리믹스·라이브 등)은 뒤로 — 다른 곳(Apple)에 원곡이 있으면 그걸 씀 (alt)
+const NOT_ORIGINAL = /\b(remix|live|acoustic|sped|slowed|cover|demo|edit|ver\.?|version)\b/i
+// 반주(목소리 없음)·노래방 버전은 아예 안 씀 (10/31 확인 화면: '○○ Karaoke Verison' 같은 것만 나오는 곡이 있음)
+const NO_VOCAL = /\b(inst|instrumental|karaoke)\b|\bmr\b(?!\.)|반주|노래방|originally performed/i // Mr. Simple 같은 제목은 괜찮음
 function bestTrack(list, item) {
   const names = titleNames(item)
   const arts = uniq([...(item.s || []), item.by].map(normTitle))
   let best = null
   let bs = -Infinity
   for (const x of list) {
-    if (!x || !x.preview) continue
+    if (!x || !x.preview || NO_VOCAL.test(x.name || '')) continue
     const ts = titleScore(x.name, names)
     if (!ts || !artistOk(x.artist, arts)) continue
     const sc = ts * 10 - (NOT_ORIGINAL.test(x.name || '') ? 15 : 0) + Math.min(5, (Number(x.rank) || 0) / 200000)
@@ -69,7 +71,7 @@ function bestTrack(list, item) {
       best = x
     }
   }
-  return best
+  return best && NOT_ORIGINAL.test(best.name || '') ? { ...best, alt: true } : best
 }
 
 async function fromDeezer(item, f, dbg) {
@@ -81,21 +83,22 @@ async function fromDeezer(item, f, dbg) {
     const list = (Array.isArray(j?.data) ? j.data : []).map((x) => ({ name: x.title, artist: x.artist?.name, preview: x.preview, link: x.link, rank: x.rank }))
     const best = bestTrack(list, item)
     dbg?.push({ src: 'deezer', q, n: list.length, err: j?._status || j?._error || j?.error?.message || undefined, top: list.slice(0, 3).map((x) => `${x.artist} - ${x.name}`), hit: best ? `${best.artist} - ${best.name}` : undefined })
-    if (best) return { ok: true, kind: 'audio', url: best.preview, src: 'deezer', link: best.link || '', name: best.name, artist: best.artist }
+    if (best) return { ok: true, kind: 'audio', url: best.preview, src: 'deezer', link: best.link || '', name: best.name, artist: best.artist, ...(best.alt ? { alt: true } : {}) }
   }
   return null
 }
 async function fromApple(item, f, dbg) {
   const s = item.s?.length ? item.s : [item.by]
-  // 한국 스토어 먼저 (한글 제목), 없으면 미국 스토어 (영어 제목)
-  const tries = uniq([`KR|${item.by} ${item.t}`, `KR|${s[0]} ${item.en || item.t}`, s[1] ? `KR|${s[1]} ${item.t}` : '', `US|${s[0]} ${item.en || item.t}`])
+  // 10/31 확인 화면 결과: 한국 스토어 검색은 늘 0곡 (한국 iTunes 스토어엔 음악이 없음) → 미국 스토어부터
+  // (영어 가수·영어 제목 → 한글 제목 → 한글 가수·한글 제목 — 미국 스토어도 한글 제목인 곡이 있음), 한국 스토어는 마지막에 한 번만
+  const tries = uniq([`US|${s[0]} ${item.en || item.t}`, item.en ? `US|${s[0]} ${item.t}` : '', `US|${item.by} ${item.t}`, `KR|${item.by} ${item.t}`])
   for (const tq of tries) {
     const [cc, q] = [tq.slice(0, 2), tq.slice(3)]
     const j = await getJson(f, `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&country=${cc}&media=music&entity=song&limit=25`)
     const list = (Array.isArray(j?.results) ? j.results : []).map((x) => ({ name: x.trackName, artist: x.artistName, preview: x.previewUrl, link: x.trackViewUrl, rank: 0 }))
     const best = bestTrack(list, item)
     dbg?.push({ src: `apple-${cc}`, q, n: list.length, err: j?._status || j?._error || undefined, top: list.slice(0, 3).map((x) => `${x.artist} - ${x.name}`), hit: best ? `${best.artist} - ${best.name}` : undefined })
-    if (best) return { ok: true, kind: 'audio', url: best.preview, src: 'apple', link: best.link || '', name: best.name, artist: best.artist }
+    if (best) return { ok: true, kind: 'audio', url: best.preview, src: 'apple', link: best.link || '', name: best.name, artist: best.artist, ...(best.alt ? { alt: true } : {}) }
   }
   return null
 }
@@ -155,7 +158,13 @@ export async function findMedia(i, { fetch: f = globalThis.fetch, debug = false,
   if (hit && hit.until > now) return hit.v
   const dbg = debug ? [] : null
   const fb = Object.assign((u, o) => f(u, o), { deadline: Date.now() + BUDGET_MS }) // 이 문제만의 시간 제한 (동시에 여러 개 찾아도 따로)
-  let out = (await fromDeezer(item, fb, dbg)) || (await fromApple(item, fb, dbg)) || { ok: false, why: 'notfound' }
+  // Deezer 에 라이브·리믹스만 있으면 Apple 에 원곡이 있는지도 봄 (원곡이 없으면 라이브라도)
+  let out = await fromDeezer(item, fb, dbg)
+  if (!out || out.alt) {
+    const ap = await fromApple(item, fb, dbg)
+    if (ap && (!out || !ap.alt)) out = ap
+  }
+  out = out || { ok: false, why: 'notfound' }
   if (dbg) out = { ...out, debug: dbg }
   else if (out.ok || out.why === 'notfound') memo.set(key, { v: out, until: now + (out.ok ? MEMO_MS[out.kind] : MEMO_MS.miss) })
   return out

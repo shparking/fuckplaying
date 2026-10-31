@@ -37,7 +37,7 @@ const BOL = ['BOL4', '볼빨간사춘기']
 const SVT = ['SEVENTEEN', '세븐틴']
 const SKZ = ['Stray Kids', '스트레이 키즈']
 // 옛날 노래 가수 (첫 번째 = Deezer 표기, 두 번째 = 한글, 나머지 = 다른 표기)
-const TAIJI = ['Seo Taiji and Boys', '서태지와 아이들', 'Seo Taiji & Boys', 'Seotaiji and Boys']
+const TAIJI = ['Seotaiji and Boys', '서태지와 아이들', 'Seo Taiji and Boys', 'Seo Taiji & Boys']
 const HOT = ['H.O.T.', '에이치오티']
 const SECHS = ['SECHSKIES', '젝스키스', 'Sechs Kies']
 const GOD = ['god', '지오디', 'g.o.d']
@@ -137,10 +137,10 @@ export const TITLES = [
   S('썸', '소유, 정기고', ['SOYOU', '소유', 'JUNGGIGO', '정기고'], 'Some'),
   S('깡', '비', ['RAIN', '비'], 'GANG'),
   S('아모르 파티', '김연자', ['Kim Yon Ja', '김연자'], 'Amor Fati'),
-  S('사랑은 늘 도망가', '임영웅', ['Lim Young Woong', '임영웅']),
+  S('사랑은 늘 도망가', '임영웅', ['Lim Young Woong', '임영웅'], 'Love Always Run Away', ['Love Always Runs Away']),
   S('이제 나만 믿어요', '임영웅', ['Lim Young Woong', '임영웅'], 'Trust in Me'),
-  S('헤어지자 말해요', '박재정', ['Parc Jae Jung', '박재정']),
-  S('나의 X에게', '경서', ['Kyoung Seo', '경서'], 'To My X', ['나의 엑스에게']),
+  S('헤어지자 말해요', '박재정', ['Parc Jae Jung', '박재정'], "Let's Say Goodbye"),
+  S('나의 X에게', '경서', ['KyoungSeo', '경서', 'Kyoung Seo'], 'Dear my X', ['나의 엑스에게']),
   S('취중고백', '김민석', ['Kim Min Seok', '김민석'], 'Drunken Confession'),
   S('그라데이션', '10CM', ['10CM', '십센치'], 'Gradation'),
   S('봄이 좋냐??', '10CM', ['10CM', '십센치'], 'What the Spring??'),
@@ -151,7 +151,7 @@ export const TITLES = [
   S('Stay With Me', '찬열, 펀치', ['CHANYEOL', '찬열', 'Punch', '펀치'], '', ['스테이 위드 미']),
   S('시작', '가호', ['Gaho', '가호'], 'Start'),
   S('소나기', '이클립스', ['ECLIPSE', '이클립스'], 'Sudden Shower'),
-  S('나는 반딧불', '황가람', ['Hwang Garam', '황가람'], "I'm a firefly"),
+  { ...S('나는 반딧불', '황가람', ['Hwang Garam', '황가람', 'Hwang Ga Ram', 'HWANG GARAM', 'Hwang Karam'], "I'm a firefly"), off: true }, // 10/31 확인 화면: Deezer·Apple 어디에도 미리듣기가 없어서 뺌
   S('너의 모든 순간', '성시경', ['Sung Si Kyung', '성시경'], 'Every moment of you'),
   S('걱정말아요 그대', '이적', ['Lee Juck', '이적'], "Don't worry"),
   S('야생화', '박효신', ['Park Hyo Shin', '박효신'], 'Wild Flower'),
@@ -171,9 +171,9 @@ export const TITLES = [
   O(2001, '벌써 일년', '브라운 아이즈', ['Brown Eyes', '브라운 아이즈'], 'Already One Year'),
   O(2008, '붉은 노을', '빅뱅', BB, 'Sunset Glow'),
   O(2003, '체념', '빅마마', ['Big Mama', '빅마마']),
-  O(2003, '하늘을 달리다', '이적', ['Lee Juck', '이적'], 'Run through the sky'),
+  O(2003, '하늘을 달리다', '이적', ['Lee Juck', '이적'], 'Running on the Sky', ['Run Across the Sky']),
   O(2001, '아로하', '쿨', ['COOL', '쿨'], 'Aloha'),
-  O(2001, '너에게 난, 나에게 넌', '자전거 탄 풍경', ['Bicycle Riding Scenery', '자전거 탄 풍경']),
+  O(2001, '너에게 난, 나에게 넌', '자전거 탄 풍경', ['Scenery Of Riding Bicycle', '자전거 탄 풍경', 'A Bicycle Ride', 'Bicycle Riding Scenery']),
   S('Shape of You', 'Ed Sheeran', ['Ed Sheeran', '에드 시런'], '', ['쉐이프 오브 유', '셰이프 오브 유']),
   S('Perfect', 'Ed Sheeran', ['Ed Sheeran', '에드 시런'], '', ['퍼펙트']),
   S('Uptown Funk', 'Mark Ronson, Bruno Mars', ['Mark Ronson', '마크 론슨', 'Bruno Mars'], '', ['업타운 펑크']),
@@ -288,16 +288,16 @@ export const TITLES = [
   // ---------- 노래 추가 (233~265, 10/31 사용자: 아주 최근 노래 · 검색·릴스 많이 나오는 곡) ----------
   // 지금 차트 곡은 게임 때마다 Apple Music 한국 Top 100 에서도 가져옴 → 여기 있는 곡이 차트에 오르면 한글 별칭(네온 등)도 정답
   H('NEON', 'A2O LITE', ['A2O LITE', 'A2O'], '', ['네온']),
-  H('사랑하게 될 거야', '한로로', ['HANRORO', '한로로']),
+  H('사랑하게 될 거야', '한로로', ['HANRORO', '한로로'], 'Landing in Love'),
   H('Drowning', 'WOODZ', ['WOODZ', '우즈'], '', ['드라우닝']),
-  H('모르시나요', '조째즈', ['Jo Jazz', '조째즈']),
+  H('모르시나요', '조째즈', ['ZO ZAZZ', '조째즈', 'Jo Jazz'], "Don't you know"),
   H('HAPPY', 'DAY6', D6, '', ['해피']),
   H('녹아내려요', 'DAY6', D6, 'Melt Down'),
   H('고민중독', 'QWER', ['QWER'], 'Discord'),
   H('내 이름 맑음', 'QWER', ['QWER'], 'My Name is Malguem'),
   H('LOVE ATTACK', '리센느', ['RESCENE', '리센느'], '', ['러브 어택']),
   H('Ling Ling', '검정치마', ['The Black Skirts', '검정치마'], '', ['링링']),
-  H('좋은 밤 좋은 꿈', '너드커넥션', ['Nerd Connection', '너드커넥션']),
+  H('좋은 밤 좋은 꿈', '너드커넥션', ['Nerd Connection', '너드커넥션'], 'Good Night Good Dream'),
   H('like JENNIE', '제니', ['JENNIE', '제니'], '', ['라이크 제니']),
   H('Mantra', '제니', ['JENNIE', '제니'], '', ['만트라']),
   H('toxic till the end', '로제', ['ROSÉ', '로제'], '', ['톡식 틸 디 엔드']),
@@ -324,7 +324,7 @@ export const TITLES = [
   // ---------- 옛날 노래 (266~322, 10/31 사용자: 차트 곡은 최근 곡이니 90~2000년대 노래도 같이) ----------
   // 노래 3곡 = 지금 차트 1 · 옛날 노래 1 (y 1990~2009, 앞쪽 목록의 2000년대 곡 포함) · 2010년대 이후 1
   O(1992, '난 알아요', '서태지와 아이들', TAIJI, 'I Know'),
-  O(1993, '하여가', '서태지와 아이들', TAIJI),
+  O(1993, '하여가', '서태지와 아이들', TAIJI, 'Anyhow Song'),
   O(1995, 'Come Back Home', '서태지와 아이들', TAIJI, '', ['컴백홈']),
   O(1996, '캔디', 'H.O.T.', HOT, 'Candy'),
   O(1997, '행복', 'H.O.T.', HOT, 'Happiness'),
@@ -337,14 +337,14 @@ export const TITLES = [
   O(1997, "I'm Your Girl", 'S.E.S.', ['S.E.S.', '에스이에스', 'SES'], '', ['아임 유어 걸']),
   O(1997, '해변의 여인', '쿨', ['COOL', '쿨']),
   O(1996, '트위스트 킹', '터보', ['TURBO', '터보'], 'Twist King'),
-  O(1995, '잘못된 만남', '김건모', KGM),
-  O(1993, '핑계', '김건모', KGM),
+  O(1995, '잘못된 만남', '김건모', KGM, 'Wrongful Meeting'),
+  O(1993, '핑계', '김건모', KGM, 'Excuses'),
   O(1994, '서른 즈음에', '김광석', ['Kim Kwang Seok', '김광석', 'Kim Kwangseok']),
   O(1994, '날 떠나지 마', '박진영', ['J.Y. Park', '박진영', 'Park Jin Young'], "Don't Leave Me"),
-  O(1991, '이 밤이 지나면', '임재범', ['Yim Jae Beom', '임재범', 'Lim Jae Bum', 'Im Jae Bum']),
+  O(1991, '이 밤이 지나면', '임재범', ['Lim Jae Beum', '임재범', 'Yim Jae Beom', 'Lim Jae Bum']),
   O(1994, '기억의 습작', '전람회', ['Exhibition', '전람회']),
   O(1998, '말달리자', '크라잉넛', ['Crying Nut', '크라잉넛']),
-  O(1996, '꿍따리 샤바라', '클론', ['CLON', '클론'], '', ['쿵따리 샤바라']),
+  O(1996, '꿍따리 샤바라', '클론', ['CLON', '클론'], 'Kung Ddari Sha Bah Rah', ['쿵따리 샤바라']),
   O(1995, '날개 잃은 천사', '룰라', ["Roo'Ra", '룰라', 'ROORA']),
   O(1994, '여름 안에서', '듀스', ['DEUX', '듀스'], 'In Summer'),
   O(1998, 'To Heaven', '조성모', ['Jo Sung Mo', '조성모', 'Cho Sung Mo'], '', ['투 헤븐']),
@@ -368,7 +368,7 @@ export const TITLES = [
   O(2006, '나는 나비', 'YB', ['YB', '윤도현밴드', 'Yoon Do Hyun Band'], 'Butterfly'),
   O(2005, '사랑스러워', '김종국', ['Kim Jong Kook', '김종국'], 'Lovable'),
   O(2002, '내게 오는 길', '성시경', ['Sung Si Kyung', '성시경']),
-  O(2007, '다행이다', '이적', ['Lee Juck', '이적']),
+  O(2007, '다행이다', '이적', ['Lee Juck', '이적'], 'Relieved'),
   O(2007, '마지막 인사', '빅뱅', BB, 'Last Farewell'),
   O(2008, 'So Hot', '원더걸스', ['Wonder Girls', '원더걸스'], '', ['쏘 핫']),
   O(2009, '소원을 말해봐', '소녀시대', SNSD, 'Genie'),
