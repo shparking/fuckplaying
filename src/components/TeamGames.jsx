@@ -81,7 +81,7 @@ import {
   mqNext,
   mqDriver,
 } from '../room'
-import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_ROUNDS, MQ_CHART_PICK, mqRounds, mqItem, mqClip, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
+import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_ROUNDS, mqRounds, mqItem, mqClip, isOldSong, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
 import { mqUnlock, mqUnlocked, mqOnUnlock, mqPlayAt, mqPrime, mqStop } from '../game/mqaudio'
 import { WORLD_PLACES, worldPoints } from '../game/worldplaces'
 import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
@@ -2275,13 +2275,13 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
               </div>
             )}
             {err && <div className="mq-err">{err}</div>}
-            {song && <div className="mq-credit">{MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 지금 Apple Music 한국 차트 · 미리듣기 Deezer · Apple Music</div>}
+            {song && <div className="mq-credit">{MQ_ROUNDS}곡 = 🔥 지금 차트(Apple Music 한국) · 📼 옛날 노래 · 2010년대 이후 · 미리듣기 Deezer · Apple Music</div>}
           </>
         }
         rules={
           song ? (
             <>
-              🎵 <b>모든 폰</b>에서 노래 미리듣기를 <b>처음부터 1초</b> 같이 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. {MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 <b>🔥 지금 차트</b> 곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 정답 공개 때는 그 곡을 들려주고, <b>{driverName}</b>이(가) <b>✅ 확인</b>을 누르면 다음 곡으로 넘어가요 (자동으로 안 넘어가요). 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
+              🎵 <b>모든 폰</b>에서 노래 미리듣기를 <b>처음부터 1초</b> 같이 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. 노래는 <b>🔥 지금 차트</b> 1곡 · <b>📼 옛날 노래</b>(90~2000년대) 1곡 · 2010년대 이후 1곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 정답 공개 때는 그 곡을 들려주고, <b>{driverName}</b>이(가) <b>✅ 확인</b>을 누르면 다음 곡으로 넘어가요 (자동으로 안 넘어가요). 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
             </>
           ) : (
             <>
@@ -2300,7 +2300,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
         sub={
           song ? (
             <>
-              {p.note === 'nochart' ? '차트를 못 불러와서 이번엔 목록 곡만!' : '소리 키우고, 1초 듣고 맞혀요!'}
+              소리 키우고, 1초 듣고 맞혀요!
               {!soundOn && <span className="mq-tap">🔊 화면을 한 번 눌러 주세요 (이 폰 소리 켜기)</span>}
             </>
           ) : (
@@ -2370,7 +2370,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
           <div className="tg-head">
             <span>
               {emoji} {q + 1}/{n}
-              <em className={`mq-cat ${item?.rank ? 'hot' : ''}`}>{item?.rank ? '🔥 지금 차트' : `${cat.emoji} ${cat.name}`}</em>
+              <em className={`mq-cat ${item?.rank ? 'hot' : isOldSong(item) ? 'old' : ''}`}>{item?.rank ? '🔥 지금 차트' : isOldSong(item) ? '📼 옛날 노래' : `${cat.emoji} ${cat.name}`}</em>
             </span>
             <MqScore res={res} />
           </div>
@@ -2522,7 +2522,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
             return (
               <div key={k} className="pg-best-row">
                 <span>
-                  {it?.rank ? '🔥' : cat.emoji} {it?.t}
+                  {it?.rank ? '🔥' : isOldSong(it) ? '📼' : cat.emoji} {it?.t}
                 </span>
                 <b>{it?.c === 'song' ? it?.by : it?.y}</b>
                 <em>{ww ? `🎉 ${name(ww.pid)} (${(MQ_STAGE_SHORT[x.k] || MQ_STAGE_SHORT.e)[ww.st]})` : '아무도 못 맞힘'}</em>

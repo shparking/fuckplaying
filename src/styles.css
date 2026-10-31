@@ -4219,6 +4219,11 @@ textarea {
   background: linear-gradient(90deg, #ff5f6d, #ffb347);
   color: #1a0f12;
 }
+/* 10/31 옛날 노래 (90~2000년대) */
+.mq-cat.old {
+  background: linear-gradient(90deg, #8e7dff, #4cc9f0);
+  color: #0f1020;
+}
 .ai-overlay.mq .tg-score {
   font-size: 16px;
   color: #ffd23f;

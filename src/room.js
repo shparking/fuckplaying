@@ -24,6 +24,7 @@ import { pickSongWord } from './game/songwords'
 import { pickBombTopic } from './game/bomb'
 import { SYNC_QUESTIONS, makeColorRounds } from './game/teamgames'
 import { TITLES, SONG_GAME, MOVIE_GAME, isMqKind, MQ_ROUNDS, MQ_MIN_ROUNDS, MQ_STAGES, MQ_STAGE_TIMEOUT_MS, mqPhase, mqN, mqRounds, mqWinner, mqItem, mqClip, isTitleAnswer, pickSongCandidates, pickMovieRounds, pickChartSongs } from './game/mediaquiz'
+import { itunesPreviews } from './game/itunes'
 import { drawMission, MISSION_CHANCE, MISSION_MIN_GAP } from './game/missions'
 import { autoEmoji } from './game/emoji'
 
@@ -2211,10 +2212,10 @@ async function fetchMedia(i) {
     clearTimeout(timer)
   }
 }
-// 지금 차트 (서버 함수 api/media.js ?chart=1 → Apple Music 한국 Top 100 + 미리듣기). 실패하면 []
+// 지금 차트 (서버 함수 api/media.js ?chart=1 → Apple Music 한국 Top 100 + 서버가 찾은 미리듣기). 실패하면 []
 async function fetchChart() {
   const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null
-  const timer = setTimeout(() => ctl?.abort(), 9000)
+  const timer = setTimeout(() => ctl?.abort(), 7000)
   try {
     const j = await (await fetch('/api/media?chart=1', { signal: ctl?.signal })).json()
     return j?.ok && Array.isArray(j.songs) ? j.songs : []
@@ -2224,20 +2225,43 @@ async function fetchChart() {
     clearTimeout(timer)
   }
 }
-// 노래 3곡: 지금 차트에서 2곡 + 목록에서 (차트를 못 불러오면 목록에서 다) — 순서는 섞음
-// 목록 후보 5곡은 차트와 같이 찾아 둠 (못 찾는 곡이 있어도 채우게)
+// 지금 차트 1곡 (위쪽 순위일수록 자주): 서버가 미리듣기를 찾은 곡에서 — 서버가 못 찾았으면 후보 4곡을 이 폰에서 Apple 에 직접 (itunes.js)
+async function chartSong(used) {
+  const chart = await fetchChart()
+  if (!chart.length) return null
+  const ready = pickChartSongs(chart.filter((x) => x.url), used, 1)
+  if (ready.length) return ready[0]
+  const cands = pickChartSongs(chart, used, 4)
+  if (!cands.length) return null
+  const found = await itunesPreviews(cands.map((c) => c.x.id))
+  const hit = cands.find((c) => found.has(c.x.id))
+  return hit ? { ...hit, url: found.get(hit.x.id).url, link: hit.link || found.get(hit.x.id).link } : null
+}
+// 노래 3곡 (10/31 사용자): 지금 차트 1 · 옛날 노래(90~2000년대) 1 · 2010년대 이후 1 — 순서는 섞음
+// 목록 후보는 종류마다 2곡씩 차트와 같이 찾아 둠 (미리듣기를 못 찾는 곡이 있어도 채우게)
+// 차트를 못 불러오거나 미리듣기를 못 찾으면 그 자리는 목록의 아주 최근 곡으로 — 안내 없이 (10/31 사용자 '이런 오류 없애줘')
 async function prepareSongRounds(room) {
   const used = arr(room.usedTitles)
-  const [chart, got] = await Promise.all([fetchChart(), Promise.all(pickSongCandidates(used).map(async (i) => [i, await fetchMedia(i)]))])
-  const hot = pickChartSongs(chart, used)
-  const twins = new Set(hot.map((h) => h.x.j).filter((j) => j != null))
-  const good = got.filter(([i, m]) => !twins.has(i) && m?.ok && m.kind === 'audio' && m.url)
+  const oldC = pickSongCandidates(used, Math.random, 2, TITLES, 'old')
+  const newC = pickSongCandidates(used, Math.random, 2, TITLES, 'new').filter((i) => !oldC.includes(i))
+  const hotC = pickSongCandidates(used, Math.random, 2, TITLES, 'hot').filter((i) => !oldC.includes(i) && !newC.includes(i))
+  const [hot, got] = await Promise.all([chartSong(used).catch(() => null), Promise.all([...oldC, ...newC, ...hotC].map(async (i) => [i, await fetchMedia(i)]))])
+  const good = new Map(got.filter(([i, m]) => i !== hot?.x?.j && m?.ok && m.kind === 'audio' && m.url))
+  const picked = []
+  const take = (ids) => {
+    const i = ids.find((k) => good.has(k) && !picked.includes(k))
+    if (i != null) picked.push(i)
+    return i != null
+  }
+  take(oldC) // 옛날 노래
+  take(newC) // 2010년대 이후
+  if (!hot) take(hotC) || take(newC) || take(oldC) // 차트 자리
+  for (const i of good.keys()) if (picked.length + (hot ? 1 : 0) < MQ_ROUNDS && !picked.includes(i)) picked.push(i) // 그래도 모자라면 남은 곡
   const rounds = shuffle([
-    ...hot.map((h) => ({ i: -1, k: 'a', u: h.url, s: 'apple', l: h.link || '', x: h.x })),
-    ...good.slice(0, MQ_ROUNDS - hot.length).map(([i, m]) => ({ i, k: 'a', u: m.url, s: m.src || '', l: m.link || '' })),
+    ...(hot ? [{ i: -1, k: 'a', u: hot.url, s: 'apple', l: hot.link || '', x: hot.x }] : []),
+    ...picked.slice(0, MQ_ROUNDS - (hot ? 1 : 0)).map((i) => ({ i, k: 'a', u: good.get(i).url, s: good.get(i).src || '', l: good.get(i).link || '' })),
   ])
-  // 차트를 못 불러왔으면 (서버·인터넷 문제) 목록 곡만 — 화면에 안내
-  return { rounds, note: chart.length ? null : 'nochart' }
+  return { rounds, note: hot ? null : 'nochart' } // note 는 확인용 (화면엔 안 보임)
 }
 // 영화 3문제 (이모지라 찾을 게 없음)
 function prepareMovieRounds(room) {
@@ -2257,7 +2281,7 @@ export const PRACTICE_GAMES = [
   ['timeSum', '🕰️', '팀 시간 합치기', '팀원 누른 시간 합이 30초에 가깝게'],
   ['mapPin', '🗺️', '지도 찍기', '한국 지도에 장소 핀 꽂기'],
   ['worldPin', '🌍', '세계 지도 찍기', '세계 지도에 도시·명소 핀 꽂기'],
-  ['songQuiz', '🎵', SONG_GAME, '1초 듣고 노래 제목 쓰기 — 지금 차트 곡이 많이 나와요, 가장 빨리 맞힌 사람이 정답'],
+  ['songQuiz', '🎵', SONG_GAME, '1초 듣고 노래 제목 쓰기 — 지금 차트 · 옛날 노래 · 2010년대 이후 한 곡씩, 가장 빨리 맞힌 사람이 정답'],
   ['movieQuiz', '🎬', MOVIE_GAME, '이모지 보고 영화 제목 쓰기 — 모르면 연도·주연, 초성 힌트'],
 ]
 function fakeRate(pid) {
@@ -2366,7 +2390,7 @@ async function resolveTeamGame(code, room, p, action, target) {
         'pending/startAt': serverNow() + TEAM_LEAD_MS,
         'pending/rounds': prep.rounds,
         'pending/n': prep.rounds.length,
-        'pending/note': prep.note, // 'nochart': 차트를 못 불러와서 목록 곡만
+        'pending/note': prep.note, // 'nochart': 지금 차트 곡을 못 찾아서 목록 곡으로 채움 (확인용, 화면엔 안 보임)
         'pending/hold': song ? true : null, // 노래: 정답 공개 뒤 걸린 사람이 '확인'을 누를 때까지 정답 곡 (10/31)
         'pending/rs': null,
         'pending/answers': null,

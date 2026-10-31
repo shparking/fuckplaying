@@ -18,7 +18,9 @@ export const MQ_CATS = {
 
 // ---------- 진행 ----------
 export const MQ_ROUNDS = 3 // 한 게임 문제 수 (10/31 사용자: 5 → 3, 노래는 미리듣기를 못 찾으면 줄어듦)
-export const MQ_CHART_PICK = 2 // 노래 3곡 중 지금 차트에서 (10/31 사용자: 최근 곡을 더 많이), 나머지는 목록에서
+export const MQ_CHART_PICK = 1 // 노래 3곡 = 지금 차트 1 · 옛날 노래 1 · 2010년대 이후 1 (10/31 사용자: 차트 곡은 최근 곡이니 옛날 노래도)
+// 옛날 노래: 1990~2009년 곡 (titles.js 의 y)
+export const isOldSong = (x) => !!x && x.c === 'song' && x.y >= 1990 && x.y <= 2009
 export const MQ_MIN_ROUNDS = 2 // 이보다 적게 찾으면 시작 안 함
 export const MQ_STAGES = 3 // 노래 1초 · 3초 · 5초(+초성) / 영화 이모지 · +연도·주연 · +초성
 export const MQ_CLIP_MS = [1000, 3000, 5000] // 단계별로 들려주는 길이
@@ -195,15 +197,17 @@ function shuffled(list, rand) {
   }
   return a
 }
-// 노래 후보 (목록에서): 미리듣기를 못 찾는 곡이 있을 수 있어서 넉넉하게 5곡 (차트를 못 불러오면 3곡 다 여기서) (한 판 안에서 나온 건 빼고, 다 썼으면 처음부터)
-const pool = (c, used, list) => {
+// 목록에서 고르기 (한 판 안에서 나온 건 빼고, 다 썼으면 처음부터). ok: 그 종류만
+const pool = (c, used, list, n = MQ_ROUNDS, ok = () => true) => {
   const u = new Set((used || []).map(Number))
-  const all = list.map((x, i) => i).filter((i) => list[i] && !list[i].off && list[i].c === c)
+  const all = list.map((x, i) => i).filter((i) => list[i] && !list[i].off && list[i].c === c && ok(list[i]))
   const fresh = all.filter((i) => !u.has(i))
-  return fresh.length >= MQ_ROUNDS ? fresh : all
+  return fresh.length >= n ? fresh : all
 }
-export function pickSongCandidates(used = [], rand = Math.random, n = 5, list = TITLES) {
-  return shuffled(pool('song', used, list), rand).slice(0, n)
+// 노래 후보 (목록에서, 미리듣기를 못 찾는 곡이 있을 수 있어서 넉넉하게). kind: 'old' 옛날 노래 · 'new' 2010년대 이후 · 'hot' 아주 최근 곡 (차트 대신)
+const SONG_KIND = { old: isOldSong, new: (x) => !isOldSong(x), hot: (x) => !!x.hot }
+export function pickSongCandidates(used = [], rand = Math.random, n = 5, list = TITLES, kind) {
+  return shuffled(pool('song', used, list, n, SONG_KIND[kind]), rand).slice(0, n)
 }
 // 영화 문제 (번호, 3문제)
 export function pickMovieRounds(used = [], rand = Math.random, n = MQ_ROUNDS, list = TITLES) {
@@ -246,10 +250,11 @@ export function chartItem(song, list = TITLES) {
   return x
 }
 // 차트에서 n곡: 위쪽일수록 자주 (가중치 1/(순위+15)), 한 판 안에서 나온 곡('c<id>' 또는 목록 번호)은 빼고
+// 미리듣기 주소(url)는 없을 수도 있음 (서버가 못 받았으면 폰에서 직접 — itunes.js)
 export function pickChartSongs(chart, used = [], n = MQ_CHART_PICK, rand = Math.random, list = TITLES) {
   const u = new Set((used || []).map(String))
   const cand = (Array.isArray(chart) ? chart : [])
-    .filter((s) => s && s.id && s.url && s.name && !u.has(`c${s.id}`))
+    .filter((s) => s && s.id && s.name && !u.has(`c${s.id}`))
     .map((s) => ({ s, x: chartItem(s, list), w: 1 / ((Number(s.rank) || 100) + 15) }))
     .filter(({ x }) => normTitle(x.t) && !(x.j != null && u.has(String(x.j))))
   const out = []
@@ -267,5 +272,5 @@ export function pickChartSongs(chart, used = [], n = MQ_CHART_PICK, rand = Math.
     seen.add(key)
     out.push(c)
   }
-  return out.map(({ s, x }) => ({ x, url: s.url, link: s.link || '' }))
+  return out.map(({ s, x }) => ({ x, url: s.url || '', link: s.link || '' }))
 }

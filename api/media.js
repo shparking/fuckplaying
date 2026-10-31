@@ -2,8 +2,9 @@
 //   GET /api/media?i=문제번호(src/game/titles.js 순서, 노래만 — 영화는 이모지 문제라 'bad')
 //     → { ok: true, kind: 'audio', url, src: 'deezer'|'apple', link, name, artist }
 //     → { ok: false, why: 'notfound'|'bad'|'error' }
-//   GET /api/media?chart=1 (10/31) → { ok: true, songs: [{ id, rank, name, artist, y, url, link }] }
-//     지금 Apple Music 한국 '많이 듣는 곡' Top 100 (RSS) + iTunes 로 미리듣기를 한꺼번에. 30분 캐시
+//   GET /api/media?chart=1 (10/31) → { ok: true, songs: [{ id, rank, name, artist, y, url, link }], n, withUrl }
+//     지금 Apple Music 한국 '많이 듣는 곡' Top 100 (RSS) + iTunes 로 미리듣기를 한꺼번에 (한국·미국 스토어). 30분 캐시
+//     미리듣기를 못 받은 곡도 목록엔 넣음 (url '') → 폰이 직접 Apple 에 물어봄 (src/game/itunes.js)
 //   ?debug=1 이면 찾아본 검색어·후보도 같이 (확인 화면 ?mediacheck=1 용)
 //   ?ping=1 → { ok: true, ping: true } (서버 함수가 살아 있는지만, 밖으로는 안 부름)
 // Deezer 먼저 (키 없음, 약관: 비상업·사적 이용), 없으면 Apple(iTunes) 미리듣기
@@ -100,32 +101,48 @@ async function fromApple(item, f, dbg) {
 }
 
 // ---------- 지금 차트 (10/31 사용자: 아주 최근 노래도) ----------
+// 10/31 사용자 '차트를 못 불러와서 이번엔 목록 곡만 — 이런 오류 없애줘':
+//  - 미리듣기는 한국 스토어에 없는 곡이 많아서 미국 스토어도 같이 (곡 번호는 같음)
+//  - 미리듣기를 못 받아도 차트 목록은 보냄 (url '') → 폰이 직접 Apple 에 물어봄
+//  - RSS 가 안 되면 이 서버가 전에 받은 차트 (하루 안)
 const CHART_URL = 'https://rss.marketingtools.apple.com/api/v2/kr/music/most-played/100/songs.json'
 const CHART_MEMO_MS = 30 * 60 * 1000
-let chartMemo = null
-export async function findChart({ fetch: f = globalThis.fetch, now = Date.now(), fresh = false } = {}) {
-  if (!fresh && chartMemo && chartMemo.until > now) return chartMemo.v
-  const fb = Object.assign((u, o) => f(u, o), { deadline: Date.now() + BUDGET_MS })
-  const j = await getJson(fb, CHART_URL, {}, 5000)
-  const list = (Array.isArray(j?.feed?.results) ? j.feed.results : []).filter((x) => x && x.id && x.name && x.artistName).slice(0, 100)
-  if (!list.length) return { ok: false, why: 'chart', err: j?._status || j?._error || undefined }
-  // 미리듣기 주소: iTunes 에 번호로 한꺼번에 (50개씩)
+const CHART_STALE_MS = 24 * 60 * 60 * 1000
+let chartMemo = null // { v, at }
+// 곡 번호로 iTunes 에 한꺼번에 (50개씩) → Map(번호 → 결과)
+async function lookupPreviews(fb, ids, cc) {
+  const by = new Map()
+  const errs = []
   const parts = []
-  for (let k = 0; k < list.length; k += 50) parts.push(list.slice(k, k + 50))
-  const looks = await Promise.all(parts.map((ps) => getJson(fb, `https://itunes.apple.com/lookup?id=${ps.map((x) => encodeURIComponent(String(x.id))).join(',')}&country=KR`, {}, 5000)))
-  const byId = new Map()
-  for (const lk of looks) for (const r of Array.isArray(lk?.results) ? lk.results : []) if (r && r.trackId && r.previewUrl) byId.set(String(r.trackId), r)
-  const songs = list
-    .map((x, k) => {
-      const r = byId.get(String(x.id))
-      if (!r) return null
-      const y = Number(String(x.releaseDate || r.releaseDate || '').slice(0, 4))
-      return { id: String(x.id), rank: k + 1, name: String(x.name), artist: String(x.artistName), y: y > 1900 ? y : 0, url: r.previewUrl, link: r.trackViewUrl || x.url || '' }
-    })
-    .filter(Boolean)
-  if (!songs.length) return { ok: false, why: 'chart', n: list.length, err: looks.map((lk) => lk?._status || lk?._error).filter(Boolean).join(',') || undefined }
-  const out = { ok: true, songs, n: list.length, updated: String(j?.feed?.updated || '') }
-  chartMemo = { v: out, until: now + CHART_MEMO_MS }
+  for (let k = 0; k < ids.length; k += 50) parts.push(ids.slice(k, k + 50))
+  const looks = await Promise.all(parts.map((ps) => getJson(fb, `https://itunes.apple.com/lookup?id=${ps.join(',')}&country=${cc}`, {}, 4000)))
+  for (const lk of looks) {
+    if (lk?._status || lk?._error) errs.push(`${cc} ${lk._status || lk._error}`)
+    for (const r of Array.isArray(lk?.results) ? lk.results : []) if (r && r.trackId && r.previewUrl) by.set(String(r.trackId), r)
+  }
+  return { by, errs }
+}
+export async function findChart({ fetch: f = globalThis.fetch, now = Date.now(), fresh = false } = {}) {
+  if (!fresh && chartMemo && now - chartMemo.at < CHART_MEMO_MS) return chartMemo.v
+  const fb = Object.assign((u, o) => f(u, o), { deadline: Date.now() + BUDGET_MS })
+  const j = await getJson(fb, CHART_URL, {}, 3500)
+  const list = (Array.isArray(j?.feed?.results) ? j.feed.results : []).filter((x) => x && /^\d{1,15}$/.test(String(x.id)) && x.name && x.artistName).slice(0, 100)
+  if (!list.length) {
+    if (chartMemo && now - chartMemo.at < CHART_STALE_MS) return { ...chartMemo.v, stale: true }
+    return { ok: false, why: 'chart', err: String(j?._status || j?._error || 'empty') }
+  }
+  const ids = list.map((x) => String(x.id))
+  const [kr, us] = await Promise.all([lookupPreviews(fb, ids, 'KR'), lookupPreviews(fb, ids, 'US')])
+  const songs = list.map((x, k) => {
+    const r = kr.by.get(String(x.id)) || us.by.get(String(x.id))
+    const y = Number(String(x.releaseDate || r?.releaseDate || '').slice(0, 4))
+    return { id: String(x.id), rank: k + 1, name: String(x.name), artist: String(x.artistName), y: y > 1900 ? y : 0, url: r?.previewUrl || '', link: r?.trackViewUrl || x.url || '' }
+  })
+  const withUrl = songs.filter((x) => x.url).length
+  const errs = [...kr.errs, ...us.errs]
+  const out = { ok: true, songs, n: list.length, withUrl, kr: kr.by.size, us: us.by.size, updated: String(j?.feed?.updated || ''), ...(errs.length ? { err: errs.join(',') } : {}) }
+  // 미리듣기를 많이 못 받았으면 오래 기억하지 않음 (다음에 다시 물어봄)
+  if (withUrl >= 10 || !chartMemo) chartMemo = { v: out, at: withUrl >= 10 ? now : now - CHART_MEMO_MS + 2 * 60 * 1000 }
   return out
 }
 
@@ -158,7 +175,9 @@ export default async function handler(req, res) {
   if (u.searchParams.has('chart')) {
     try {
       const out = await findChart({ fresh: debug })
-      return send(out, out.ok && !debug ? 'public, s-maxage=1800, stale-while-revalidate=43200' : out.ok ? 'no-store' : 'public, s-maxage=60')
+      // 미리듣기가 넉넉하면 30분, 적으면 5분 (폰이 직접 찾음), 실패는 1분만
+      const cache = debug ? 'no-store' : out.ok && out.withUrl >= 10 ? 'public, s-maxage=1800, stale-while-revalidate=43200' : out.ok ? 'public, s-maxage=300' : 'public, s-maxage=60'
+      return send(out, cache)
     } catch {
       return send({ ok: false, why: 'error' }, 'no-store')
     }

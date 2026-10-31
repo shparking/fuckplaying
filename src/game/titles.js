@@ -1,6 +1,7 @@
 // 노래 맞히기 · 이모지 영화 맞히기 문제 목록 (10/29 사용자: 2010년 이후 위주 + 명곡 조금)
-// 노래는 30초 미리듣기(Deezer → 없으면 Apple)를 /api/media 가 그때그때 찾아 줌. 10/31부터 노래 5곡 중 4곡은
-// 그때그때 Apple Music 한국 차트(Top 100)에서 가져옴 (/api/media?chart=1) — 이 목록의 노래가 차트에 있으면 그 별칭도 정답으로 씀
+// 10/31 사용자: 옛날 노래(90~2000년대)도 같이 → 맨 뒤에 57곡 (O, y = 나온 해) — 노래 3곡 = 지금 차트 1 · 옛날 1 · 2010년대 이후 1
+// 노래는 30초 미리듣기(Deezer → 없으면 Apple)를 /api/media 가 그때그때 찾아 줌. 지금 차트 1곡은 게임 때마다
+// Apple Music 한국 차트(Top 100)에서 가져옴 (/api/media?chart=1) — 이 목록의 노래가 차트에 있으면 그 별칭도 정답으로 씀
 // 영화는 10/31 사용자 요청으로 이모지 6~8개 문제 (아래 MOVIE_EMOJI) + 힌트 '연도 · 주연' (MOVIE_HINT) — 새 영화를 넣으면 둘 다 같이
 // 드라마는 10/31 사용자 요청으로 지움 (그때 뒤에 있던 최근 노래 33곡 번호가 296~328 → 233~265 로 당겨짐)
 // 앱에는 제목·가수·연도만 넣음 (가사·대사·포스터는 안 넣음)
@@ -12,6 +13,10 @@
 // 노래 — by: 가수 (공개) · s: 검색할 가수 이름들 (첫 번째 = Deezer 영어 표기, 두 번째 = 한글)
 // 영화 — y: 개봉 연도 (힌트·정답 공개 때) · e: 이모지 · h: 힌트 (아래 MOVIE_EMOJI·MOVIE_HINT 에서 붙임)
 const S = (t, by, s, en, a) => ({ c: 'song', t, by, s, ...(en ? { en } : {}), ...(a ? { a } : {}) })
+// 옛날 노래 (10/31 사용자: 90~2000년대도 같이) — y: 나온 해. 1990~2009 이면 '📼 옛날 노래' 칸 (mediaquiz.js isOldSong)
+const O = (y, t, by, s, en, a) => ({ ...S(t, by, s, en, a), y })
+// 아주 최근 곡 (지금 차트를 못 불러오면 그 자리에 대신)
+const H = (t, by, s, en, a) => ({ ...S(t, by, s, en, a), hot: true })
 const M = (t, y, en, a) => ({ c: 'movie', t, y, ...(en ? { en } : {}), ...(a ? { a } : {}) })
 
 const IU = ['IU', '아이유']
@@ -31,6 +36,16 @@ const AK = ['AKMU', '악뮤', '악동뮤지션']
 const BOL = ['BOL4', '볼빨간사춘기']
 const SVT = ['SEVENTEEN', '세븐틴']
 const SKZ = ['Stray Kids', '스트레이 키즈']
+// 옛날 노래 가수 (첫 번째 = Deezer 표기, 두 번째 = 한글, 나머지 = 다른 표기)
+const TAIJI = ['Seo Taiji and Boys', '서태지와 아이들', 'Seo Taiji & Boys', 'Seotaiji and Boys']
+const HOT = ['H.O.T.', '에이치오티']
+const SECHS = ['SECHSKIES', '젝스키스', 'Sechs Kies']
+const GOD = ['god', '지오디', 'g.o.d']
+const FINKL = ['Fin.K.L', '핑클', 'FinKL']
+const KGM = ['Kim Gun Mo', '김건모', 'Kim Gunmo']
+const LHR = ['Lee Hyori', '이효리', 'Lee Hyo Ri']
+const TVXQ = ['TVXQ!', '동방신기', 'TVXQ', 'Dong Bang Shin Ki']
+const SGW = ['SG Wannabe', 'SG워너비', 'SG WANNABE']
 
 export const TITLES = [
   // ---------- 노래 (0~140) ----------
@@ -41,15 +56,15 @@ export const TITLES = [
   S('라일락', '아이유', IU, 'LILAC'),
   S('strawberry moon', '아이유', IU, '', ['스트로베리 문']),
   S('강남스타일', '싸이', ['PSY', '싸이'], 'Gangnam Style'),
-  S('하루하루', '빅뱅', BB, 'Haru Haru'),
-  S('거짓말', '빅뱅', BB, 'Lies'),
+  O(2008, '하루하루', '빅뱅', BB, 'Haru Haru'),
+  O(2007, '거짓말', '빅뱅', BB, 'Lies'),
   S('뱅뱅뱅', '빅뱅', BB, 'BANG BANG BANG'),
   S('봄여름가을겨울', '빅뱅', BB, 'Still Life'),
-  S('Gee', '소녀시대', SNSD, '', ['지']),
-  S('다시 만난 세계', '소녀시대', SNSD, 'Into the New World'),
-  S('Sorry, Sorry', '슈퍼주니어', ['SUPER JUNIOR', '슈퍼주니어'], '', ['쏘리 쏘리']),
+  O(2009, 'Gee', '소녀시대', SNSD, '', ['지']),
+  O(2007, '다시 만난 세계', '소녀시대', SNSD, 'Into the New World'),
+  O(2009, 'Sorry, Sorry', '슈퍼주니어', ['SUPER JUNIOR', '슈퍼주니어'], '', ['쏘리 쏘리']),
   S('내가 제일 잘 나가', '2NE1', ['2NE1', '투애니원'], 'I Am the Best'),
-  S('링딩동', '샤이니', ['SHINee', '샤이니'], 'Ring Ding Dong'),
+  O(2009, '링딩동', '샤이니', ['SHINee', '샤이니'], 'Ring Ding Dong'),
   S('Lucifer', '샤이니', ['SHINee', '샤이니'], '', ['루시퍼']),
   S('으르렁', 'EXO', ['EXO', '엑소'], 'Growl'),
   S('첫 눈', 'EXO', ['EXO', '엑소'], 'The First Snow'),
@@ -144,21 +159,21 @@ export const TITLES = [
   S('손오공', '세븐틴', SVT, 'Super'),
   S('神메뉴', '스트레이 키즈', SKZ, "God's Menu", ['신메뉴']),
   S('특', '스트레이 키즈', SKZ, 'S-Class'),
-  S('미쳤어', '손담비', ['Son Dam Bi', '손담비'], 'Crazy'),
-  S('Abracadabra', '브라운아이드걸스', ['Brown Eyed Girls', '브라운아이드걸스'], '', ['아브라카다브라']),
-  S('Nobody', '원더걸스', ['Wonder Girls', '원더걸스'], '', ['노바디']),
-  S('Tell Me', '원더걸스', ['Wonder Girls', '원더걸스'], '', ['텔 미']),
-  S('소주 한 잔', '임창정', ['Lim Chang Jung', '임창정'], 'A glass of soju'),
-  S('응급실', 'izi', ['izi', '이지'], 'Emergency Room'),
-  S('가시', '버즈', ['Buzz', '버즈'], 'Thorn'),
-  S('눈의 꽃', '박효신', ['Park Hyo Shin', '박효신'], 'Snow Flower'),
-  S('Tears', '소찬휘', ['So Chan Whee', '소찬휘'], '', ['티얼스']),
-  S('벌써 일년', '브라운 아이즈', ['Brown Eyes', '브라운 아이즈'], 'Already One Year'),
-  S('붉은 노을', '빅뱅', BB, 'Sunset Glow'),
-  S('체념', '빅마마', ['Big Mama', '빅마마']),
-  S('하늘을 달리다', '이적', ['Lee Juck', '이적'], 'Run through the sky'),
-  S('아로하', '쿨', ['COOL', '쿨'], 'Aloha'),
-  S('너에게 난, 나에게 넌', '자전거 탄 풍경', ['Bicycle Riding Scenery', '자전거 탄 풍경']),
+  O(2008, '미쳤어', '손담비', ['Son Dam Bi', '손담비'], 'Crazy'),
+  O(2009, 'Abracadabra', '브라운아이드걸스', ['Brown Eyed Girls', '브라운아이드걸스'], '', ['아브라카다브라']),
+  O(2008, 'Nobody', '원더걸스', ['Wonder Girls', '원더걸스'], '', ['노바디']),
+  O(2007, 'Tell Me', '원더걸스', ['Wonder Girls', '원더걸스'], '', ['텔 미']),
+  O(2003, '소주 한 잔', '임창정', ['Lim Chang Jung', '임창정'], 'A glass of soju'),
+  O(2005, '응급실', 'izi', ['izi', '이지'], 'Emergency Room'),
+  O(2005, '가시', '버즈', ['Buzz', '버즈'], 'Thorn'),
+  O(2004, '눈의 꽃', '박효신', ['Park Hyo Shin', '박효신'], 'Snow Flower'),
+  O(2000, 'Tears', '소찬휘', ['So Chan Whee', '소찬휘'], '', ['티얼스']),
+  O(2001, '벌써 일년', '브라운 아이즈', ['Brown Eyes', '브라운 아이즈'], 'Already One Year'),
+  O(2008, '붉은 노을', '빅뱅', BB, 'Sunset Glow'),
+  O(2003, '체념', '빅마마', ['Big Mama', '빅마마']),
+  O(2003, '하늘을 달리다', '이적', ['Lee Juck', '이적'], 'Run through the sky'),
+  O(2001, '아로하', '쿨', ['COOL', '쿨'], 'Aloha'),
+  O(2001, '너에게 난, 나에게 넌', '자전거 탄 풍경', ['Bicycle Riding Scenery', '자전거 탄 풍경']),
   S('Shape of You', 'Ed Sheeran', ['Ed Sheeran', '에드 시런'], '', ['쉐이프 오브 유', '셰이프 오브 유']),
   S('Perfect', 'Ed Sheeran', ['Ed Sheeran', '에드 시런'], '', ['퍼펙트']),
   S('Uptown Funk', 'Mark Ronson, Bruno Mars', ['Mark Ronson', '마크 론슨', 'Bruno Mars'], '', ['업타운 펑크']),
@@ -272,39 +287,99 @@ export const TITLES = [
 
   // ---------- 노래 추가 (233~265, 10/31 사용자: 아주 최근 노래 · 검색·릴스 많이 나오는 곡) ----------
   // 지금 차트 곡은 게임 때마다 Apple Music 한국 Top 100 에서도 가져옴 → 여기 있는 곡이 차트에 오르면 한글 별칭(네온 등)도 정답
-  S('NEON', 'A2O LITE', ['A2O LITE', 'A2O'], '', ['네온']),
-  S('사랑하게 될 거야', '한로로', ['HANRORO', '한로로']),
-  S('Drowning', 'WOODZ', ['WOODZ', '우즈'], '', ['드라우닝']),
-  S('모르시나요', '조째즈', ['Jo Jazz', '조째즈']),
-  S('HAPPY', 'DAY6', D6, '', ['해피']),
-  S('녹아내려요', 'DAY6', D6, 'Melt Down'),
-  S('고민중독', 'QWER', ['QWER'], 'Discord'),
-  S('내 이름 맑음', 'QWER', ['QWER'], 'My Name is Malguem'),
-  S('LOVE ATTACK', '리센느', ['RESCENE', '리센느'], '', ['러브 어택']),
-  S('Ling Ling', '검정치마', ['The Black Skirts', '검정치마'], '', ['링링']),
-  S('좋은 밤 좋은 꿈', '너드커넥션', ['Nerd Connection', '너드커넥션']),
-  S('like JENNIE', '제니', ['JENNIE', '제니'], '', ['라이크 제니']),
-  S('Mantra', '제니', ['JENNIE', '제니'], '', ['만트라']),
-  S('toxic till the end', '로제', ['ROSÉ', '로제'], '', ['톡식 틸 디 엔드']),
-  S('Golden', 'HUNTR/X', ['HUNTR/X', 'EJAE'], '', ['골든']),
-  S('Soda Pop', 'Saja Boys', ['Saja Boys', '사자 보이즈'], '', ['소다팝', '소다 팝']),
-  S('POWER', 'G-DRAGON', ['G-DRAGON', '지드래곤'], '', ['파워']),
-  S('HOME SWEET HOME', 'G-DRAGON', ['G-DRAGON', '지드래곤'], '', ['홈 스위트 홈']),
-  S('CRAZY', 'LE SSERAFIM', LS, '', ['크레이지']),
-  S('나는 아픈 건 딱 질색이니까', '(여자)아이들', GI, 'Fate'),
-  S('Klaxon', '(여자)아이들', GI, '', ['클락션']),
-  S('Love wins all', '아이유', IU, '', ['러브 윈즈 올']),
-  S('SPOT!', '지코', ['ZICO', '지코'], '', ['스팟']),
-  S('Small girl', '이영지', ['Lee Young Ji', '이영지'], '', ['스몰 걸']),
-  S('Armageddon', 'aespa', AE, '', ['아마겟돈']),
-  S('Dirty Work', 'aespa', AE, '', ['더티 워크']),
-  S('뛰어', 'BLACKPINK', BP, 'JUMP', ['점프']),
-  S('REBEL HEART', 'IVE', IVE, '', ['레블 하트']),
-  S('How Sweet', 'NewJeans', NJ, '', ['하우 스윗']),
-  S('FAMOUS', 'ALLDAY PROJECT', ['ALLDAY PROJECT', '올데이 프로젝트'], '', ['페이머스']),
-  S('I DO ME', 'KiiiKiii', ['KiiiKiii', '키키'], '', ['아이 두 미']),
-  S('The Chase', 'Hearts2Hearts', ['Hearts2Hearts', '하츠투하츠'], '', ['더 체이스']),
-  S('에피소드', '이무진', ['Lee Mujin', '이무진'], 'Episode'),
+  H('NEON', 'A2O LITE', ['A2O LITE', 'A2O'], '', ['네온']),
+  H('사랑하게 될 거야', '한로로', ['HANRORO', '한로로']),
+  H('Drowning', 'WOODZ', ['WOODZ', '우즈'], '', ['드라우닝']),
+  H('모르시나요', '조째즈', ['Jo Jazz', '조째즈']),
+  H('HAPPY', 'DAY6', D6, '', ['해피']),
+  H('녹아내려요', 'DAY6', D6, 'Melt Down'),
+  H('고민중독', 'QWER', ['QWER'], 'Discord'),
+  H('내 이름 맑음', 'QWER', ['QWER'], 'My Name is Malguem'),
+  H('LOVE ATTACK', '리센느', ['RESCENE', '리센느'], '', ['러브 어택']),
+  H('Ling Ling', '검정치마', ['The Black Skirts', '검정치마'], '', ['링링']),
+  H('좋은 밤 좋은 꿈', '너드커넥션', ['Nerd Connection', '너드커넥션']),
+  H('like JENNIE', '제니', ['JENNIE', '제니'], '', ['라이크 제니']),
+  H('Mantra', '제니', ['JENNIE', '제니'], '', ['만트라']),
+  H('toxic till the end', '로제', ['ROSÉ', '로제'], '', ['톡식 틸 디 엔드']),
+  H('Golden', 'HUNTR/X', ['HUNTR/X', 'EJAE'], '', ['골든']),
+  H('Soda Pop', 'Saja Boys', ['Saja Boys', '사자 보이즈'], '', ['소다팝', '소다 팝']),
+  H('POWER', 'G-DRAGON', ['G-DRAGON', '지드래곤'], '', ['파워']),
+  H('HOME SWEET HOME', 'G-DRAGON', ['G-DRAGON', '지드래곤'], '', ['홈 스위트 홈']),
+  H('CRAZY', 'LE SSERAFIM', LS, '', ['크레이지']),
+  H('나는 아픈 건 딱 질색이니까', '(여자)아이들', GI, 'Fate'),
+  H('Klaxon', '(여자)아이들', GI, '', ['클락션']),
+  H('Love wins all', '아이유', IU, '', ['러브 윈즈 올']),
+  H('SPOT!', '지코', ['ZICO', '지코'], '', ['스팟']),
+  H('Small girl', '이영지', ['Lee Young Ji', '이영지'], '', ['스몰 걸']),
+  H('Armageddon', 'aespa', AE, '', ['아마겟돈']),
+  H('Dirty Work', 'aespa', AE, '', ['더티 워크']),
+  H('뛰어', 'BLACKPINK', BP, 'JUMP', ['점프']),
+  H('REBEL HEART', 'IVE', IVE, '', ['레블 하트']),
+  H('How Sweet', 'NewJeans', NJ, '', ['하우 스윗']),
+  H('FAMOUS', 'ALLDAY PROJECT', ['ALLDAY PROJECT', '올데이 프로젝트'], '', ['페이머스']),
+  H('I DO ME', 'KiiiKiii', ['KiiiKiii', '키키'], '', ['아이 두 미']),
+  H('The Chase', 'Hearts2Hearts', ['Hearts2Hearts', '하츠투하츠'], '', ['더 체이스']),
+  H('에피소드', '이무진', ['Lee Mujin', '이무진'], 'Episode'),
+
+  // ---------- 옛날 노래 (266~322, 10/31 사용자: 차트 곡은 최근 곡이니 90~2000년대 노래도 같이) ----------
+  // 노래 3곡 = 지금 차트 1 · 옛날 노래 1 (y 1990~2009, 앞쪽 목록의 2000년대 곡 포함) · 2010년대 이후 1
+  O(1992, '난 알아요', '서태지와 아이들', TAIJI, 'I Know'),
+  O(1993, '하여가', '서태지와 아이들', TAIJI),
+  O(1995, 'Come Back Home', '서태지와 아이들', TAIJI, '', ['컴백홈']),
+  O(1996, '캔디', 'H.O.T.', HOT, 'Candy'),
+  O(1997, '행복', 'H.O.T.', HOT, 'Happiness'),
+  O(1998, '커플', '젝스키스', SECHS, 'Couple'),
+  O(1999, '어머님께', 'god', GOD, 'To Mother'),
+  O(2000, '거짓말', 'god', GOD, 'Lies'),
+  O(2001, '길', 'god', GOD, 'Road'),
+  O(1998, '내 남자친구에게', '핑클', FINKL, 'To My Boyfriend'),
+  O(1999, '영원한 사랑', '핑클', FINKL),
+  O(1997, "I'm Your Girl", 'S.E.S.', ['S.E.S.', '에스이에스', 'SES'], '', ['아임 유어 걸']),
+  O(1997, '해변의 여인', '쿨', ['COOL', '쿨']),
+  O(1996, '트위스트 킹', '터보', ['TURBO', '터보'], 'Twist King'),
+  O(1995, '잘못된 만남', '김건모', KGM),
+  O(1993, '핑계', '김건모', KGM),
+  O(1994, '서른 즈음에', '김광석', ['Kim Kwang Seok', '김광석', 'Kim Kwangseok']),
+  O(1994, '날 떠나지 마', '박진영', ['J.Y. Park', '박진영', 'Park Jin Young'], "Don't Leave Me"),
+  O(1991, '이 밤이 지나면', '임재범', ['Yim Jae Beom', '임재범', 'Lim Jae Bum', 'Im Jae Bum']),
+  O(1994, '기억의 습작', '전람회', ['Exhibition', '전람회']),
+  O(1998, '말달리자', '크라잉넛', ['Crying Nut', '크라잉넛']),
+  O(1996, '꿍따리 샤바라', '클론', ['CLON', '클론'], '', ['쿵따리 샤바라']),
+  O(1995, '날개 잃은 천사', '룰라', ["Roo'Ra", '룰라', 'ROORA']),
+  O(1994, '여름 안에서', '듀스', ['DEUX', '듀스'], 'In Summer'),
+  O(1998, 'To Heaven', '조성모', ['Jo Sung Mo', '조성모', 'Cho Sung Mo'], '', ['투 헤븐']),
+  O(1998, '순정', '코요태', ['KOYOTE', '코요태']),
+  O(1998, 'Poison', '엄정화', ['Uhm Jung Hwa', '엄정화', 'Um Jung Hwa'], '', ['포이즌']),
+  O(1999, 'T.O.P', '신화', ['SHINHWA', '신화'], '', ['티오피']),
+  O(2000, 'Run to You', 'DJ DOC', ['DJ DOC', '디제이디오씨'], '', ['런 투 유']),
+  O(2000, '매직 카펫 라이드', '자우림', ['Jaurim', '자우림'], 'Magic Carpet Ride'),
+  O(2002, '낭만고양이', '체리필터', ['Cherry Filter', '체리필터'], 'Romantic Cat'),
+  O(2002, '나쁜 남자', '비', ['Rain', '비'], 'Bad Guy'),
+  O(2002, 'No.1', '보아', ['BoA', '보아'], '', ['넘버원']),
+  O(2003, '10 Minutes', '이효리', LHR, '', ['텐 미닛']),
+  O(2008, 'U-Go-Girl', '이효리', LHR, '', ['유고걸']),
+  O(2002, '안 되나요', '휘성', ['Wheesung', '휘성', 'Whee Sung']),
+  O(2004, '내 여자라니까', '이승기', ['Lee Seung Gi', '이승기'], "Because You're My Woman"),
+  O(2004, 'Hug', '동방신기', TVXQ, '', ['허그']),
+  O(2008, '주문', '동방신기', TVXQ, 'MIROTIC', ['미로틱']),
+  O(2005, '살다가', 'SG워너비', SGW),
+  O(2007, '내 사람', 'SG워너비', SGW, 'Partner for Life'),
+  O(2005, '겁쟁이', '버즈', ['Buzz', '버즈'], 'Coward'),
+  O(2006, '나는 나비', 'YB', ['YB', '윤도현밴드', 'Yoon Do Hyun Band'], 'Butterfly'),
+  O(2005, '사랑스러워', '김종국', ['Kim Jong Kook', '김종국'], 'Lovable'),
+  O(2002, '내게 오는 길', '성시경', ['Sung Si Kyung', '성시경']),
+  O(2007, '다행이다', '이적', ['Lee Juck', '이적']),
+  O(2007, '마지막 인사', '빅뱅', BB, 'Last Farewell'),
+  O(2008, 'So Hot', '원더걸스', ['Wonder Girls', '원더걸스'], '', ['쏘 핫']),
+  O(2009, '소원을 말해봐', '소녀시대', SNSD, 'Genie'),
+  O(2009, '미스터', '카라', ['KARA', '카라'], 'Mister'),
+  O(2008, '누난 너무 예뻐', '샤이니', ['SHINee', '샤이니'], 'Replay'),
+  O(2009, 'Fire', '2NE1', ['2NE1', '투애니원'], '', ['파이어']),
+  O(2009, 'Bo Peep Bo Peep', '티아라', ['T-ARA', '티아라'], '', ['보핍보핍']),
+  O(2007, '사랑앓이', 'FT아일랜드', ['FTISLAND', 'FT아일랜드', 'FT Island'], 'Love Sick'),
+  O(2009, '8282', '다비치', ['DAVICHI', '다비치'], '', ['팔이팔이']),
+  O(2008, '이 노래', '2AM', ['2AM', '투에이엠'], 'This Song'),
+  O(2004, '같은 베개', '테이', ['Tei', '테이']),
 ]
 
 // ---------- 영화 이모지 (10/31 사용자: 영화도 이모지로 → 카톡 봇처럼 6~8개, 줄거리 순서대로) ----------
