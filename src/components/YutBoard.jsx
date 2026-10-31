@@ -4,6 +4,8 @@ import otter0 from '../assets/otters/otter-0.webp'
 import otter1 from '../assets/otters/otter-1.webp'
 import otter2 from '../assets/otters/otter-2.webp'
 import otter3 from '../assets/otters/otter-3.webp'
+// 10/31 할로윈 (한국 시간 10/31 ~ 11/1 아침 6시): 수달 대신 🎃👻🦇💀 말 + 팀 색 받침·빛
+import { useHalloween, HW_PIECES } from '../halloween'
 export const OTTER_IMG = [otter0, otter1, otter2, otter3]
 
 // 윷판: 좌표(0~100)를 판 안쪽 여백(INSET%)을 두고 배치.
@@ -116,6 +118,7 @@ function stacksOf(pieces, teamCount) {
 }
 
 export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackTap, movable, dests, activeNode, mover, hide, ghost, bank, children }) {
+  const hw = useHalloween()
   let stacks = stacksOf(pieces, teamCount)
   // 이동 애니메이션 중: 도착 칸의 말 묶음에서 움직이는 말 수만큼 빼고, 움직이는 말은 따로 그림
   if (hide) {
@@ -195,9 +198,15 @@ export default function YutBoard({ cells, pieces, teamCount, onCellTap, onStackT
             }}
             aria-label={`${info.name} 말 ${s.count}개`}
           >
-            {/* 수달 말 (팀 색 목띠·받침) + 업은 말이면 팀 색 알약 ×2·×3 */}
+            {/* 수달 말 (팀 색 목띠·받침) — 할로윈엔 팀 색 받침 위 🎃👻🦇💀 — + 업은 말이면 팀 색 알약 ×2·×3 */}
             <span className="ytoken-dot">
-              <img className="ytoken-otter" src={OTTER_IMG[s.team] || OTTER_IMG[0]} alt="" draggable="false" />
+              {hw ? (
+                <span className="ytoken-hw">
+                  <b>{HW_PIECES[s.team] || HW_PIECES[0]}</b>
+                </span>
+              ) : (
+                <img className="ytoken-otter" src={OTTER_IMG[s.team] || OTTER_IMG[0]} alt="" draggable="false" />
+              )}
             </span>
             {s.count > 1 && <span className="ytoken-count">×{s.count}</span>}
           </button>

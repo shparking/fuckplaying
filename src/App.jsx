@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import YutBoard from './components/YutBoard'
 import { ThrowOverlay, Sticks, preloadThrow3D } from './components/YutSticks'
+import { useHalloween, HalloweenDeco } from './halloween'
 import { SOLO, LOBBY_TTL_MS, PRACTICE, lobbySince } from './db'
 import {
   myId,
@@ -1338,6 +1339,8 @@ function BoardHint({ hint }) {
 
 export default function App() {
   const [theme, toggleTheme] = useTheme()
+  // 10/31 할로윈 (한국 시간 10/31 ~ 11/1 아침 6시 자동): 색·장식·🎃👻 말 — src/halloween.jsx
+  const hw = useHalloween()
   const me = myId()
 
   // ---- 접속 정보 ----
@@ -1879,10 +1882,22 @@ export default function App() {
   // ---------- 렌더 ----------
   return (
     <div className={`app ${playing ? 'with-dock' : ''}`} style={dockH ? { '--dock-h': `${dockH}px` } : undefined}>
+      {hw && <HalloweenDeco />}
       <header className="topbar">
         <div className="brand">
           <span className={`brand-dot ${connected ? '' : 'off'}`} title={connected ? '연결됨' : '연결 중…'} /> 주루윷놀이
+          {hw && (
+            <span className="hw-brand" aria-hidden>
+              🎃
+            </span>
+          )}
         </div>
+        {/* 할로윈: 천막 끝에 매달린 거미 */}
+        {hw && (
+          <span className="hw-spider" aria-hidden>
+            <i>🕷️</i>
+          </span>
+        )}
         <div className="row">
           {room && !PRACTICE && (
             <button className="icon-btn" onClick={() => setShowDrinks(true)} aria-label="오늘의 술고래" title="오늘의 술고래">
@@ -1935,11 +1950,22 @@ export default function App() {
         <>
           <div className="hero">
             <div className="sign">
-              <span className="sign-kicker">팀 대항 · 술자리 윷놀이</span>
+              {hw && (
+                <>
+                  <span className="hw-web" aria-hidden>
+                    🕸️
+                  </span>
+                  <span className="hw-sign-pumpkin" aria-hidden>
+                    🎃
+                  </span>
+                </>
+              )}
+              <span className="sign-kicker">{hw ? '🎃 해피 할로윈 · 술자리 윷놀이' : '팀 대항 · 술자리 윷놀이'}</span>
               <h1 className="neon">주루윷놀이</h1>
               <Sticks sticks={[true, false, true, true]} small />
             </div>
             <p>폰으로 윷을 던지고, 말이 멈춘 칸의 벌칙을 수행해요. 이름을 정하고 방을 만들거나, 아래 목록에서 친구 방에 들어가세요.</p>
+            {hw && <p className="hw-note">👻 오늘은 할로윈! 윷판 말도 호박·유령으로 바뀌어요</p>}
           </div>
 
           <div className="card card-pad stack">
