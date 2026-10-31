@@ -1526,9 +1526,9 @@ export const CT_WRONG = -300
 // 완벽한 도형 그리기: 15초 안에 손가락으로 원·정n각형 한 번 (0~100점), 팀 평균이 낮은 팀이 마심
 export const CIRCLE_MS = 15000
 export const CIRCLE_SETTLE_MS = 1200 // 시간이 끝나고 마지막 기록이 다 모일 때까지
-// 얼마게요: 편의점 가격 3문제 × 15초 (숫자 키패드, 10/31 사용자: 5 → 3), 정답 공개 3.5초
+// 얼마게요: 편의점 가격 3문제 × 10초 (숫자 키패드, 10/31 사용자: 5 → 3문제, 15 → 10초), 정답 공개 3.5초
 export const PG_ROUNDS = 3
-export const PG_ANSWER_MS = 15000
+export const PG_ANSWER_MS = 10000
 export const PG_GAP_MS = 3500
 // 팀 시간 합치기: 각자 한 번 꾹, 팀 합계가 30초에 가장 가까운 팀 승 (45초 안에)
 export const TS_TARGET_MS = 30000

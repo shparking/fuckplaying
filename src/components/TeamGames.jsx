@@ -1262,7 +1262,7 @@ const pointRows = (room, r) =>
   }))
 
 // ---------- 얼마게요 (편의점 가격) ----------
-// 3문제 × 15초 (10/31 5 → 3), 숫자 키패드로 가격 입력 → 확인. 정답과 차이(%)가 작을수록 점수 (20% = 500점), 팀 점수 낮은 팀이 마심
+// 3문제 × 10초 (10/31 5 → 3문제, 15 → 10초), 숫자 키패드로 가격 입력 → 확인. 정답과 차이(%)가 작을수록 점수 (20% = 500점), 팀 점수 낮은 팀이 마심
 export function PricePanel({ room, pending: p, me, ctl, code }) {
   const live = p.stage === 'play'
   const now = useNow(live, 100)
