@@ -78,8 +78,10 @@ import {
   mqPassInfo,
   mqDrive,
   mqResult,
+  mqConfirm,
+  mqOkInfo,
 } from '../room'
-import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_ROUNDS, MQ_CHART_PICK, mqRounds, mqItem, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
+import { MQ_INFO, MQ_CATS, MQ_STAGES, MQ_STAGE_NAMES, MQ_STAGE_SHORT, MQ_WIN_TEXT, MQ_STAGE_TIMEOUT_MS, MQ_CLIP_MS, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, MQ_HOLD_MAX_MS, MQ_ROUNDS, MQ_CHART_PICK, mqRounds, mqItem, movieHint, emojiList, isTitleAnswer, chosungHint } from '../game/mediaquiz'
 import { mqUnlock, mqPlay, mqPrime, mqStop } from '../game/mqaudio'
 import { WORLD_PLACES, worldPoints } from '../game/worldplaces'
 import { WORLD_W, WORLD_H, toWorldXY } from '../game/worldgeo'
@@ -2145,6 +2147,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
   const [late, setLate] = useState({}) // 문제별: 맞혔는데 다른 사람이 먼저
   const [shake, setShake] = useState(false) // 틀리면 입력창 흔들기 (입력창은 그대로 둬서 키보드가 안 닫힘)
   const [passed, setPassed] = useState({}) // 'q:단계' → 눌렀음 (서버 반영 전에도 바로)
+  const [oked, setOked] = useState({}) // 정답 공개 때 '확인' 누른 문제 (노래, 서버 반영 전에도 바로)
   const qRef = useRef(null)
   const sending = useRef(false)
   const shakeT = useRef(null)
@@ -2161,11 +2164,11 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       buzz(50)
     }
   }, [ph.phase, ph.q])
-  // 진행: 걸린 사람 폰이 0.1초마다 (누가 맞히면 공개, 모두 '잘 모르겠어요'면 다음 단계, 혼자 연습이면 연습봇도)
+  // 진행: 걸린 사람 폰이 0.1초마다 (누가 맞히면 공개, 모두 '잘 모르겠어요'면 다음 단계, 노래 공개 때 모두 '확인'이면 다음 곡, 혼자 연습이면 연습봇도)
   useEffect(() => {
-    if (isDj && ph.phase === 'q') mqDrive(code, room)
+    if (isDj && (ph.phase === 'q' || (ph.phase === 'gap' && ph.hold))) mqDrive(code, room)
   }, [isDj, now])
-  // 소리 (노래만): 걸린 사람 폰만 — 단계가 바뀔 때마다 처음부터 1초·3초·5초, 정답 공개 때 5.5초. 쉬는 동안 다음 노래를 미리 받아 둠
+  // 소리 (노래만): 걸린 사람 폰만 — 단계가 바뀔 때마다 처음부터 1초·3초·5초, 정답 공개 때는 모두 '확인'할 때까지 (10/31). 쉬는 동안 다음 노래를 미리 받아 둠
   useEffect(() => {
     if (!isDj || !song) return
     const nextSong = (from) => rounds.slice(from).find((x) => x?.k === 'a')?.u
@@ -2186,7 +2189,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
         }
       } else {
         setBlocked(false)
-        mqPlay(r.u, MQ_CLIP_FROM, MQ_REVEAL_CLIP_MS, blockedNow)
+        mqPlay(r.u, MQ_CLIP_FROM, ph.hold ? MQ_HOLD_MAX_MS : MQ_REVEAL_CLIP_MS, blockedNow)
       }
       return
     }
@@ -2241,7 +2244,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
         rules={
           song ? (
             <>
-              🎵 {djName} 폰에서 노래 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. {MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 <b>🔥 지금 차트</b> 곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
+              🎵 {djName} 폰에서 노래 미리듣기를 <b>처음부터 1초</b> 들려줘요. 모르겠으면 <b>🤷 잘 모르겠어요</b> — <b>모두</b> 누르면 <b>3초</b>, 또 모두 누르면 <b>5초 + 초성 힌트</b>. {MQ_ROUNDS}곡 중 {MQ_CHART_PICK}곡은 <b>🔥 지금 차트</b> 곡이에요 (영어 제목은 영어로). 제목을 <b>직접 써서 가장 먼저 맞힌 사람이 정답</b> (띄어쓰기·작은 오타 괜찮음, 틀리면 다시) — 그 팀 +1. 마지막 단계에서도 모두 모르면 정답 공개 (안 누르는 사람이 있어도 25초 지나면 넘어가요). 정답 공개 때는 <b>모두 ✅ 확인</b>을 누를 때까지 그 곡을 들려줘요. 모두 {n}곡, <b>맞힌 문제가 적은 팀</b>이 다 같이 마셔요.
             </>
           ) : (
             <>
@@ -2262,7 +2265,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
     const pi = asking ? mqPassInfo(room, p, q, st) : null
     const iPassed = asking && (pi.done.includes(me) || passed[`${q}:${st}`])
     const waitingFor = asking ? pi.left.filter((pid) => !(pid === me && iPassed)) : []
-    const clipOn = asking ? now - ph.stAt < MQ_CLIP_MS[st] : now - ph.end < MQ_REVEAL_CLIP_MS
+    const clipOn = asking ? now - ph.stAt < MQ_CLIP_MS[st] : now - ph.end < (ph.hold ? MQ_HOLD_MAX_MS : MQ_REVEAL_CLIP_MS)
     const autoIn = asking ? Math.ceil((MQ_STAGE_TIMEOUT_MS - (now - ph.stAt)) / 1000) : 0
     const nextName = st < MQ_STAGES - 1 ? mqStageName(r.k, st + 1) : '정답 공개'
     const submit = async (e) => {
@@ -2296,6 +2299,16 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
       .slice(0, 5)
     const winTeam = w ? teamOf(room, w.pid) : null
     const latin = item && !/[\p{Script=Hangul}]/u.test(item.t) // 영어 제목이면 영어로 쓰라고
+    // 노래 정답 공개: 모두 '확인'할 때까지 (안 누르는 사람이 있어도 30초 지나면 다음 곡)
+    const oi = !asking && ph.hold ? mqOkInfo(room, p, q) : null
+    const iOk = !!oi && (oi.done.includes(me) || !!oked[q])
+    const okLeft = oi ? oi.left.filter((pid) => !(pid === me && iOk)) : []
+    const confirm = () => {
+      if (!oi || iOk) return
+      setOked((x) => ({ ...x, [q]: true }))
+      buzz(30)
+      mqConfirm(code, room, q)
+    }
     return (
       <div className="ai-overlay tg mq">
         <div className="tg-box">
@@ -2322,7 +2335,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
                   className="btn btn-ghost btn-sm"
                   onClick={() => {
                     setBlocked(false)
-                    mqPlay(r.u, MQ_CLIP_FROM, asking ? MQ_CLIP_MS[st] : MQ_REVEAL_CLIP_MS, () => setBlocked(true))
+                    mqPlay(r.u, MQ_CLIP_FROM, asking ? MQ_CLIP_MS[st] : ph.hold ? MQ_HOLD_MAX_MS : MQ_REVEAL_CLIP_MS, () => setBlocked(true))
                   }}
                 >
                   🔊 소리가 안 나면 눌러 주세요
@@ -2408,6 +2421,17 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
               ))}
             </div>
           )}
+          {oi && (
+            <>
+              <button className={`btn mq-ok ${iOk ? 'done' : 'btn-primary'}`} disabled={iOk} onClick={confirm}>
+                {iOk ? `🙏 다른 사람 기다리는 중 (${oi.voters.length - okLeft.length}/${oi.voters.length})` : q + 1 < n ? '✅ 확인 → 다음 곡' : '✅ 확인 → 결과 보기'}
+              </button>
+              <div className="mq-wait">
+                {okLeft.length > 0 && `${okLeft.map(name).join(' · ')} 안 누름`}
+                {ph.left <= 10000 && `${okLeft.length ? ' · ' : ''}${Math.max(0, Math.ceil(ph.left / 1000))}초 뒤 자동으로 넘어가요`}
+              </div>
+            </>
+          )}
           {!asking && (
             <div className="mq-credit">
               {r.l ? (
@@ -2417,8 +2441,7 @@ export function MediaQuizPanel({ room, pending: p, me, ctl, code }) {
               ) : (
                 MQ_SRC[r.s] || ''
               )}
-              {MQ_SRC[r.s] || r.l ? ' · ' : ''}
-              {q + 1 < n ? '다음 문제…' : '결과 공개!'}
+              {!oi && `${MQ_SRC[r.s] || r.l ? ' · ' : ''}${q + 1 < n ? '다음 문제…' : '결과 공개!'}`}
             </div>
           )}
         </div>

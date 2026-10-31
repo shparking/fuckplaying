@@ -24,8 +24,11 @@ export const MQ_STAGES = 3 // 노래 1초 · 3초 · 5초(+초성) / 영화 이�
 export const MQ_CLIP_MS = [1000, 3000, 5000] // 단계별로 들려주는 길이
 export const MQ_CLIP_FROM = 0 // 미리듣기 처음부터 (10/30 사용자)
 export const MQ_STAGE_TIMEOUT_MS = 25000 // 안 누르는 사람이 있어도 한 단계에 25초 지나면 다음 단계로 (마지막 단계면 정답 공개)
-export const MQ_GAP_MS = 6500 // 정답 공개
-export const MQ_REVEAL_CLIP_MS = 5500 // 정답 공개 때 들려주는 길이
+export const MQ_GAP_MS = 6500 // 정답 공개 (영화)
+export const MQ_REVEAL_CLIP_MS = 5500 // 정답 공개 때 들려주는 길이 (예전 노래)
+// 노래 맞히기 정답 공개 (10/31 사용자: 정답 곡을 더 오래, 모두 '확인'을 누를 때까지): 미리듣기를 처음부터 끝까지 틀고,
+// 모두 누르면 다음 곡. 안 누르는 사람이 있어도 30초(미리듣기 길이) 지나면 다음 곡 — pending.hold 인 게임만
+export const MQ_HOLD_MAX_MS = 30000
 // 문제 종류 k: 'a' 노래(소리) · 'e' 영화(이모지)
 export const MQ_STAGE_NAMES = { a: ['1초', '3초', '5초 + 초성'], e: ['이모지', '+ 연도·주연', '+ 초성'] }
 export const MQ_STAGE_SHORT = { a: ['1초', '3초', '5초'], e: ['이모지', '연도·주연', '초성'] }
@@ -46,7 +49,8 @@ export function emojiList(s) {
 export const movieHint = (item) => [item?.y ? `${item.y}년` : '', item?.h || ''].filter(Boolean).join(' · ')
 
 // pending (stage 'play'): startAt = 첫 문제 시작(3·2·1 뒤), n = 문제 수, rounds = [{ i, k: 'a', u: 미리듣기, s: 출처, l: 링크, x?: 차트 곡 } | { i, k: 'e' }]
-//   rs/r{q} = { s1, s2: 단계가 바뀐 시각, end: 문제가 끝난 시각 } (걸린 사람 폰이 씀)
+//   rs/r{q} = { s1, s2: 단계가 바뀐 시각, end: 문제가 끝난 시각, next: (hold) 모두 확인해서 다음 문제로 간 시각 } (걸린 사람 폰이 씀)
+//   hold = true (노래 맞히기): 정답 공개는 모두 '확인'(ok/r{q}/{pid})을 누르거나 30초가 지날 때까지
 //   answers/r{q}/{pid} = { at: 맞힌 시각, st: 그때 단계 } (맞힌 것만) — 가장 빠른 at 이 정답
 //   pass/r{q}/s{단계}/{pid} = true ('잘 모르겠어요'), wrong/r{q}/{pid} = 마지막 오답 (공개 때 보여 줌)
 // 다음 문제는 앞 문제 end + 정답 공개 시간에 저절로 시작 (모든 폰이 같은 계산)
@@ -63,6 +67,12 @@ export function mqPhase(p, nowMs) {
     if (!r.end) {
       const st = r.s2 ? 2 : r.s1 ? 1 : 0
       return { phase: 'q', q, at, st, stAt: [at, r.s1, r.s2][st] }
+    }
+    if (p.hold) {
+      // 노래 맞히기: 모두 확인할 때까지 (left = 자동으로 넘어갈 때까지)
+      if (!r.next) return { phase: 'gap', q, at, end: r.end, hold: true, left: Math.max(0, r.end + MQ_HOLD_MAX_MS - nowMs) }
+      at = r.next
+      continue
     }
     if (nowMs < r.end + MQ_GAP_MS) return { phase: 'gap', q, at, end: r.end, left: r.end + MQ_GAP_MS - nowMs }
     at = r.end + MQ_GAP_MS

@@ -4562,6 +4562,20 @@ textarea {
   color: rgba(255, 255, 255, 0.6);
   min-height: 18px;
 }
+/* 10/31 노래 정답 공개: 모두 확인할 때까지 노래 → 확인 버튼 */
+.mq-ok {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 16px;
+  font-size: 17px;
+  font-weight: 800;
+}
+.mq-ok.done {
+  opacity: 0.75;
+  color: #fff;
+  background: rgba(76, 201, 240, 0.12);
+  border: 1.5px solid rgba(76, 201, 240, 0.6);
+}
 .mq-win {
   display: flex;
   flex-direction: column;
