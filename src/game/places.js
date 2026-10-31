@@ -14,7 +14,7 @@ export const PLACES = [
   { name: '인천공항', lat: 37.4602, lon: 126.4407, lv: 1 },
   // 보통
   { name: '전주', lat: 35.8242, lon: 127.148, lv: 2 },
-  { name: '청주', lat: 36.6424, lon: 127.489, lv: 2, w: 5 }, // 10/16 사용자 고향이라 더 자주: 지도 게임 한 번에 약 40% (보통 30곳 중 3곳 뽑을 때 무게 5)
+  { name: '청주', lat: 36.6424, lon: 127.489, lv: 2, w: 19 }, // 10/16 사용자 고향이라 더 자주: 지도 게임 한 번에 약 40% (10/31 3문제로 줄면서 보통은 30곳 중 1곳만 → 무게 5 → 19)
   { name: '춘천', lat: 37.8813, lon: 127.7298, lv: 2 },
   { name: '강릉', lat: 37.7519, lon: 128.8761, lv: 2 },
   { name: '속초', lat: 38.207, lon: 128.5918, lv: 2 },
@@ -68,8 +68,8 @@ export const PLACES = [
 export const MAP_HALF_KM = 40
 export const mapPoints = (km) => (km == null || !Number.isFinite(km) ? 0 : Math.round(1000 / (1 + (km / MAP_HALF_KM) ** 2)))
 
-// 한 판 5문제: 쉬움 1 → 보통 3 → 어려움 1 (점점 어려워짐). 장소마다 무게 w (청주만 크게)
+// 한 판 3문제 (10/31 사용자: 5 → 3): 쉬움 1 → 보통 1 → 어려움 1 (점점 어려워짐). 장소마다 무게 w (청주만 크게)
 // used = 이번 윷놀이 판에 지도 찍기로 이미 나온 곳 → 그 판이 끝날 때까지 절대 다시 안 나옴 (rounds.js)
 export function pickMapRounds(used = [], rand = Math.random) {
-  return pickUnique(PLACES, used, [[1, 1], [2, 3], [3, 1]], rand)
+  return pickUnique(PLACES, used, [[1, 1], [2, 1], [3, 1]], rand)
 }

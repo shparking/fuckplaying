@@ -1516,8 +1516,8 @@ export const REACT_PENALTY_MS = 1500 // 부정출발·미참여는 1.5초로 계
 export const BOMB_MIN_MS = 20000 // 폭탄: 켜고 20~40초 사이 아무 때나 터짐 (화면에 시간 안 보임)
 export const BOMB_MAX_MS = 40000
 export const BOMB_SETTLE_MS = 1300 // 펑! 화면을 보여 준 뒤 마실 팀 고르기
-// 색깔 함정: 5라운드 × 5초, 빨리 맞힐수록 높은 점수 (1000 → 100), 틀리면 -300, 시간 초과 0
-export const CT_ROUNDS = 5
+// 색깔 함정: 3라운드 × 5초 (10/31 사용자: 5 → 3), 빨리 맞힐수록 높은 점수 (1000 → 100), 틀리면 -300, 시간 초과 0
+export const CT_ROUNDS = 3
 export const CT_ANSWER_MS = 5000
 export const CT_GAP_MS = 1600 // 라운드 사이: 정답과 내 점수
 export const CT_MAX = 1000
@@ -1534,12 +1534,12 @@ export const PG_GAP_MS = 3500
 export const TS_TARGET_MS = 30000
 export const TS_LIMIT_MS = 45000
 export const TS_SETTLE_MS = 1200
-// 지도 찍기: 5문제 × 10초, 정답 공개 3.5초
-export const MP_ROUNDS = 5
+// 지도 찍기: 3문제 × 10초 (10/31 사용자: 5 → 3), 정답 공개 3.5초
+export const MP_ROUNDS = 3
 export const MP_ANSWER_MS = 10000
 export const MP_GAP_MS = 3500
 
-export const WP_ROUNDS = 5 // 세계 지도 찍기: 확대·이동할 시간이 있게 15초
+export const WP_ROUNDS = 3 // 세계 지도 찍기: 3문제 (10/31 사용자: 5 → 3), 확대·이동할 시간이 있게 15초
 export const WP_ANSWER_MS = 15000
 export const WP_GAP_MS = 4000
 
@@ -1699,7 +1699,7 @@ export async function teamReactTap(code, room) {
 // --- 폭탄 돌리기 팀전: 오프라인으로 돌리고 화면엔 째깍째깍 폭탄만. 터지면 "펑! 얘기하고 있던 팀이 마셔!" (팀은 안 고름, 잔 수 안 셈) ---
 export const bombExploded = (p, nowMs) => !!p && p.kind === 'teamBomb' && p.stage === 'ticking' && !!p.explodeAt && nowMs >= p.explodeAt
 
-// --- 색깔 함정: 5라운드 × 5초, 글자 뜻 말고 '글자 색'을 고름. 팀원 점수 합계가 낮은 팀이 마심 (인원이 다르면 1인 평균) ---
+// --- 색깔 함정: 3라운드 × 5초, 글자 뜻 말고 '글자 색'을 고름. 팀원 점수 합계가 낮은 팀이 마심 (인원이 다르면 1인 평균) ---
 const CT_STEP = CT_ANSWER_MS + CT_GAP_MS
 export const colorEndAt = (p) => (p?.startAt || 0) + CT_ROUNDS * CT_STEP
 // 지금 단계: count(3·2·1) → q(문제, 남은 시간) → gap(정답·내 점수) → ... → final

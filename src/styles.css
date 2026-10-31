@@ -2971,11 +2971,24 @@ textarea {
   box-shadow:
     0 10px 0 color-mix(in srgb, var(--tc) 50%, #000),
     0 0 40px color-mix(in srgb, var(--tc) 55%, transparent);
-  touch-action: manipulation;
+  touch-action: none; /* 10/31: 빨리 눌러도 화면이 안 움직이게 (manipulation 은 끌기·스크롤을 막지 않음) */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   transition: transform 0.05s ease, box-shadow 0.05s ease;
+}
+/* 연타 화면 전체: 글자 선택·끌기·길게 누르기 메뉴·스크롤 막기 (10/31 사용자: '연타!!' 글자가 잡히고 화면이 위아래로 움직임) */
+.ai-overlay.tapwar {
+  touch-action: none;
+  overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.ai-overlay.tapwar * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 .tap-pad.pressed {
   transform: translateY(6px) scale(0.985);

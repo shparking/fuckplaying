@@ -72,8 +72,8 @@ export const WORLD_PLACES = [
 export const WORLD_HALF_KM = 1000
 export const worldPoints = (km) => (km == null || !Number.isFinite(km) ? 0 : Math.round(1000 / (1 + (km / WORLD_HALF_KM) ** 2)))
 
-// 한 판 5문제: 쉬움 1 → 보통 3 → 어려움 1 (점점 어려워짐)
+// 한 판 3문제 (10/31 사용자: 5 → 3): 쉬움 1 → 보통 1 → 어려움 1 (점점 어려워짐)
 // used = 이번 윷놀이 판에 세계 지도로 이미 나온 곳 → 그 판이 끝날 때까지 절대 다시 안 나옴 (rounds.js)
 export function pickWorldRounds(used = [], rand = Math.random) {
-  return pickUnique(WORLD_PLACES, used, [[1, 1], [2, 3], [3, 1]], rand)
+  return pickUnique(WORLD_PLACES, used, [[1, 1], [2, 1], [3, 1]], rand)
 }

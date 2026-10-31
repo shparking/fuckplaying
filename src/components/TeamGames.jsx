@@ -463,6 +463,26 @@ export function TapWarPanel({ room, pending: p, me, ctl, code }) {
   const roomRef = useRef(room)
   roomRef.current = room
   const [pressed, setPressed] = useState(false)
+  // 10/31 사용자: 빨리 누르면 '연타!!' 글자가 잡히고(선택·끌기) 화면이 위아래로 움직여서 연타가 잘 안 됨
+  // → 연타 화면에서는 손가락 끌기·글자 선택·길게 누르기 메뉴·두 번 눌러 확대를 다 막음 (CSS touch-action: none 과 같이, 옛 iOS 용)
+  const boxRef = useRef(null)
+  useEffect(() => {
+    const el = boxRef.current
+    if (!live || !el) return
+    const stop = (e) => e.cancelable && e.preventDefault()
+    el.addEventListener('touchstart', stop, { passive: false })
+    el.addEventListener('touchmove', stop, { passive: false })
+    el.addEventListener('selectstart', stop)
+    el.addEventListener('dragstart', stop)
+    el.addEventListener('gesturestart', stop)
+    return () => {
+      el.removeEventListener('touchstart', stop)
+      el.removeEventListener('touchmove', stop)
+      el.removeEventListener('selectstart', stop)
+      el.removeEventListener('dragstart', stop)
+      el.removeEventListener('gesturestart', stop)
+    }
+  }, [live, p.stage === 'play' && serverNow() >= (p.startAt || 0)])
   // 0.7초마다 내 연타 수를 기록 (다른 폰의 줄다리기 화면이 따라 움직임)
   useEffect(() => {
     if (!live) return
@@ -538,7 +558,7 @@ export function TapWarPanel({ room, pending: p, me, ctl, code }) {
   const pull = two ? (rows[1].avg - rows[0].avg) / sumAvg : 0
   const maxAvg = Math.max(1, ...rows.map((r) => r.avg))
   return (
-    <div className="ai-overlay tg tapwar">
+    <div ref={boxRef} className="ai-overlay tg tapwar">
       <div className="tg-box">
         <div className="tg-head">
           <span>🦦 {title}</span>
@@ -781,8 +801,8 @@ export function TeamBombPanel({ room, pending: p, me, ctl, code }) {
 }
 
 // ---------- 색깔 함정 (스트룹) ----------
-// 색 이름이 다른 색으로 칠해져 나옴 → 글자 '뜻' 말고 '글자 색깔'을 5초 안에. 5라운드, 빨리 맞힐수록 높은 점수
-// 점수: 정답 1000(바로) → 100(5초 직전) · 틀리면 -300 · 시간 초과 0. 5라운드 끝나고 팀 합계 공개 → 낮은 팀이 마심 (동점 → 룰렛)
+// 색 이름이 다른 색으로 칠해져 나옴 → 글자 '뜻' 말고 '글자 색깔'을 5초 안에. 3라운드 (10/31 5 → 3), 빨리 맞힐수록 높은 점수
+// 점수: 정답 1000(바로) → 100(5초 직전) · 틀리면 -300 · 시간 초과 0. 라운드가 다 끝나고 팀 합계 공개 → 낮은 팀이 마심 (동점 → 룰렛)
 export function ColorTrapPanel({ room, pending: p, me, ctl, code }) {
   const live = p.stage === 'play'
   const now = useNow(live, 50)
@@ -1543,7 +1563,7 @@ export function TimeSumPanel({ room, pending: p, me, ctl, code }) {
 }
 
 // ---------- 지도 찍기 ----------
-// 5문제 × 10초, 한국 지도에 장소 핀 꽂기 (다시 누르면 옮김). 가까울수록 점수 (40km = 500점), 팀 점수 낮은 팀이 마심
+// 3문제 × 10초 (10/31 5 → 3), 한국 지도에 장소 핀 꽂기 (다시 누르면 옮김). 가까울수록 점수 (40km = 500점), 팀 점수 낮은 팀이 마심
 function KoreaMap({ onTap, children }) {
   const ref = useRef(null)
   const tap = (e) => {
@@ -1704,7 +1724,7 @@ export function MapPinPanel({ room, pending: p, me, ctl, code }) {
 }
 
 // ---------- 세계 지도 찍기 ----------
-// 5문제 × 15초, 세계 지도에 도시·명소 핀 꽂기. 두 손가락으로 확대 · 끌어서 이동 · 그냥 누르면 핀 (다시 누르면 옮김) · 지도 아래 ＋ － 전체 버튼
+// 3문제 × 15초 (10/31 5 → 3), 세계 지도에 도시·명소 핀 꽂기. 두 손가락으로 확대 · 끌어서 이동 · 그냥 누르면 핀 (다시 누르면 옮김) · 지도 아래 ＋ － 전체 버튼
 // 가까울수록 점수 (1,000km = 500점), 팀 점수 낮은 팀이 마심. 지도 그림(worldmap.js, 약 110KB)은 이 게임이 처음 뜰 때 따로 불러옴
 const WM_MAX_ZOOM = 8
 const WM_FULL = { x: 0, y: 0, w: WORLD_W }
